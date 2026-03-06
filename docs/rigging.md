@@ -138,6 +138,8 @@ Prevents hyperextension and constrains joint range of motion using Blender's IK 
 
 **Runtime toggle:** The `bt.toggle_ik_limits` operator flips `use_ik_limit_x/y/z` on all MCH bones in a chain. Limit values are preserved so re-enabling restores them instantly.
 
+**Per-bone editing:** The `bt.edit_bone_ik_limits` operator opens a dialog to adjust per-axis min/max angles and stiffness for individual MCH bones. Accessible via the gear icon in the FK/IK panel or right-click context menu in pose mode ("Edit IK Limits"). Works on any selected bone (CTRL, MCH, or DEF) — automatically maps to the corresponding MCH bone.
+
 ### FK/IK Build Config vs. Runtime State
 
 - `fk_enabled` / `ik_enabled` — Control whether FK/IK controls are **generated** during build. Build-time settings.
@@ -281,6 +283,7 @@ When using IK legs, the floor contact system prevents feet from going below a co
 - `bt.clear_scan_data` — Clear wrap rig + all scan data
 - `bt.toggle_fk_ik` — Switch any IK-capable chain between FK and IK mode (with optional snapping)
 - `bt.toggle_ik_limits` — Enable/disable IK joint rotation limits per chain at runtime
+- `bt.edit_bone_ik_limits` — Per-bone IK limit editor (gear icon or right-click in pose mode)
 - `bt.bake_to_def` — Bake animation onto DEF bones for clean export
 - `bt.bone_naming_overlay` — Interactive bone naming overlay (BT convention)
 - `bt.set_bone_label` — Dialog to set Type/Side/Role on a bone

@@ -370,19 +370,19 @@ class BT_OT_EditBoneIKLimits(bpy.types.Operator):
     bl_description = "Adjust IK rotation limits for the selected bone"
     bl_options = {'REGISTER', 'UNDO'}
 
-    # Per-axis limits (degrees for UI, converted to radians internally)
-    min_x: bpy.props.FloatProperty(name="Min X", default=0, min=-180, max=0, subtype='ANGLE')
-    max_x: bpy.props.FloatProperty(name="Max X", default=0, min=0, max=180, subtype='ANGLE')
-    min_y: bpy.props.FloatProperty(name="Min Y", default=0, min=-180, max=0, subtype='ANGLE')
-    max_y: bpy.props.FloatProperty(name="Max Y", default=0, min=0, max=180, subtype='ANGLE')
-    min_z: bpy.props.FloatProperty(name="Min Z", default=0, min=-180, max=0, subtype='ANGLE')
-    max_z: bpy.props.FloatProperty(name="Max Z", default=0, min=0, max=180, subtype='ANGLE')
-    stiffness_x: bpy.props.FloatProperty(name="Stiffness X", default=0, min=0, max=0.999)
-    stiffness_y: bpy.props.FloatProperty(name="Stiffness Y", default=0, min=0, max=0.999)
-    stiffness_z: bpy.props.FloatProperty(name="Stiffness Z", default=0, min=0, max=0.999)
-    use_limit_x: bpy.props.BoolProperty(name="Limit X", default=True)
-    use_limit_y: bpy.props.BoolProperty(name="Limit Y", default=True)
-    use_limit_z: bpy.props.BoolProperty(name="Limit Z", default=True)
+    # Per-axis limits (stored in radians, displayed as degrees via ANGLE subtype)
+    min_x: bpy.props.FloatProperty(name="Min X", default=0.0, min=-math.pi, max=0.0, subtype='ANGLE')
+    max_x: bpy.props.FloatProperty(name="Max X", default=0.0, min=0.0, max=math.pi, subtype='ANGLE')
+    min_y: bpy.props.FloatProperty(name="Min Y", default=0.0, min=-math.pi, max=0.0, subtype='ANGLE')
+    max_y: bpy.props.FloatProperty(name="Max Y", default=0.0, min=0.0, max=math.pi, subtype='ANGLE')
+    min_z: bpy.props.FloatProperty(name="Min Z", default=0.0, min=-math.pi, max=0.0, subtype='ANGLE')
+    max_z: bpy.props.FloatProperty(name="Max Z", default=0.0, min=0.0, max=math.pi, subtype='ANGLE')
+    stiffness_x: bpy.props.FloatProperty(name="Stiffness X", default=0.0, min=0.0, max=0.999)
+    stiffness_y: bpy.props.FloatProperty(name="Stiffness Y", default=0.0, min=0.0, max=0.999)
+    stiffness_z: bpy.props.FloatProperty(name="Stiffness Z", default=0.0, min=0.0, max=0.999)
+    use_limit_x: bpy.props.BoolProperty(name="Limit X", default=False)
+    use_limit_y: bpy.props.BoolProperty(name="Limit Y", default=False)
+    use_limit_z: bpy.props.BoolProperty(name="Limit Z", default=False)
 
     mch_name: bpy.props.StringProperty(name="MCH Bone", options={'HIDDEN'})
 
@@ -454,9 +454,12 @@ class BT_OT_EditBoneIKLimits(bpy.types.Operator):
 
     def execute(self, context):
         armature = context.active_object
-        mch_pb = armature.pose.bones.get(self.mch_name)
+        mch_pb = armature.pose.bones.get(self.mch_name) if self.mch_name else None
+        # Fallback: re-derive MCH from current selection
         if not mch_pb:
-            self.report({'WARNING'}, f"MCH bone '{self.mch_name}' not found")
+            mch_pb, _ = _find_mch_for_selected(context)
+        if not mch_pb:
+            self.report({'WARNING'}, "No MCH bone found for selected bone")
             return {'CANCELLED'}
 
         mch_pb.ik_min_x = self.min_x
@@ -472,7 +475,8 @@ class BT_OT_EditBoneIKLimits(bpy.types.Operator):
         mch_pb.use_ik_limit_y = self.use_limit_y
         mch_pb.use_ik_limit_z = self.use_limit_z
 
-        self.report({'INFO'}, f"IK limits updated: {self.mch_name}")
+        context.view_layer.update()
+        self.report({'INFO'}, f"IK limits updated: {mch_pb.name}")
         return {'FINISHED'}
 
 

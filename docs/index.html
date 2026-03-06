@@ -913,6 +913,7 @@ python blender_api.py seam --object Cube --preset hard_surface</code></pre>
   <li><strong>Generic</strong>: &plusmn;90&deg; per joint, no stiffness</li>
 </ul>
 <p>The <code>bt.toggle_ik_limits</code> operator flips limits on/off per chain at runtime. Limit values are preserved so re-enabling restores them instantly.</p>
+<p><strong>Per-bone editing:</strong> The <code>bt.edit_bone_ik_limits</code> operator opens a dialog to adjust per-axis min/max angles and stiffness for individual bones. Access via the gear icon in the FK/IK panel or right-click &rarr; "Edit IK Limits" in pose mode.</p>
 
 <h3>Dynamic Arm/Leg chain_count</h3>
 <p>Arm and leg IK <code>chain_count</code> is calculated dynamically from the actual bone span (upper&rarr;lower index in the chain), not hardcoded to 2. This means arms/legs with intermediate bones (e.g. upper_arm &rarr; mid_arm &rarr; lower_arm &rarr; hand) have IK covering the full chain.</p>
@@ -980,6 +981,7 @@ python blender_api.py seam --object Cube --preset hard_surface</code></pre>
   <tr><td><code>bt.clear_scan_data</code></td><td>Clear wrap rig + all scan data</td></tr>
   <tr><td><code>bt.toggle_fk_ik</code></td><td>Switch any IK-capable chain between FK/IK/Spline mode (with snap if enabled)</td></tr>
   <tr><td><code>bt.toggle_ik_limits</code></td><td>Enable/disable IK joint rotation limits per chain at runtime</td></tr>
+  <tr><td><code>bt.edit_bone_ik_limits</code></td><td>Per-bone IK limit editor (gear icon or right-click in pose mode)</td></tr>
   <tr><td><code>bt.bake_to_def</code></td><td>Bake animation onto DEF bones for clean FBX export</td></tr>
   <tr><td><code>bt.toggle_floor_contact</code></td><td>Add/remove floor constraints on leg IK targets + toe auto-bend</td></tr>
   <tr><td><code>bt.update_floor_level</code></td><td>Update floor Z level on existing constraints</td></tr>
