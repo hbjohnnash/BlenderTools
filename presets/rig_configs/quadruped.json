@@ -1,0 +1,18 @@
+{
+  "name": "Quadruped",
+  "modules": [
+    {"type": "spine", "name": "Spine", "side": "C", "parent_bone": "", "position": [0, 0, 0.8], "options": {"bone_count": 5, "ik_spline": true}},
+    {"type": "neck_head", "name": "NeckHead", "side": "C", "parent_bone": "Spine.chest", "position": [0, -0.3, 0.85], "options": {"neck_bones": 3}},
+    {"type": "leg", "name": "FrontLeg", "side": "L", "parent_bone": "Spine.chest", "position": [0.12, -0.2, 0.8], "options": {"twist_bones": 0, "foot_roll": false}},
+    {"type": "leg", "name": "FrontLeg", "side": "R", "parent_bone": "Spine.chest", "position": [-0.12, -0.2, 0.8], "options": {"twist_bones": 0, "foot_roll": false}},
+    {"type": "leg", "name": "HindLeg", "side": "L", "parent_bone": "Spine.hip", "position": [0.12, 0.3, 0.8], "options": {"twist_bones": 0, "foot_roll": false}},
+    {"type": "leg", "name": "HindLeg", "side": "R", "parent_bone": "Spine.hip", "position": [-0.12, 0.3, 0.8], "options": {"twist_bones": 0, "foot_roll": false}},
+    {"type": "tail", "name": "Tail", "side": "C", "parent_bone": "Spine.hip", "position": [0, 0.5, 0.75], "options": {"bone_count": 6, "direction": [0, 1, -0.2]}},
+    {"type": "jaw", "name": "Jaw", "side": "C", "parent_bone": "NeckHead.head", "position": [0, -0.6, 0.85], "options": {"upper_jaw": true}}
+  ],
+  "global_options": {
+    "deform_prefix": "DEF-",
+    "control_prefix": "CTRL-",
+    "mechanism_prefix": "MCH-"
+  }
+}

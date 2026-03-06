@@ -1,0 +1,16 @@
+{
+  "name": "Mech Walker",
+  "modules": [
+    {"type": "spine", "name": "Body", "side": "C", "parent_bone": "", "position": [0, 0, 1.5], "options": {"bone_count": 2, "ik_spline": false}},
+    {"type": "leg", "name": "Leg", "side": "L", "parent_bone": "Body.hip", "position": [0.3, 0, 1.5], "options": {"twist_bones": 0, "foot_roll": false}},
+    {"type": "leg", "name": "Leg", "side": "R", "parent_bone": "Body.hip", "position": [-0.3, 0, 1.5], "options": {"twist_bones": 0, "foot_roll": false}},
+    {"type": "piston", "name": "Piston_L", "side": "L", "parent_bone": "Body.hip", "position": [0.2, 0, 1.3], "options": {"stroke_length": 0.4, "direction": [0, 0, -1]}},
+    {"type": "piston", "name": "Piston_R", "side": "R", "parent_bone": "Body.hip", "position": [-0.2, 0, 1.3], "options": {"stroke_length": 0.4, "direction": [0, 0, -1]}},
+    {"type": "custom_chain", "name": "Turret", "side": "C", "parent_bone": "Body.chest", "position": [0, 0, 1.8], "options": {"bone_count": 2, "direction": [0, -1, 0]}}
+  ],
+  "global_options": {
+    "deform_prefix": "DEF-",
+    "control_prefix": "CTRL-",
+    "mechanism_prefix": "MCH-"
+  }
+}

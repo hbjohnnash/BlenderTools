@@ -1,0 +1,10 @@
+{
+  "name": "Hard Surface",
+  "description": "Seam layout for hard-surface mechanical models",
+  "clear_existing": true,
+  "steps": [
+    {"method": "hard_edge"},
+    {"method": "angle", "params": {"threshold_degrees": 35.0}},
+    {"method": "material"}
+  ]
+}

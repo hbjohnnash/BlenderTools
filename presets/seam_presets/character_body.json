@@ -1,0 +1,10 @@
+{
+  "name": "Character Body",
+  "description": "Standard seam layout for humanoid character bodies",
+  "clear_existing": true,
+  "steps": [
+    {"method": "angle", "params": {"threshold_degrees": 60.0}},
+    {"method": "material"},
+    {"method": "hard_edge"}
+  ]
+}

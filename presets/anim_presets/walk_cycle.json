@@ -1,0 +1,13 @@
+{
+  "name": "Walk Cycle",
+  "type": "walk",
+  "params": {
+    "speed": 1.0,
+    "stride": 0.4,
+    "sway": 0.02,
+    "arm_swing": 0.3,
+    "hip_bounce": 0.02,
+    "frame_count": 24,
+    "fps": 24
+  }
+}

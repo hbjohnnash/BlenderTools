@@ -1,0 +1,9 @@
+{
+  "name": "Organic",
+  "description": "Seam layout for organic/creature models with minimal visible seams",
+  "clear_existing": true,
+  "steps": [
+    {"method": "island_aware", "params": {"max_islands": 0, "max_stretch": 0.3}},
+    {"method": "material"}
+  ]
+}

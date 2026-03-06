@@ -1,0 +1,24 @@
+{
+  "name": "Biped Human",
+  "modules": [
+    {"type": "spine", "name": "Spine", "side": "C", "parent_bone": "", "position": [0, 0, 1.0], "options": {"bone_count": 4, "ik_spline": false}},
+    {"type": "neck_head", "name": "NeckHead", "side": "C", "parent_bone": "Spine.chest", "position": [0, 0, 1.6], "options": {"neck_bones": 2}},
+    {"type": "arm", "name": "Arm", "side": "L", "parent_bone": "Spine.chest", "position": [0, 0, 1.55], "options": {"twist_bones": 1, "clavicle": true}},
+    {"type": "arm", "name": "Arm", "side": "R", "parent_bone": "Spine.chest", "position": [0, 0, 1.55], "options": {"twist_bones": 1, "clavicle": true}},
+    {"type": "leg", "name": "Leg", "side": "L", "parent_bone": "Spine.hip", "position": [0, 0, 1.0], "options": {"twist_bones": 1, "foot_roll": true}},
+    {"type": "leg", "name": "Leg", "side": "R", "parent_bone": "Spine.hip", "position": [0, 0, 1.0], "options": {"twist_bones": 1, "foot_roll": true}},
+    {"type": "finger_chain", "name": "Finger_Index", "side": "L", "parent_bone": "Arm.hand", "position": [0.5, -0.03, 1.5], "options": {"bone_count": 3, "finger_name": "Index"}},
+    {"type": "finger_chain", "name": "Finger_Middle", "side": "L", "parent_bone": "Arm.hand", "position": [0.5, -0.03, 1.48], "options": {"bone_count": 3, "finger_name": "Middle"}},
+    {"type": "finger_chain", "name": "Finger_Ring", "side": "L", "parent_bone": "Arm.hand", "position": [0.5, -0.03, 1.46], "options": {"bone_count": 3, "finger_name": "Ring"}},
+    {"type": "finger_chain", "name": "Finger_Pinky", "side": "L", "parent_bone": "Arm.hand", "position": [0.5, -0.03, 1.44], "options": {"bone_count": 3, "finger_name": "Pinky"}},
+    {"type": "finger_chain", "name": "Finger_Thumb", "side": "L", "parent_bone": "Arm.hand", "position": [0.48, -0.05, 1.5], "options": {"bone_count": 2, "finger_name": "Thumb"}},
+    {"type": "eye", "name": "Eye", "side": "L", "parent_bone": "NeckHead.head", "position": [0.03, -0.08, 1.75], "options": {"eyelids": true}},
+    {"type": "eye", "name": "Eye", "side": "R", "parent_bone": "NeckHead.head", "position": [-0.03, -0.08, 1.75], "options": {"eyelids": true}},
+    {"type": "jaw", "name": "Jaw", "side": "C", "parent_bone": "NeckHead.head", "position": [0, -0.03, 1.68], "options": {"upper_jaw": false}}
+  ],
+  "global_options": {
+    "deform_prefix": "DEF-",
+    "control_prefix": "CTRL-",
+    "mechanism_prefix": "MCH-"
+  }
+}

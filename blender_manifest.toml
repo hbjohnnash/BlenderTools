@@ -1,0 +1,13 @@
+schema_version = "1.0.0"
+id = "blender_tools"
+version = "1.0.0"
+name = "BlenderTools"
+tagline = "Comprehensive seam, rigging, skinning, animation & LLM bridge toolkit"
+maintainer = "BlenderTools"
+license = ["SPDX:MIT"]
+type = "add-on"
+blender_version_min = "5.0.0"
+
+[permissions]
+network = "LLM bridge HTTP server for Claude Code integration"
+files = "Load/save rig configs, seam presets, and animation presets"

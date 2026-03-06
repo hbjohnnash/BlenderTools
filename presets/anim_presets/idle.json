@@ -1,0 +1,9 @@
+{
+  "name": "Idle",
+  "type": "idle",
+  "params": {
+    "sway": 0.005,
+    "frame_count": 72,
+    "fps": 24
+  }
+}

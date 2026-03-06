@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.vscode/
+.idea/
+*.blend1
+*.blend2
+BlenderTools.zip
+Transcript.txt
+piston_check.png
+.claude/
