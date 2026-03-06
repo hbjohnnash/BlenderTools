@@ -707,10 +707,16 @@ def snap_ik_to_fk(armature_obj, chain_id):
     """Snap IK target and pole to match the current FK pose.
 
     Call before switching from FK to IK so the pose is preserved.
-    1. Records the current FK bend direction from MCH bones
-    2. Positions IK target at the chain end, resets pole to rest
-    3. Temporarily enables IK, measures the solver's bend direction
-    4. Adjusts pole_angle so the IK solution matches the FK pose
+    Works for any chain_count (2-bone, 3-bone, N-bone):
+
+    1. Read the FK-posed chain geometry (root, mid, tip from MCH bones)
+    2. Position IK target at the chain tip
+    3. Reset pole to rest, then calibrate pole_angle to match FK bend plane
+    4. For 2-bone: exact match. For 3+: approximate (IK distributes differently)
+
+    Hierarchy during IK mode:
+      MCH bones inside chain_count → driven by IK solver (FK off)
+      MCH bones outside (foot/toe) → keep FK active, inherit IK-solved parent
     """
     import math
     from mathutils import Matrix
@@ -738,20 +744,26 @@ def snap_ik_to_fk(armature_obj, chain_id):
     if not ik_mch or not ik_con:
         return
 
-    # Walk up to find the upper bone of the IK chain
+    # Walk up to find the root bone of the IK chain
     upper_pb = ik_mch
     for _ in range(ik_chain_count - 1):
         if upper_pb.parent:
             upper_pb = upper_pb.parent
 
-    # Find the actual mid-bone for bend measurement
-    mid_steps = ik_chain_count // 2
-    mid_pb = ik_mch
-    for _ in range(mid_steps):
-        if mid_pb.parent:
-            mid_pb = mid_pb.parent
+    # Find the mid bone for bend-plane measurement.
+    # For 2-bone: ik_mch.head IS the joint (no walk needed).
+    # For 3+: walk up (chain_count-1)//2 steps to find the middle bone.
+    if ik_chain_count <= 2:
+        mid_point_getter = lambda: ik_mch.head.copy()
+    else:
+        mid_steps = (ik_chain_count - 1) // 2
+        mid_pb = ik_mch
+        for _ in range(mid_steps):
+            if mid_pb.parent:
+                mid_pb = mid_pb.parent
+        mid_point_getter = lambda: mid_pb.head.copy()
 
-    # Snap IK target to the chain end (tail of the IK bone = foot/hand)
+    # Snap IK target to the chain tip (tail of the IK bone = foot/hand)
     ik_target_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
     ik_target_pb = armature_obj.pose.bones.get(ik_target_name)
     if ik_target_pb:
@@ -760,10 +772,7 @@ def snap_ik_to_fk(armature_obj, chain_id):
         ik_target_pb.matrix = mat
         bpy.context.view_layer.update()
 
-    # For 2-bone IK chains (arms/legs), recalibrate pole_angle so
-    # the IK solution exactly reproduces the current FK pose.
-    # For 3+ bone chains this isn't possible (IK solver distributes
-    # rotations differently), so we just reset the pole to rest.
+    # Reset pole to rest position
     ik_pole_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_pole"
     ik_pole_pb = armature_obj.pose.bones.get(ik_pole_name)
     if ik_pole_pb:
@@ -772,10 +781,13 @@ def snap_ik_to_fk(armature_obj, chain_id):
         ik_pole_pb.rotation_euler = (0, 0, 0)
         ik_pole_pb.scale = (1, 1, 1)
 
-    if ik_chain_count == 2 and ik_pole_pb and ik_con.pole_target:
-        # Record FK bend direction
+    # Calibrate pole_angle so IK bend plane matches FK bend plane.
+    # Works for all chain counts: measures the displacement of the mid bone
+    # from the root→tip axis, compares FK vs IK, and corrects pole_angle.
+    if ik_chain_count >= 2 and ik_pole_pb and ik_con.pole_target:
+        # Record FK bend direction (MCH bones currently driven by FK)
         fk_root = upper_pb.head.copy()
-        fk_mid = ik_mch.head.copy()
+        fk_mid = mid_point_getter()
         fk_tip = ik_mch.tail.copy()
         fk_axis = (fk_tip - fk_root)
         if fk_axis.length > 0.0001:
@@ -801,8 +813,9 @@ def snap_ik_to_fk(armature_obj, chain_id):
                 ik_con.influence = 1.0
                 bpy.context.view_layer.update()
 
+                # Measure IK solver's bend direction at the same mid bone
                 ik_root = upper_pb.head.copy()
-                ik_mid = ik_mch.head.copy()
+                ik_mid = mid_point_getter()
                 ik_tip = ik_mch.tail.copy()
                 ik_axis = (ik_tip - ik_root)
                 if ik_axis.length > 0.0001:
@@ -818,7 +831,7 @@ def snap_ik_to_fk(armature_obj, chain_id):
                             correction = -correction
                         ik_con.pole_angle = saved_pole + correction
 
-                # Restore
+                # Restore constraints to pre-snap state
                 ik_con.influence = saved_ik_inf
                 for c, inf in saved_fk:
                     c.influence = inf
