@@ -36,9 +36,9 @@ def _scan_data_to_props(armature_obj, scan_data):
         item.module_type = info["module_type"]
         item.side = info["side"]
         item.bone_count = info["bone_count"]
-        item.ik_enabled = info["module_type"] in ("arm", "leg")
+        item.ik_enabled = info["module_type"] in ("arm", "leg", "wing")
         item.fk_enabled = True
-        item.ik_snap = info["module_type"] in ("arm", "leg")
+        item.ik_snap = info["module_type"] in ("arm", "leg", "wing")
 
     sd.unmapped_bones = ",".join(scan_data.get("unmapped_bones", []))
 

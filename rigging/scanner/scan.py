@@ -1,7 +1,8 @@
-"""Core scan orchestrator — combines name maps and heuristics."""
+"""Core scan orchestrator — combines name maps, BT convention, and heuristics."""
 
 from .name_maps import detect_skeleton_type, apply_name_map
 from .heuristics import analyze_by_heuristics
+from .bone_naming import parse_bt_name
 
 
 def scan_skeleton(armature_obj):
@@ -9,7 +10,7 @@ def scan_skeleton(armature_obj):
 
     Returns:
         dict with keys:
-        - skeleton_type: str (e.g. "mixamo", "ue_mannequin", "unknown")
+        - skeleton_type: str (e.g. "mixamo", "ue_mannequin", "bt_convention", "unknown")
         - confidence: float (0.0–1.0)
         - bones: dict {bone_name: {role, side, module_type, chain_id, confidence, source}}
         - chains: dict {chain_id: {module_type, side, bones: [bone_name, ...], bone_count}}
@@ -18,19 +19,36 @@ def scan_skeleton(armature_obj):
     """
     bone_names = [b.name for b in armature_obj.data.bones]
 
-    # Step 1: Try name maps
-    skeleton_type, confidence = detect_skeleton_type(bone_names)
+    # Step 0: Detect BT-convention bones (instant, 100% confidence)
+    bt_bones = _detect_bt_convention(armature_obj)
+    if bt_bones:
+        bt_names = set(bt_bones.keys())
+        remaining = [n for n in bone_names if n not in bt_names]
+        # If most bones are BT-named, report as bt_convention type
+        if len(bt_bones) > len(remaining):
+            skeleton_type = "bt_convention"
+            confidence = 1.0
+        else:
+            skeleton_type, confidence = detect_skeleton_type(bone_names)
+    else:
+        bt_names = set()
+        remaining = bone_names
+        skeleton_type, confidence = detect_skeleton_type(bone_names)
+
+    # Step 1: Try name maps on non-BT bones
     mapped_bones = {}
-    if skeleton_type != "unknown":
-        mapped_bones = apply_name_map(bone_names, skeleton_type)
+    if skeleton_type not in ("unknown", "bt_convention"):
+        mapped_bones = apply_name_map(remaining, skeleton_type)
 
-    # Step 2: Heuristic fallback for unmapped bones
-    heuristic_bones = analyze_by_heuristics(armature_obj, set(mapped_bones.keys()))
+    # Step 2: Heuristic fallback for remaining unmapped bones
+    already_mapped = bt_names | set(mapped_bones.keys())
+    heuristic_bones = analyze_by_heuristics(armature_obj, already_mapped)
 
-    # Merge results (name map takes priority)
+    # Merge results (BT convention > name map > heuristics)
     all_bones = {}
     all_bones.update(heuristic_bones)
     all_bones.update(mapped_bones)
+    all_bones.update(bt_bones)
 
     # Step 3: Build chain summaries
     chains = {}
@@ -64,15 +82,103 @@ def scan_skeleton(armature_obj):
     }
 
 
-def _sort_by_hierarchy(bone_names, bone_lookup):
-    """Sort bone names by hierarchy depth (root first)."""
-    def depth(name):
-        b = bone_lookup.get(name)
-        if not b:
-            return 0
-        d = 0
+def _detect_bt_convention(armature_obj):
+    """Detect bones named with the BT_{Type}_{Side}_{Role} convention.
+
+    Groups bones into chains by (type, side). Disconnected sub-chains
+    of the same type+side are numbered: type_01_side, type_02_side.
+    """
+    bone_lookup = {b.name: b for b in armature_obj.data.bones}
+    parsed = {}
+    for bone in armature_obj.data.bones:
+        info = parse_bt_name(bone.name)
+        if info:
+            parsed[bone.name] = info
+
+    if not parsed:
+        return {}
+
+    # Group by (type, side)
+    groups = {}
+    for name, info in parsed.items():
+        key = (info['type'], info['side'])
+        groups.setdefault(key, []).append(name)
+
+    # Split disconnected sub-chains within each group
+    result = {}
+    for (type_internal, side), names in groups.items():
+        sub_chains = _split_by_hierarchy(names, bone_lookup)
+
+        if len(sub_chains) == 1:
+            chain_id = f"{type_internal}_{side}"
+            for name in sub_chains[0]:
+                info = parsed[name]
+                result[name] = {
+                    "role": info['role'],
+                    "side": side,
+                    "module_type": type_internal,
+                    "chain_id": chain_id,
+                    "confidence": 1.0,
+                    "source": "bt_convention",
+                }
+        else:
+            for idx, chain_names in enumerate(sub_chains):
+                chain_id = f"{type_internal}_{idx + 1:02d}_{side}"
+                for name in chain_names:
+                    info = parsed[name]
+                    result[name] = {
+                        "role": info['role'],
+                        "side": side,
+                        "module_type": type_internal,
+                        "chain_id": chain_id,
+                        "confidence": 1.0,
+                        "source": "bt_convention",
+                    }
+
+    return result
+
+
+def _split_by_hierarchy(bone_names, bone_lookup):
+    """Split bone names into connected parent-child chains."""
+    bone_set = set(bone_names)
+    used = set()
+    chains = []
+
+    # Sort by depth (roots first)
+    sorted_names = sorted(bone_names, key=lambda n: _depth(n, bone_lookup))
+
+    for name in sorted_names:
+        if name in used:
+            continue
+        chain = [name]
+        used.add(name)
+        _collect_descendants(name, bone_set, bone_lookup, used, chain)
+        chains.append(chain)
+
+    return chains
+
+
+def _collect_descendants(name, bone_set, bone_lookup, used, chain):
+    bone = bone_lookup.get(name)
+    if not bone:
+        return
+    for child in bone.children:
+        if child.name in bone_set and child.name not in used:
+            chain.append(child.name)
+            used.add(child.name)
+            _collect_descendants(child.name, bone_set, bone_lookup, used, chain)
+
+
+def _depth(name, bone_lookup):
+    b = bone_lookup.get(name)
+    d = 0
+    if b:
         while b.parent:
             d += 1
             b = b.parent
-        return d
-    return sorted(bone_names, key=depth)
+    return d
+
+
+def _sort_by_hierarchy(bone_names, bone_lookup):
+    """Sort bone names by hierarchy depth (root first)."""
+    return sorted(bone_names, key=lambda n: _depth(n, bone_lookup))

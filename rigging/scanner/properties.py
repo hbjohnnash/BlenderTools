@@ -14,6 +14,11 @@ BONE_MODULE_TYPE_ITEMS = [
     ('arm', "Arm", "Arm chain (FK+IK)"),
     ('leg', "Leg", "Leg chain (FK+IK)"),
     ('neck_head', "Neck/Head", "Neck and head"),
+    ('tail', "Tail", "Tail chain"),
+    ('jaw', "Jaw", "Jaw bone(s)"),
+    ('eye', "Eye", "Eye bone"),
+    ('wing', "Wing", "Wing chain (FK+IK)"),
+    ('tentacle', "Tentacle", "Tentacle chain"),
     ('finger', "Finger", "Finger chain"),
     ('generic', "Generic", "Generic FK chain"),
 ]

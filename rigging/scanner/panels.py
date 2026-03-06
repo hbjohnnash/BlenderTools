@@ -46,9 +46,10 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
 
         sd = obj.bt_scan
 
-        # Scan button
-        row = layout.row()
+        # Name Bones + Scan buttons
+        row = layout.row(align=True)
         row.scale_y = 1.3
+        row.operator("bt.bone_naming_overlay", icon='SORTALPHA')
         row.operator("bt.scan_skeleton", icon='VIEWZOOM')
 
         if not sd.is_scanned:
