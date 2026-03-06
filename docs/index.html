@@ -752,7 +752,7 @@ python blender_api.py seam --object Cube --preset hard_surface</code></pre>
   <div class="callout-title">CTRL &rarr; MCH &rarr; DEF</div>
   <strong>All 13 rig modules</strong> and the wrap rig use the same three-tier bone architecture:<br><br>
   <strong>DEF bones</strong> (deform): Only carry <code>COPY_TRANSFORMS</code> from their paired MCH bone. Never carry rig logic. <code>use_deform=True</code>.<br>
-  <strong>MCH bones</strong> (mechanism): Carry all rig logic (FK copy, IK, STRETCH_TO, etc.). Parented to their CTRLs. <code>use_deform=False</code>.<br>
+  <strong>MCH bones</strong> (mechanism): Carry all rig logic (FK copy, IK, DAMPED_TRACK, STRETCH_TO, etc.). Parented to their CTRLs. <code>use_deform=False</code>.<br>
   <strong>CTRL bones</strong> (controls): User-facing control bones for animation. <code>use_deform=False</code>.<br><br>
   This means rig logic <strong>never touches</strong> your deform bones directly. DEF bones always follow MCH via a clean COPY_TRANSFORMS constraint.
 </div>
@@ -767,8 +767,28 @@ python blender_api.py seam --object Cube --preset hard_surface</code></pre>
   <tr><td>Tail</td><td><code>BT_Tail_</code></td></tr>
   <tr><td>Piston</td><td><code>BT_Piston_</code></td></tr>
   <tr><td>Wheel</td><td><code>BT_Wheel_</code></td></tr>
+  <tr><td>Wing</td><td><code>BT_Wing_</code></td></tr>
+  <tr><td>Tentacle</td><td><code>BT_Tentacle_</code></td></tr>
+  <tr><td>Finger Chain</td><td><code>BT_Finger_</code></td></tr>
+  <tr><td>Jaw</td><td><code>BT_Jaw_</code></td></tr>
+  <tr><td>Eye</td><td><code>BT_Eye_</code></td></tr>
+  <tr><td>Custom Chain</td><td><code>BT_Chain_</code></td></tr>
   <tr><td>Wrap Rig</td><td><code>BT_Wrap_</code></td></tr>
 </table>
+
+<h2>Bone Naming Convention</h2>
+<p>For custom skeletons, bones can be named using the <strong>BT convention</strong>: <code>BT_{TypeCamel}_{Side}_{Role}</code>. CamelCase type names (no underscores) ensure unambiguous parsing via <code>name.split('_', 3)</code>.</p>
+<table>
+  <tr><th>Example</th><th>Type</th><th>Side</th><th>Role</th></tr>
+  <tr><td><code>BT_Spine_C_hips</code></td><td>Spine</td><td>C</td><td>hips</td></tr>
+  <tr><td><code>BT_Arm_L_upper_arm</code></td><td>Arm</td><td>L</td><td>upper_arm</td></tr>
+  <tr><td><code>BT_NeckHead_C_neck</code></td><td>NeckHead</td><td>C</td><td>neck</td></tr>
+  <tr><td><code>BT_Leg_R_foot</code></td><td>Leg</td><td>R</td><td>foot</td></tr>
+</table>
+<div class="callout tip">
+  <div class="callout-title">Name Bones Overlay</div>
+  Click <strong>&ldquo;Name Bones&rdquo;</strong> in the Skeleton Scanner panel to activate an interactive overlay. Hover over any bone to see a clickable circle (white = unlabeled, green = BT-named). Click to open a dialog with Type, Side, and Role dropdowns that renames the bone automatically. The scanner auto-detects BT-named bones at 100% confidence before trying name maps or heuristics.
+</div>
 
 <h2>Four Workflows</h2>
 
@@ -810,7 +830,8 @@ python blender_api.py seam --object Cube --preset hard_surface</code></pre>
 <ol class="steps">
   <li>Select the armature</li>
   <li>Open Rigging &gt; <strong>Skeleton Scanner</strong></li>
-  <li>Click <strong>"Scan Skeleton"</strong> &mdash; auto-detects bone roles via name maps + position heuristics</li>
+  <li><strong>(Optional)</strong> Click <strong>&ldquo;Name Bones&rdquo;</strong> to label bones with the BT convention via interactive overlay</li>
+  <li>Click <strong>"Scan Skeleton"</strong> &mdash; auto-detects bone roles via BT convention (Step 0), name maps, then position heuristics</li>
   <li>Review chains and bone assignments &mdash; edit module types, roles, or skip bones. Configure FK/IK/Snap per chain.</li>
   <li>Click <strong>"Apply Wrap Rig"</strong> &mdash; three-layer rig (CTRL &rarr; MCH &rarr; DEF) wraps the original bones with FK/IK controls</li>
 </ol>
@@ -821,6 +842,7 @@ python blender_api.py seam --object Cube --preset hard_surface</code></pre>
 
 <table>
   <tr><th>Skeleton Type</th><th>Detection</th><th>Bones Mapped</th></tr>
+  <tr><td><strong>BT Convention</strong></td><td><code>BT_{Type}_{Side}_{Role}</code> parsing</td><td>100% confidence, instant detection (Step 0)</td></tr>
   <tr><td><strong>Mixamo</strong></td><td>Name map (~55 entries)</td><td>Auto-detected at 40% match threshold</td></tr>
   <tr><td><strong>UE Mannequin</strong></td><td>Name map (~55 entries)</td><td>Auto-detected at 40% match threshold</td></tr>
   <tr><td><strong>Unknown</strong></td><td>Position/hierarchy heuristics</td><td>Spine, arms, legs inferred from bone geometry</td></tr>
@@ -919,6 +941,8 @@ python blender_api.py seam --object Cube --preset hard_surface</code></pre>
   <tr><td><code>bt.batch_skip_selected</code></td><td>Skip/unskip chains by bone selection</td></tr>
   <tr><td><code>bt.batch_skip_pattern</code></td><td>Skip/unskip chains by glob pattern</td></tr>
   <tr><td><code>bt.batch_unskip_all</code></td><td>Unskip all chains at once</td></tr>
+  <tr><td><code>bt.bone_naming_overlay</code></td><td>Interactive bone naming overlay (BT convention)</td></tr>
+  <tr><td><code>bt.set_bone_label</code></td><td>Dialog to set Type/Side/Role on a bone (used by overlay)</td></tr>
 </table>
 
 <h2>Module Types</h2>
@@ -942,7 +966,7 @@ python blender_api.py seam --object Cube --preset hard_surface</code></pre>
 <h3>Mechanical Modules</h3>
 <table>
   <tr><th>Module</th><th>Description</th><th>Key Options</th><th>Bone Slots</th></tr>
-  <tr><td><code>piston</code> <span class="badge badge-mechanical">mech</span></td><td>Linear piston with stretch-to</td><td><code>stroke_length</code>, <code>direction</code></td><td>Cylinder, Rod</td></tr>
+  <tr><td><code>piston</code> <span class="badge badge-mechanical">mech</span></td><td>Linear piston with DAMPED_TRACK (rigid) or STRETCH_TO</td><td><code>stroke_length</code>, <code>direction</code>, <code>stretch_mode</code></td><td>Cylinder, Rod, Rod_Parent</td></tr>
   <tr><td><code>wheel</code> <span class="badge badge-mechanical">mech</span></td><td>Rotation-based wheel + axle</td><td><code>radius</code></td><td>Wheel, Axle</td></tr>
 </table>
 
@@ -966,14 +990,15 @@ python blender_api.py seam --object Cube --preset hard_surface</code></pre>
 </ul>
 
 <h3>Piston Architecture</h3>
-<p>The piston uses a fixed, deterministic three-tier architecture that works generically for any setup:</p>
+<p>The piston uses a fixed, deterministic three-tier architecture. Default constraint is <strong>DAMPED_TRACK</strong> (rotation only, rigid). Configurable <code>stretch_mode</code>: <code>"none"</code> (default, DAMPED_TRACK), <code>"cylinder"</code>, <code>"rod"</code>, or <code>"both"</code> (uses STRETCH_TO for selected parts).</p>
 <pre><code>CTRL-Base (inherits cylinder&rsquo;s skeleton parent)
-   +-- MCH-Cylinder  <span class="cm">--STRETCH_TO--&gt;</span>  CTRL-Target
-CTRL-Target (inherits rod&rsquo;s skeleton parent)
-   +-- MCH-Rod       <span class="cm">--STRETCH_TO--&gt;</span>  CTRL-Base
+   +-- MCH-Cylinder  <span class="cm">--DAMPED_TRACK--&gt;</span>  CTRL-Target
+CTRL-Target (inherits rod_parent&rsquo;s skeleton parent)
+   +-- MCH-Rod       <span class="cm">--DAMPED_TRACK--&gt;</span>  CTRL-Base
 
 DEF-Cylinder  <span class="cm">&lt;-- COPY_TRANSFORMS --</span>  MCH-Cylinder
 DEF-Rod       <span class="cm">&lt;-- COPY_TRANSFORMS --</span>  MCH-Rod</code></pre>
+<p><strong>Bone slots:</strong> Cylinder (outer body), Rod (inner shaft), Rod_Parent (explicit parent for CTRL-Target).</p>
 <div class="callout tip">
   <div class="callout-title">Generic piston usage</div>
   Works for any scenario: <strong>same-parent</strong> (decorative pistons), <strong>cross-joint</strong> (shock absorbers spanning knee/elbow), or <strong>free-standing</strong>. MCH bones are always parented to CTRLs; CTRLs inherit the mapped bone&rsquo;s skeleton parent for automatic movement.
@@ -1542,7 +1567,8 @@ python blender_api.py export-ue --armature Armature --no-mesh --separate-anim</c
   <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
   <tr><td><code>stroke_length</code></td><td>float</td><td>0.3</td><td>Piston stroke distance</td></tr>
   <tr><td><code>direction</code></td><td>[x,y,z]</td><td>[0,0,1]</td><td>Stroke axis</td></tr>
-  <tr><td><code>bone_mapping</code></td><td>object</td><td>{}</td><td>Map existing bones: <code>{"Cylinder":"...", "Rod":"..."}</code></td></tr>
+  <tr><td><code>stretch_mode</code></td><td>string</td><td>"none"</td><td>Stretch behavior: <code>"none"</code> (DAMPED_TRACK), <code>"cylinder"</code>, <code>"rod"</code>, <code>"both"</code> (STRETCH_TO)</td></tr>
+  <tr><td><code>bone_mapping</code></td><td>object</td><td>{}</td><td>Map existing bones: <code>{"Cylinder":"...", "Rod":"...", "Rod_Parent":"..."}</code></td></tr>
 </table>
 
 <h3>wheel</h3>

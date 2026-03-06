@@ -7,7 +7,7 @@ BlenderTools uses a **modular rigging system**. Each body part is a self-contain
 **All 13 modules use a universal three-tier architecture: CTRL -> MCH -> DEF.**
 
 - **DEF bones** (deform): Only carry `COPY_TRANSFORMS` from their paired MCH bone. Never carry rig logic. `use_deform=True`.
-- **MCH bones** (mechanism): Carry all rig logic (FK copy, IK, TRACK_TO, STRETCH_TO, etc.). Parented to their CTRLs. `use_deform=False`.
+- **MCH bones** (mechanism): Carry all rig logic (FK copy, IK, DAMPED_TRACK, STRETCH_TO, etc.). Parented to their CTRLs. `use_deform=False`.
 - **CTRL bones** (controls): User-facing control bones for animation. `use_deform=False`.
 
 Each module uses its own constraint prefix: `BT_Spine_`, `BT_Arm_`, `BT_Leg_`, `BT_Piston_`, `BT_Wheel_`, etc.
@@ -43,15 +43,24 @@ The overlay is hidden in pose mode.
 For imported skeletons (Mixamo, UE Mannequin, or any other source) that already have deform bones but no control rig:
 1. Select the armature
 2. Open Rigging > Skeleton Scanner
-3. Click **"Scan Skeleton"** — auto-detects bone roles via name maps + position heuristics
-4. Review chains and bone assignments in the panel — edit module types, roles, or skip bones
-5. Click **"Apply Wrap Rig"** — FK/IK controls are generated around original bones
-6. Original bones are **never renamed or deleted**
+3. **(Optional)** Click **"Name Bones"** to label bones with the BT convention via interactive overlay
+4. Click **"Scan Skeleton"** — auto-detects bone roles via BT convention (Step 0), name maps, then position heuristics
+5. Review chains and bone assignments in the panel — edit module types, roles, or skip bones
+6. Click **"Apply Wrap Rig"** — FK/IK controls are generated around original bones
+7. Original bones are **never renamed or deleted**
 
 Supported skeleton types:
+- **BT Convention** — `BT_{TypeCamel}_{Side}_{Role}` parsing, 100% confidence, instant detection (Step 0)
 - **Mixamo** (~55 bone map entries, auto-detected)
 - **UE Mannequin** (~55 bone map entries, auto-detected)
 - **Unknown** — falls back to position/hierarchy heuristics
+
+### Bone Naming Convention
+Bones can be named using the BT convention: `BT_{TypeCamel}_{Side}_{Role}`. CamelCase type names (no underscores) for unambiguous parsing via `name.split('_', 3)`.
+
+Examples: `BT_Spine_C_hips`, `BT_Arm_L_upper_arm`, `BT_NeckHead_C_neck`, `BT_Leg_R_foot`
+
+The **Name Bones overlay** (`bt.bone_naming_overlay`) provides an interactive viewport tool: hover over bones to see clickable circles (white=unlabeled, green=BT-named), click to open a dialog with Type/Side/Role dropdowns that renames the bone automatically.
 
 Generated bone naming:
 - `CTRL-Wrap_{chain}_{mode}_{role}` — Control bones (e.g. `CTRL-Wrap_arm_L_FK_upper_arm`)
@@ -141,19 +150,20 @@ IK pole angles are automatically calibrated using a depsgraph-based approach: se
 ### Mechanical
 | Module | Description | Key Options | Bone Slots |
 |--------|-------------|-------------|------------|
-| `piston` | Linear piston with stretch | `stroke_length`, `direction` | Cylinder, Rod |
+| `piston` | Linear piston with DAMPED_TRACK (rigid) or STRETCH_TO | `stroke_length`, `direction`, `stretch_mode` | Cylinder, Rod, Rod_Parent |
 | `wheel` | Rotation-based wheel + axle | `radius` | Wheel, Axle |
 
 ### Piston Architecture
+Default constraint is **DAMPED_TRACK** (rotation only, rigid). Configurable `stretch_mode`: `"none"` (default), `"cylinder"`, `"rod"`, or `"both"` (uses STRETCH_TO).
 ```
 CTRL-Base (inherits cylinder's parent)
-   +-- MCH-Cylinder --STRETCH_TO--> CTRL-Target
-CTRL-Target (inherits rod's parent)
-   +-- MCH-Rod --STRETCH_TO--> CTRL-Base
+   +-- MCH-Cylinder --DAMPED_TRACK--> CTRL-Target
+CTRL-Target (inherits rod_parent's parent)
+   +-- MCH-Rod --DAMPED_TRACK--> CTRL-Base
 DEF-Cylinder <-- COPY_TRANSFORMS <-- MCH-Cylinder
 DEF-Rod      <-- COPY_TRANSFORMS <-- MCH-Rod
 ```
-Works generically: same-parent (decorative), cross-joint (shock absorber), or free-standing. Bone slots: Cylinder (outer body), Rod (inner shaft).
+Works generically: same-parent (decorative), cross-joint (shock absorber), or free-standing. Bone slots: Cylinder (outer body), Rod (inner shaft), Rod_Parent (explicit parent for CTRL-Target).
 
 ### Wheel Architecture
 ```
@@ -228,6 +238,8 @@ When using IK legs, the floor contact system prevents feet from going below a co
 - `bt.clear_scan_data` — Clear wrap rig + all scan data
 - `bt.toggle_fk_ik` — Switch any IK-capable chain between FK and IK mode (with optional snapping)
 - `bt.bake_to_def` — Bake animation onto DEF bones for clean export
+- `bt.bone_naming_overlay` — Interactive bone naming overlay (BT convention)
+- `bt.set_bone_label` — Dialog to set Type/Side/Role on a bone
 - `bt.toggle_floor_contact` — Add/remove floor constraints on leg IK targets
 - `bt.update_floor_level` — Update floor Z level on existing constraints
 - `bt.batch_skip_selected` — Skip/unskip chains by bone selection
