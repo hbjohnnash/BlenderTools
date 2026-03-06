@@ -1,5 +1,7 @@
 """Skeleton scanner operators."""
 
+import math
+
 import bpy
 from .scan import scan_skeleton
 from .wrap_assembly import (
@@ -9,6 +11,7 @@ from .wrap_assembly import (
 from .floor_contact import (
     setup_floor_contact, remove_floor_contact, toggle_toe_bend_for_chain,
 )
+from ...core.constants import WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX
 
 
 def _scan_data_to_props(armature_obj, scan_data):
@@ -320,6 +323,160 @@ class BT_OT_ToggleIKLimits(bpy.types.Operator):
         return {'FINISHED'}
 
 
+def _find_mch_for_selected(context):
+    """Map the active pose bone to its MCH counterpart. Returns (mch_pbone, role) or (None, None)."""
+    obj = context.active_object
+    if not obj or obj.type != 'ARMATURE' or not obj.bt_scan.has_wrap_rig:
+        return None, None
+    pb = context.active_pose_bone
+    if not pb:
+        return None, None
+
+    sd = obj.bt_scan
+    name = pb.name
+
+    # Direct MCH bone selected
+    if name.startswith(WRAP_MCH_PREFIX):
+        return pb, name[len(WRAP_MCH_PREFIX):]
+
+    # CTRL-Wrap bone — extract chain_id + role suffix, map to MCH
+    if name.startswith(WRAP_CTRL_PREFIX):
+        suffix = name[len(WRAP_CTRL_PREFIX):]
+        # Strip FK_ or IK_ or Spline_ prefix from suffix to get chain_role
+        for tag in ("FK_", "IK_", "Spline_"):
+            if tag in suffix:
+                idx = suffix.index(tag)
+                chain_part = suffix[:idx].rstrip("_")
+                role_part = suffix[idx + len(tag):]
+                mch_name = f"{WRAP_MCH_PREFIX}{chain_part}_{role_part}"
+                mch_pb = obj.pose.bones.get(mch_name)
+                if mch_pb:
+                    return mch_pb, f"{chain_part}_{role_part}"
+        return None, None
+
+    # DEF (original) bone — find MCH via scan data
+    for bi in sd.bones:
+        if bi.bone_name == name and not bi.skip:
+            mch_name = f"{WRAP_MCH_PREFIX}{bi.chain_id}_{bi.role}"
+            mch_pb = obj.pose.bones.get(mch_name)
+            if mch_pb:
+                return mch_pb, f"{bi.chain_id}_{bi.role}"
+    return None, None
+
+
+class BT_OT_EditBoneIKLimits(bpy.types.Operator):
+    bl_idname = "bt.edit_bone_ik_limits"
+    bl_label = "Edit IK Limits"
+    bl_description = "Adjust IK rotation limits for the selected bone"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    # Per-axis limits (degrees for UI, converted to radians internally)
+    min_x: bpy.props.FloatProperty(name="Min X", default=0, min=-180, max=0, subtype='ANGLE')
+    max_x: bpy.props.FloatProperty(name="Max X", default=0, min=0, max=180, subtype='ANGLE')
+    min_y: bpy.props.FloatProperty(name="Min Y", default=0, min=-180, max=0, subtype='ANGLE')
+    max_y: bpy.props.FloatProperty(name="Max Y", default=0, min=0, max=180, subtype='ANGLE')
+    min_z: bpy.props.FloatProperty(name="Min Z", default=0, min=-180, max=0, subtype='ANGLE')
+    max_z: bpy.props.FloatProperty(name="Max Z", default=0, min=0, max=180, subtype='ANGLE')
+    stiffness_x: bpy.props.FloatProperty(name="Stiffness X", default=0, min=0, max=0.999)
+    stiffness_y: bpy.props.FloatProperty(name="Stiffness Y", default=0, min=0, max=0.999)
+    stiffness_z: bpy.props.FloatProperty(name="Stiffness Z", default=0, min=0, max=0.999)
+    use_limit_x: bpy.props.BoolProperty(name="Limit X", default=True)
+    use_limit_y: bpy.props.BoolProperty(name="Limit Y", default=True)
+    use_limit_z: bpy.props.BoolProperty(name="Limit Z", default=True)
+
+    # Internal — stores MCH bone name for apply
+    _mch_name: str = ""
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return (obj and obj.type == 'ARMATURE' and obj.bt_scan.has_wrap_rig
+                and context.active_pose_bone is not None)
+
+    def invoke(self, context, event):
+        mch_pb, label = _find_mch_for_selected(context)
+        if not mch_pb:
+            self.report({'WARNING'}, "No MCH bone found for selected bone")
+            return {'CANCELLED'}
+
+        self._mch_name = mch_pb.name
+        # Read current values from MCH bone
+        self.min_x = mch_pb.ik_min_x
+        self.max_x = mch_pb.ik_max_x
+        self.min_y = mch_pb.ik_min_y
+        self.max_y = mch_pb.ik_max_y
+        self.min_z = mch_pb.ik_min_z
+        self.max_z = mch_pb.ik_max_z
+        self.stiffness_x = mch_pb.ik_stiffness_x
+        self.stiffness_y = mch_pb.ik_stiffness_y
+        self.stiffness_z = mch_pb.ik_stiffness_z
+        self.use_limit_x = mch_pb.use_ik_limit_x
+        self.use_limit_y = mch_pb.use_ik_limit_y
+        self.use_limit_z = mch_pb.use_ik_limit_z
+
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text=self._mch_name, icon='BONE_DATA')
+
+        # X axis
+        box = layout.box()
+        row = box.row()
+        row.prop(self, "use_limit_x")
+        row.label(text="X Axis")
+        if self.use_limit_x:
+            row = box.row(align=True)
+            row.prop(self, "min_x", text="Min")
+            row.prop(self, "max_x", text="Max")
+            box.prop(self, "stiffness_x", slider=True)
+
+        # Y axis
+        box = layout.box()
+        row = box.row()
+        row.prop(self, "use_limit_y")
+        row.label(text="Y Axis")
+        if self.use_limit_y:
+            row = box.row(align=True)
+            row.prop(self, "min_y", text="Min")
+            row.prop(self, "max_y", text="Max")
+            box.prop(self, "stiffness_y", slider=True)
+
+        # Z axis
+        box = layout.box()
+        row = box.row()
+        row.prop(self, "use_limit_z")
+        row.label(text="Z Axis")
+        if self.use_limit_z:
+            row = box.row(align=True)
+            row.prop(self, "min_z", text="Min")
+            row.prop(self, "max_z", text="Max")
+            box.prop(self, "stiffness_z", slider=True)
+
+    def execute(self, context):
+        armature = context.active_object
+        mch_pb = armature.pose.bones.get(self._mch_name)
+        if not mch_pb:
+            self.report({'WARNING'}, f"MCH bone '{self._mch_name}' not found")
+            return {'CANCELLED'}
+
+        mch_pb.ik_min_x = self.min_x
+        mch_pb.ik_max_x = self.max_x
+        mch_pb.ik_min_y = self.min_y
+        mch_pb.ik_max_y = self.max_y
+        mch_pb.ik_min_z = self.min_z
+        mch_pb.ik_max_z = self.max_z
+        mch_pb.ik_stiffness_x = self.stiffness_x
+        mch_pb.ik_stiffness_y = self.stiffness_y
+        mch_pb.ik_stiffness_z = self.stiffness_z
+        mch_pb.use_ik_limit_x = self.use_limit_x
+        mch_pb.use_ik_limit_y = self.use_limit_y
+        mch_pb.use_ik_limit_z = self.use_limit_z
+
+        self.report({'INFO'}, f"IK limits updated: {self._mch_name}")
+        return {'FINISHED'}
+
+
 class BT_OT_ClearWrapRig(bpy.types.Operator):
     bl_idname = "bt.clear_wrap_rig"
     bl_label = "Clear Wrap Rig"
@@ -556,6 +713,7 @@ classes = (
     BT_OT_ApplyWrapRig,
     BT_OT_ToggleFKIK,
     BT_OT_ToggleIKLimits,
+    BT_OT_EditBoneIKLimits,
     BT_OT_ClearWrapRig,
     BT_OT_ClearScanData,
     BT_OT_BatchSkipSelected,
@@ -567,11 +725,22 @@ classes = (
 )
 
 
+def _draw_pose_context_menu(self, context):
+    """Append 'Edit IK Limits' to the pose mode right-click menu."""
+    obj = context.active_object
+    if (obj and obj.type == 'ARMATURE' and obj.bt_scan.has_wrap_rig
+            and context.active_pose_bone):
+        self.layout.separator()
+        self.layout.operator("bt.edit_bone_ik_limits", icon='CON_ROTLIMIT')
+
+
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+    bpy.types.VIEW3D_MT_pose_context_menu.append(_draw_pose_context_menu)
 
 
 def unregister():
+    bpy.types.VIEW3D_MT_pose_context_menu.remove(_draw_pose_context_menu)
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

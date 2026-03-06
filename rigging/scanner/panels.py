@@ -94,7 +94,7 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
                 )
                 op.chain_id = active_chain.chain_id
                 op.mode = 'IK'
-                # IK Limits toggle
+                # IK Limits toggle + per-bone edit
                 if active_chain.ik_enabled:
                     op = row.operator(
                         "bt.toggle_ik_limits",
@@ -103,6 +103,7 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
                         depress=active_chain.ik_limits,
                     )
                     op.chain_id = active_chain.chain_id
+                    row.operator("bt.edit_bone_ik_limits", text="", icon='PREFERENCES')
         else:
             # ── Chain Config ──
             box = layout.box()
