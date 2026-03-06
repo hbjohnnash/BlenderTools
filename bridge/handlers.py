@@ -463,6 +463,12 @@ def _rig_toggle_fk_ik(body):
         mode_name = "IK" if use_ik else "FK"
         return {"success": True, "chain_id": chain_id, "mode": mode_name}, None
 
+    # Temporarily disable IK limits during snap so solver can reproduce FK pose
+    limits_were_on = chain_item.ik_limits and use_ik
+    if limits_were_on:
+        from ..rigging.scanner.wrap_assembly import toggle_ik_limits
+        toggle_ik_limits(arm, chain_id, enable=False)
+
     # Snap controls before switching so the pose is preserved
     if chain_item.ik_type == 'SPLINE':
         from ..rigging.scanner.wrap_assembly import snap_fk_to_ik, snap_spline_to_fk
@@ -481,7 +487,6 @@ def _rig_toggle_fk_ik(body):
     chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
 
     # Find which MCH bones are inside the IK chain range.
-    # Bones outside (e.g. foot/toe below IK target) keep FK active.
     ik_bone_set = set()
     for bone_item in chain_bones:
         mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
@@ -510,6 +515,13 @@ def _rig_toggle_fk_ik(body):
                     con.influence = 0.0 if use_ik else 1.0
             elif con.type in ('IK', 'SPLINE_IK'):
                 con.influence = 1.0 if use_ik else 0.0
+
+    # Let solver settle without limits, then re-enable
+    if limits_were_on:
+        import bpy
+        bpy.context.view_layer.update()
+        from ..rigging.scanner.wrap_assembly import toggle_ik_limits
+        toggle_ik_limits(arm, chain_id, enable=True)
 
     chain_item.ik_active = use_ik
 

@@ -209,15 +209,20 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
         if use_ik == chain_item.ik_active:
             return {'FINISHED'}
 
+        # Temporarily disable IK limits during snap so the solver can
+        # reproduce the FK pose without being blocked by joint limits.
+        # Limits are re-enabled after the solver settles.
+        limits_were_on = chain_item.ik_limits and use_ik
+        if limits_were_on:
+            toggle_ik_limits(armature, self.chain_id, enable=False)
+
         # Snap controls BEFORE switching so the pose is preserved
         if chain_item.ik_type == 'SPLINE':
-            # Spline IK: snap hooks to FK pose, or FK controls to spline pose
             if use_ik:
                 snap_spline_to_fk(armature, self.chain_id)
             else:
                 snap_fk_to_ik(armature, self.chain_id)
         elif chain_item.ik_snap:
-            # Standard 2-bone IK: snap target/pole to FK, or FK to IK
             if use_ik:
                 snap_ik_to_fk(armature, self.chain_id)
             else:
@@ -236,7 +241,6 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
                 continue
             for con in mch_pbone.constraints:
                 if con.type in ('IK', 'SPLINE_IK') and con.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                    # Walk up from the IK bone to find all bones in chain_count
                     walk = mch_pbone
                     for _ in range(con.chain_count):
                         if walk:
@@ -253,12 +257,15 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
                 if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
                     continue
                 if con.type == 'COPY_TRANSFORMS':
-                    # Only disable FK for bones inside the IK chain range
                     if in_ik_range:
                         con.influence = 0.0 if use_ik else 1.0
-                    # Bones outside IK range always keep FK on
                 elif con.type in ('IK', 'SPLINE_IK'):
                     con.influence = 1.0 if use_ik else 0.0
+
+        # Let solver settle without limits, then re-enable
+        if limits_were_on:
+            bpy.context.view_layer.update()
+            toggle_ik_limits(armature, self.chain_id, enable=True)
 
         # Update runtime state (build config fk_enabled/ik_enabled stays untouched)
         chain_item.ik_active = use_ik
