@@ -384,8 +384,7 @@ class BT_OT_EditBoneIKLimits(bpy.types.Operator):
     use_limit_y: bpy.props.BoolProperty(name="Limit Y", default=True)
     use_limit_z: bpy.props.BoolProperty(name="Limit Z", default=True)
 
-    # Internal — stores MCH bone name for apply
-    _mch_name: str = ""
+    mch_name: bpy.props.StringProperty(name="MCH Bone", options={'HIDDEN'})
 
     @classmethod
     def poll(cls, context):
@@ -399,7 +398,7 @@ class BT_OT_EditBoneIKLimits(bpy.types.Operator):
             self.report({'WARNING'}, "No MCH bone found for selected bone")
             return {'CANCELLED'}
 
-        self._mch_name = mch_pb.name
+        self.mch_name = mch_pb.name
         # Read current values from MCH bone
         self.min_x = mch_pb.ik_min_x
         self.max_x = mch_pb.ik_max_x
@@ -418,7 +417,7 @@ class BT_OT_EditBoneIKLimits(bpy.types.Operator):
 
     def draw(self, context):
         layout = self.layout
-        layout.label(text=self._mch_name, icon='BONE_DATA')
+        layout.label(text=self.mch_name, icon='BONE_DATA')
 
         # X axis
         box = layout.box()
@@ -455,9 +454,9 @@ class BT_OT_EditBoneIKLimits(bpy.types.Operator):
 
     def execute(self, context):
         armature = context.active_object
-        mch_pb = armature.pose.bones.get(self._mch_name)
+        mch_pb = armature.pose.bones.get(self.mch_name)
         if not mch_pb:
-            self.report({'WARNING'}, f"MCH bone '{self._mch_name}' not found")
+            self.report({'WARNING'}, f"MCH bone '{self.mch_name}' not found")
             return {'CANCELLED'}
 
         mch_pb.ik_min_x = self.min_x
@@ -473,7 +472,7 @@ class BT_OT_EditBoneIKLimits(bpy.types.Operator):
         mch_pb.use_ik_limit_y = self.use_limit_y
         mch_pb.use_ik_limit_z = self.use_limit_z
 
-        self.report({'INFO'}, f"IK limits updated: {self._mch_name}")
+        self.report({'INFO'}, f"IK limits updated: {self.mch_name}")
         return {'FINISHED'}
 
 
