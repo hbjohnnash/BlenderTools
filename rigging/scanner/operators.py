@@ -214,10 +214,20 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
 
         # Temporarily disable IK limits during snap so the solver can
         # reproduce the FK pose without being blocked by joint limits.
-        # Limits are re-enabled after the solver settles.
-        limits_were_on = chain_item.ik_limits and use_ik
-        if limits_were_on:
-            toggle_ik_limits(armature, self.chain_id, enable=False)
+        # Save per-bone states so user customizations are preserved.
+        saved_limit_states = {}
+        if chain_item.ik_limits and use_ik:
+            chain_bones_list = [b for b in sd.bones if b.chain_id == self.chain_id and not b.skip]
+            for bone_item in chain_bones_list:
+                mch_name = f"{WRAP_MCH_PREFIX}{self.chain_id}_{bone_item.role}"
+                mch_pb = armature.pose.bones.get(mch_name)
+                if mch_pb:
+                    saved_limit_states[mch_name] = (
+                        mch_pb.use_ik_limit_x, mch_pb.use_ik_limit_y, mch_pb.use_ik_limit_z,
+                    )
+                    mch_pb.use_ik_limit_x = False
+                    mch_pb.use_ik_limit_y = False
+                    mch_pb.use_ik_limit_z = False
 
         # Snap controls BEFORE switching so the pose is preserved
         if chain_item.ik_type == 'SPLINE':
@@ -265,10 +275,15 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
                 elif con.type in ('IK', 'SPLINE_IK'):
                     con.influence = 1.0 if use_ik else 0.0
 
-        # Let solver settle without limits, then re-enable
-        if limits_were_on:
+        # Restore per-bone limit states (preserves user customizations)
+        if saved_limit_states:
             bpy.context.view_layer.update()
-            toggle_ik_limits(armature, self.chain_id, enable=True)
+            for mch_name, (lx, ly, lz) in saved_limit_states.items():
+                mch_pb = armature.pose.bones.get(mch_name)
+                if mch_pb:
+                    mch_pb.use_ik_limit_x = lx
+                    mch_pb.use_ik_limit_y = ly
+                    mch_pb.use_ik_limit_z = lz
 
         # Update runtime state (build config fk_enabled/ik_enabled stays untouched)
         chain_item.ik_active = use_ik
@@ -368,7 +383,7 @@ class BT_OT_EditBoneIKLimits(bpy.types.Operator):
     bl_idname = "bt.edit_bone_ik_limits"
     bl_label = "Edit IK Limits"
     bl_description = "Adjust IK rotation limits for the selected bone"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = set()  # No REGISTER/UNDO — avoids undo system reverting edits on next op
 
     # Per-axis limits (stored in radians, displayed as degrees via ANGLE subtype)
     min_x: bpy.props.FloatProperty(name="Min X", default=0.0, min=-math.pi, max=0.0, subtype='ANGLE')
@@ -413,49 +428,26 @@ class BT_OT_EditBoneIKLimits(bpy.types.Operator):
         self.use_limit_y = mch_pb.use_ik_limit_y
         self.use_limit_z = mch_pb.use_ik_limit_z
 
-        return context.window_manager.invoke_props_dialog(self, width=300)
+        return context.window_manager.invoke_props_popup(self, event)
 
     def draw(self, context):
         layout = self.layout
         layout.label(text=self.mch_name, icon='BONE_DATA')
 
-        # X axis
-        box = layout.box()
-        row = box.row()
-        row.prop(self, "use_limit_x")
-        row.label(text="X Axis")
-        if self.use_limit_x:
-            row = box.row(align=True)
-            row.prop(self, "min_x", text="Min")
-            row.prop(self, "max_x", text="Max")
-            box.prop(self, "stiffness_x", slider=True)
-
-        # Y axis
-        box = layout.box()
-        row = box.row()
-        row.prop(self, "use_limit_y")
-        row.label(text="Y Axis")
-        if self.use_limit_y:
-            row = box.row(align=True)
-            row.prop(self, "min_y", text="Min")
-            row.prop(self, "max_y", text="Max")
-            box.prop(self, "stiffness_y", slider=True)
-
-        # Z axis
-        box = layout.box()
-        row = box.row()
-        row.prop(self, "use_limit_z")
-        row.label(text="Z Axis")
-        if self.use_limit_z:
-            row = box.row(align=True)
-            row.prop(self, "min_z", text="Min")
-            row.prop(self, "max_z", text="Max")
-            box.prop(self, "stiffness_z", slider=True)
+        for axis in ("x", "y", "z"):
+            box = layout.box()
+            row = box.row()
+            row.prop(self, f"use_limit_{axis}")
+            row.label(text=f"{axis.upper()} Axis")
+            if getattr(self, f"use_limit_{axis}"):
+                row = box.row(align=True)
+                row.prop(self, f"min_{axis}", text="Min")
+                row.prop(self, f"max_{axis}", text="Max")
+                box.prop(self, f"stiffness_{axis}", slider=True)
 
     def execute(self, context):
         armature = context.active_object
         mch_pb = armature.pose.bones.get(self.mch_name) if self.mch_name else None
-        # Fallback: re-derive MCH from current selection
         if not mch_pb:
             mch_pb, _ = _find_mch_for_selected(context)
         if not mch_pb:
@@ -475,8 +467,6 @@ class BT_OT_EditBoneIKLimits(bpy.types.Operator):
         mch_pb.use_ik_limit_y = self.use_limit_y
         mch_pb.use_ik_limit_z = self.use_limit_z
 
-        context.view_layer.update()
-        self.report({'INFO'}, f"IK limits updated: {mch_pb.name}")
         return {'FINISHED'}
 
 
@@ -734,6 +724,7 @@ def _draw_pose_context_menu(self, context):
     if (obj and obj.type == 'ARMATURE' and obj.bt_scan.has_wrap_rig
             and context.active_pose_bone):
         self.layout.separator()
+        self.layout.operator_context = 'INVOKE_DEFAULT'
         self.layout.operator("bt.edit_bone_ik_limits", icon='CON_ROTLIMIT')
 
 

@@ -463,11 +463,20 @@ def _rig_toggle_fk_ik(body):
         mode_name = "IK" if use_ik else "FK"
         return {"success": True, "chain_id": chain_id, "mode": mode_name}, None
 
-    # Temporarily disable IK limits during snap so solver can reproduce FK pose
-    limits_were_on = chain_item.ik_limits and use_ik
-    if limits_were_on:
-        from ..rigging.scanner.wrap_assembly import toggle_ik_limits
-        toggle_ik_limits(arm, chain_id, enable=False)
+    # Temporarily disable IK limits during snap so solver can reproduce FK pose.
+    # Save per-bone states so user customizations are preserved.
+    saved_limit_states = {}
+    if chain_item.ik_limits and use_ik:
+        for bone_item in [b for b in sd.bones if b.chain_id == chain_id and not b.skip]:
+            mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+            mch_pb = arm.pose.bones.get(mch_name)
+            if mch_pb:
+                saved_limit_states[mch_name] = (
+                    mch_pb.use_ik_limit_x, mch_pb.use_ik_limit_y, mch_pb.use_ik_limit_z,
+                )
+                mch_pb.use_ik_limit_x = False
+                mch_pb.use_ik_limit_y = False
+                mch_pb.use_ik_limit_z = False
 
     # Snap controls before switching so the pose is preserved
     if chain_item.ik_type == 'SPLINE':
@@ -516,12 +525,16 @@ def _rig_toggle_fk_ik(body):
             elif con.type in ('IK', 'SPLINE_IK'):
                 con.influence = 1.0 if use_ik else 0.0
 
-    # Let solver settle without limits, then re-enable
-    if limits_were_on:
+    # Restore per-bone limit states (preserves user customizations)
+    if saved_limit_states:
         import bpy
         bpy.context.view_layer.update()
-        from ..rigging.scanner.wrap_assembly import toggle_ik_limits
-        toggle_ik_limits(arm, chain_id, enable=True)
+        for mch_name, (lx, ly, lz) in saved_limit_states.items():
+            mch_pb = arm.pose.bones.get(mch_name)
+            if mch_pb:
+                mch_pb.use_ik_limit_x = lx
+                mch_pb.use_ik_limit_y = ly
+                mch_pb.use_ik_limit_z = lz
 
     chain_item.ik_active = use_ik
 
