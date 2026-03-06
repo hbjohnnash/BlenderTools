@@ -388,11 +388,15 @@ def _rig_apply_wrap(body):
 
     scan_data = _props_to_scan_data(arm)
 
-    # Apply chain module_type overrides from UI (same as operator)
+    # Apply chain overrides from UI (same as operator)
     for chain_item in arm.bt_scan.chains:
         cid = chain_item.chain_id
         if cid in scan_data["chains"]:
             scan_data["chains"][cid]["module_type"] = chain_item.module_type
+            scan_data["chains"][cid]["ik_enabled"] = chain_item.ik_enabled
+            scan_data["chains"][cid]["fk_enabled"] = chain_item.fk_enabled
+            scan_data["chains"][cid]["ik_type"] = chain_item.ik_type
+            scan_data["chains"][cid]["ik_limits"] = chain_item.ik_limits
             for bone_name in scan_data["chains"][cid]["bones"]:
                 if bone_name in scan_data["bones"]:
                     scan_data["bones"][bone_name]["module_type"] = chain_item.module_type
@@ -460,8 +464,13 @@ def _rig_toggle_fk_ik(body):
         return {"success": True, "chain_id": chain_id, "mode": mode_name}, None
 
     # Snap controls before switching so the pose is preserved
-    # Only snap for chains with ik_snap enabled (stable 2-bone IK)
-    if chain_item.ik_snap:
+    if chain_item.ik_type == 'SPLINE':
+        from ..rigging.scanner.wrap_assembly import snap_fk_to_ik, snap_spline_to_fk
+        if use_ik:
+            snap_spline_to_fk(arm, chain_id)
+        else:
+            snap_fk_to_ik(arm, chain_id)
+    elif chain_item.ik_snap:
         from ..rigging.scanner.wrap_assembly import snap_fk_to_ik, snap_ik_to_fk
         if use_ik:
             snap_ik_to_fk(arm, chain_id)
@@ -471,17 +480,35 @@ def _rig_toggle_fk_ik(body):
     # Toggle constraints on MCH bones (not DEF bones)
     chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
 
+    # Find which MCH bones are inside the IK chain range.
+    # Bones outside (e.g. foot/toe below IK target) keep FK active.
+    ik_bone_set = set()
     for bone_item in chain_bones:
         mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
         mch_pbone = arm.pose.bones.get(mch_name)
         if not mch_pbone:
             continue
         for con in mch_pbone.constraints:
+            if con.type in ('IK', 'SPLINE_IK') and con.name.startswith(WRAP_CONSTRAINT_PREFIX):
+                walk = mch_pbone
+                for _ in range(con.chain_count):
+                    if walk:
+                        ik_bone_set.add(walk.name)
+                        walk = walk.parent
+
+    for bone_item in chain_bones:
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+        mch_pbone = arm.pose.bones.get(mch_name)
+        if not mch_pbone:
+            continue
+        in_ik_range = mch_name in ik_bone_set
+        for con in mch_pbone.constraints:
             if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
                 continue
             if con.type == 'COPY_TRANSFORMS':
-                con.influence = 0.0 if use_ik else 1.0
-            elif con.type == 'IK':
+                if in_ik_range:
+                    con.influence = 0.0 if use_ik else 1.0
+            elif con.type in ('IK', 'SPLINE_IK'):
                 con.influence = 1.0 if use_ik else 0.0
 
     chain_item.ik_active = use_ik

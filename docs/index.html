@@ -854,7 +854,9 @@ python blender_api.py seam --object Cube --preset hard_surface</code></pre>
   <tr><td><code>CTRL-Wrap_</code></td><td><code>CTRL-Wrap_arm_L_FK_upper_arm</code></td><td>Animator FK controls</td></tr>
   <tr><td><code>CTRL-Wrap_</code></td><td><code>CTRL-Wrap_arm_L_IK_target</code></td><td>IK target</td></tr>
   <tr><td><code>CTRL-Wrap_</code></td><td><code>CTRL-Wrap_leg_R_IK_pole</code></td><td>IK pole vector</td></tr>
+  <tr><td><code>CTRL-Wrap_</code></td><td><code>CTRL-Wrap_tail_C_Spline_00</code></td><td>Spline IK hook control</td></tr>
   <tr><td><code>MCH-Wrap_</code></td><td><code>MCH-Wrap_arm_L_upper_arm</code></td><td>Intermediate layer (hidden)</td></tr>
+  <tr><td><code>BT_Wrap_Spline_</code></td><td><code>BT_Wrap_Spline_tail_C</code></td><td>Spline IK Bezier curve (object)</td></tr>
 </table>
 
 <h3>Wrap Rig Constraint Flow</h3>
@@ -862,8 +864,8 @@ python blender_api.py seam --object Cube --preset hard_surface</code></pre>
   <div class="callout-title">Wrap Rig Three-Tier Details</div>
   The wrap rig follows the universal three-tier pattern with FK/IK switching on the MCH layer:<br>
   <strong>DEF</strong> (original bones) &rarr; COPY_TRANSFORMS from <strong>MCH</strong> (always influence=1.0, never toggled)<br>
-  <strong>MCH</strong> &rarr; COPY_TRANSFORMS from <strong>CTRL-FK</strong> (LOCAL space, toggled for FK) + IK constraint (toggled for IK)<br>
-  <strong>CTRL</strong> &rarr; FK controls that animators manipulate, plus IK target/pole bones<br><br>
+  <strong>MCH</strong> &rarr; COPY_TRANSFORMS from <strong>CTRL-FK</strong> (LOCAL space, toggled for FK) + IK or SPLINE_IK constraint (toggled for IK)<br>
+  <strong>CTRL</strong> &rarr; FK controls that animators manipulate, plus IK target/pole bones or Spline hook controls<br><br>
   The MCH&rarr;CTRL-FK constraint uses <strong>LOCAL space</strong> so that child chains (e.g. fingers parented to hand MCH) correctly inherit world-space movement from their MCH parent when the parent chain is in IK mode.
 </div>
 
@@ -875,35 +877,77 @@ python blender_api.py seam --object Cube --preset hard_surface</code></pre>
 <p>Build configuration and runtime state are separate:</p>
 <ul>
   <li><code>fk_enabled</code> / <code>ik_enabled</code> &mdash; Control whether FK/IK controls are <strong>generated</strong> during build (build-time settings).</li>
-  <li><code>ik_snap</code> &mdash; Per-chain toggle (build-time). When enabled, IK <code>chain_count</code> is clamped to 2 for stable FK/IK switching with pose snapping. Default ON for arms/legs, OFF for others.</li>
+  <li><code>ik_type</code> &mdash; <code>STANDARD</code> or <code>SPLINE</code>. Standard IK uses a target + pole. Spline IK uses a Bezier curve with hook controls for smooth chain deformation. Default <code>SPLINE</code> for tail/tentacle, <code>STANDARD</code> for all others.</li>
+  <li><code>ik_snap</code> &mdash; Per-chain toggle (build-time, Standard IK only). When enabled, supports FK/IK snapping. Default ON for arms/legs.</li>
+  <li><code>ik_limits</code> &mdash; Apply IK joint rotation limits (prevents hyperextension). Uses IK solver properties (<code>ik_min_x</code>, <code>ik_stiffness_x</code>, etc.) which work with pole targets. Default ON for arms/legs/wings. Toggleable at runtime.</li>
   <li><code>ik_active</code> &mdash; Tracks which mode is <strong>currently active</strong> at runtime. All chains start in FK mode after applying the wrap rig.</li>
 </ul>
 
+<h3>Spline IK</h3>
+<p>For long chains like tails and tentacles, standard IK distributes motion poorly across many joints. <strong>Spline IK</strong> uses a Bezier curve driven by hook control bones for smooth, art-directable chain deformation.</p>
+<div class="callout">
+  <div class="callout-title">How Spline IK Works</div>
+  <ol>
+    <li>A Bezier curve (<code>BT_Wrap_Spline_{chain_id}</code>) is created along the chain, parented to the armature</li>
+    <li>3&ndash;5 hook control bones (<code>CTRL-Wrap_{chain}_Spline_00</code> etc.) are placed at even intervals along the chain length</li>
+    <li>Hook modifiers bind each curve control point to its hook bone</li>
+    <li>A <code>SPLINE_IK</code> constraint on the <strong>last</strong> MCH bone drives the entire chain to follow the curve (walks up the parent chain, same as regular IK)</li>
+    <li>Moving hook bones reshapes the curve, smoothly deforming all bones in the chain</li>
+  </ol>
+  Control point count is based on chain length: 3 for &le;4 bones, 4 for &le;8, 5 for 9+. All hook bones are parented to the cross-chain MCH parent so the entire spline follows the body when parent bones rotate.
+  <br><br><strong>Spline FK/IK snapping:</strong> When switching FK &rarr; Spline, hook bones are repositioned along the FK-posed chain. When switching Spline &rarr; FK, FK controls snap to the spline-solved MCH poses.
+</div>
+
+<h3>IK Rotation Limits</h3>
+<p>Joint rotation limits use Blender&rsquo;s IK bone limit properties (<code>ik_min_x</code>, <code>ik_max_x</code>, <code>ik_stiffness_x</code>, etc.) which are evaluated <strong>inside</strong> the IK solver. Unlike <code>LIMIT_ROTATION</code> constraints (which IK ignores), these work with pole targets.</p>
+<div class="callout tip">
+  <div class="callout-title">Why IK limits, not LIMIT_ROTATION?</div>
+  Blender&rsquo;s IK solver overwrites bone transforms, ignoring post-IK constraints like <code>LIMIT_ROTATION</code>. IK bone limits (<code>use_ik_limit_x</code>, <code>ik_min_x</code>, <code>ik_max_x</code>) and stiffness (<code>ik_stiffness_x</code>) are evaluated <em>inside</em> the solver during solving. Combined with stiffness on secondary axes, this prevents hyperextension even with pole targets.
+</div>
+<p><strong>Defaults by module type:</strong></p>
+<ul>
+  <li><strong>Arm/Leg mid-joints</strong> (elbow/knee): Single-axis bend (auto-detected), 0&deg;&ndash;160&deg;, secondary axes locked (stiffness 0.9)</li>
+  <li><strong>Arm/Leg root/end joints</strong>: &plusmn;120&deg; all axes</li>
+  <li><strong>Tail</strong>: &plusmn;45&deg; per joint, stiffness 0.1</li>
+  <li><strong>Tentacle</strong>: &plusmn;60&deg; per joint, stiffness 0.05</li>
+  <li><strong>Generic</strong>: &plusmn;90&deg; per joint, no stiffness</li>
+</ul>
+<p>The <code>bt.toggle_ik_limits</code> operator flips limits on/off per chain at runtime. Limit values are preserved so re-enabling restores them instantly.</p>
+
+<h3>Dynamic Arm/Leg chain_count</h3>
+<p>Arm and leg IK <code>chain_count</code> is calculated dynamically from the actual bone span (upper&rarr;lower index in the chain), not hardcoded to 2. This means arms/legs with intermediate bones (e.g. upper_arm &rarr; mid_arm &rarr; lower_arm &rarr; hand) have IK covering the full chain.</p>
+
 <h3>FK/IK Toggle with Snapping</h3>
-<p>FK/IK switching works on <strong>any chain</strong> that has IK constraints, not just arm/leg. The <code>bt.toggle_fk_ik</code> operator handles the switching.</p>
+<p>FK/IK switching works on <strong>any chain</strong> with IK or Spline IK constraints. The <code>bt.toggle_fk_ik</code> operator handles the switching. For Spline IK chains, the toggle shows &ldquo;Spline&rdquo; instead of &ldquo;IK&rdquo;.</p>
 
 <div class="callout tip">
   <div class="callout-title">Pose Snapping</div>
-  When <code>ik_snap</code> is enabled on a chain (2-bone IK like arms/legs), toggling preserves the current pose:<br>
-  <strong>IK &rarr; FK:</strong> FK bones snap to match the IK-solved pose<br>
-  <strong>FK &rarr; IK:</strong> IK target snaps to chain end, pole angle recalibrated
+  <strong>Standard IK</strong> (when <code>ik_snap</code> enabled, 2-bone arms/legs):<br>
+  &bull; <strong>IK &rarr; FK:</strong> FK bones snap to match the IK-solved pose<br>
+  &bull; <strong>FK &rarr; IK:</strong> IK target snaps to chain end, pole angle recalibrated<br><br>
+  <strong>Spline IK</strong> (always enabled for spline chains):<br>
+  &bull; <strong>Spline &rarr; FK:</strong> FK controls snap to spline-solved MCH poses<br>
+  &bull; <strong>FK &rarr; Spline:</strong> Hook bones repositioned along the FK-posed chain
 </div>
 
 <p><strong>Panel modes</strong> change based on wrap rig state:</p>
 <ul>
-  <li><strong>Before wrap rig exists (config mode):</strong> FK/IK/Snap config checkboxes visible. Bone mapping, batch skip, and unmapped bones sections all visible.</li>
-  <li><strong>After wrap rig exists (rig mode):</strong> FK/IK toggle appears when any bone in an IK-capable chain is selected (DEF, MCH, CTRL-FK, IK target, or pole). Bone mapping, batch skip, and unmapped bones sections are hidden.</li>
+  <li><strong>Before wrap rig exists (config mode):</strong> FK/IK/Type/Snap/Limits config visible. Bone mapping, batch skip, and unmapped bones sections all visible.</li>
+  <li><strong>After wrap rig exists (rig mode):</strong> FK/IK toggle buttons (&ldquo;FK&rdquo; + &ldquo;IK&rdquo; or &ldquo;Spline&rdquo;) + IK limits toggle icon. Appears when any bone in an IK-capable chain is selected.</li>
 </ul>
 
-<p><strong>IK control visibility:</strong> IK target and pole bones are placed in per-chain bone collections (<code>IK_arm_L</code>, <code>IK_leg_R</code>, etc.) that start hidden. Toggling to IK shows the collection for that chain; toggling to FK hides it. Only active IK controls are visible in the viewport.</p>
+<p><strong>IK control visibility:</strong> IK target, pole, and spline hook bones are placed in per-chain bone collections (<code>IK_arm_L</code>, <code>IK_tail_C</code>, etc.) that start hidden. Toggling to IK shows the collection for that chain; toggling to FK hides it.</p>
 
 <table>
-  <tr><th>Mode</th><th>MCH FK COPY_TRANSFORMS</th><th>MCH IK Constraint</th></tr>
+  <tr><th>Mode</th><th>MCH FK COPY_TRANSFORMS</th><th>MCH IK/SPLINE_IK Constraint</th></tr>
   <tr><td><strong>FK</strong></td><td>Influence = 1.0</td><td>Influence = 0.0</td></tr>
   <tr><td><strong>IK</strong></td><td>Influence = 0.0</td><td>Influence = 1.0</td></tr>
   <tr><td><strong>TOGGLE</strong></td><td colspan="2">Switches to the opposite of the current mode</td></tr>
 </table>
-<p><em>Note: DEF bones always have COPY_TRANSFORMS from MCH at influence=1.0 (never toggled).</em></p>
+<p><em>Note: DEF bones always have COPY_TRANSFORMS from MCH at influence=1.0 (never toggled). Bones outside the IK <code>chain_count</code> range (e.g. foot/toe below an IK target) keep FK active in both modes.</em></p>
+
+<h4>Branching Hierarchy Support</h4>
+<p>The wrap rig respects the original skeleton&rsquo;s branching hierarchy. If a spine chain branches (e.g. <code>spine_01</code> has children <code>spine_02</code> and <code>hips</code>), the MCH hierarchy mirrors this &mdash; <code>MCH_hips</code> is parented to <code>MCH_spine_01</code>, not to <code>MCH_chest</code>. Rotating the chest does not cascade to the hips, tail, or legs.</p>
 
 <p>Operator properties:</p>
 <ul>
@@ -934,7 +978,8 @@ python blender_api.py seam --object Cube --preset hard_surface</code></pre>
   <tr><td><code>bt.apply_wrap_rig</code></td><td>Generate wrap controls from (possibly edited) scan data</td></tr>
   <tr><td><code>bt.clear_wrap_rig</code></td><td>Remove only generated bones + constraints (restores hidden collections)</td></tr>
   <tr><td><code>bt.clear_scan_data</code></td><td>Clear wrap rig + all scan data</td></tr>
-  <tr><td><code>bt.toggle_fk_ik</code></td><td>Switch any IK-capable chain between FK and IK mode (with snap if enabled)</td></tr>
+  <tr><td><code>bt.toggle_fk_ik</code></td><td>Switch any IK-capable chain between FK/IK/Spline mode (with snap if enabled)</td></tr>
+  <tr><td><code>bt.toggle_ik_limits</code></td><td>Enable/disable IK joint rotation limits per chain at runtime</td></tr>
   <tr><td><code>bt.bake_to_def</code></td><td>Bake animation onto DEF bones for clean FBX export</td></tr>
   <tr><td><code>bt.toggle_floor_contact</code></td><td>Add/remove floor constraints on leg IK targets + toe auto-bend</td></tr>
   <tr><td><code>bt.update_floor_level</code></td><td>Update floor Z level on existing constraints</td></tr>

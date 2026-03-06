@@ -6,9 +6,13 @@ Architecture: CTRL → MCH → DEF
   - DEF bones follow MCH (COPY_TRANSFORMS, always influence=1.0)
 """
 
+import math
+
 import bpy
 from mathutils import Vector
-from ...core.constants import WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX, WRAP_CONSTRAINT_PREFIX
+from ...core.constants import (
+    WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX, WRAP_CONSTRAINT_PREFIX, WRAP_SPLINE_PREFIX,
+)
 
 
 def assemble_wrap_rig(armature_obj, scan_data):
@@ -28,6 +32,9 @@ def assemble_wrap_rig(armature_obj, scan_data):
     # Maps original bone name → CTRL/MCH bone name (for cross-chain parenting)
     orig_to_ctrl = {}
     orig_to_mch = {}
+
+    # Spline IK data collected during edit mode, processed after
+    spline_chains = {}  # chain_id -> spline_info
 
     # Ensure bone collections exist
     _ensure_collection(armature_obj, "CTRL")
@@ -53,20 +60,30 @@ def assemble_wrap_rig(armature_obj, scan_data):
             if not chain_bones:
                 continue
 
+            ik_enabled = chain_info.get("ik_enabled")
+            ik_type = chain_info.get("ik_type", "STANDARD")
+            use_spline = ik_enabled and ik_type == "SPLINE" and module_type not in ("arm", "leg")
+
             if module_type == "arm":
                 new_bones = _create_arm_controls(edit_bones, chain_id, chain_bones, bones_info, orig_to_ctrl, orig_to_mch)
             elif module_type == "leg":
                 new_bones = _create_leg_controls(edit_bones, chain_id, chain_bones, bones_info, orig_to_ctrl, orig_to_mch)
-            elif chain_info.get("ik_enabled") and module_type not in ("arm", "leg"):
+            elif use_spline:
+                new_bones, spline_info = _create_spline_ik_chain(
+                    edit_bones, chain_id, chain_bones, bones_info, orig_to_ctrl, orig_to_mch)
+                if spline_info:
+                    spline_chains[chain_id] = spline_info
+            elif ik_enabled and module_type not in ("arm", "leg"):
                 new_bones = _create_ik_chain(edit_bones, chain_id, chain_bones, bones_info, orig_to_ctrl, orig_to_mch)
             else:
                 new_bones = _create_fk_chain(edit_bones, chain_id, chain_bones, bones_info, orig_to_ctrl, orig_to_mch)
 
             # Assign collections, colors, and disable deform on generated bones
-            # IK target/pole bones get per-chain collections (hidden in FK mode)
+            # IK target/pole/spline bones get per-chain collections (hidden in FK mode)
             ik_coll_name = f"IK_{chain_id}"
             has_ik_bones = any(
                 bn.endswith("_IK_target") or bn.endswith("_IK_pole")
+                or "_Spline_" in bn
                 for bn in new_bones
             )
             if has_ik_bones:
@@ -77,7 +94,10 @@ def assemble_wrap_rig(armature_obj, scan_data):
                 if eb:
                     eb.use_deform = False
                     if bn.startswith(WRAP_CTRL_PREFIX):
-                        if bn.endswith("_IK_target") or bn.endswith("_IK_pole"):
+                        is_ik_ctrl = (bn.endswith("_IK_target")
+                                      or bn.endswith("_IK_pole")
+                                      or "_Spline_" in bn)
+                        if is_ik_ctrl:
                             _assign_collection_exclusive(armature_obj, eb, ik_coll_name)
                             eb.color.palette = 'THEME04'
                         else:
@@ -90,6 +110,12 @@ def assemble_wrap_rig(armature_obj, scan_data):
             created.extend(new_bones)
     finally:
         bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Create spline curves in Object mode (between edit and pose phases)
+    spline_curves = {}  # chain_id -> curve_obj
+    for chain_id, spline_info in spline_chains.items():
+        curve_obj = _create_spline_curve(armature_obj, chain_id, spline_info)
+        spline_curves[chain_id] = curve_obj
 
     # Now add constraints in pose mode (same order as bone creation)
     bpy.ops.object.mode_set(mode='POSE')
@@ -104,15 +130,27 @@ def assemble_wrap_rig(armature_obj, scan_data):
             if not chain_bones:
                 continue
 
+            ik_enabled = chain_info.get("ik_enabled")
+            ik_type = chain_info.get("ik_type", "STANDARD")
+            use_spline = ik_enabled and ik_type == "SPLINE" and module_type not in ("arm", "leg")
+
             if module_type == "arm":
                 _constrain_arm(armature_obj, chain_id, chain_bones, bones_info)
             elif module_type == "leg":
                 _constrain_leg(armature_obj, chain_id, chain_bones, bones_info)
-            elif chain_info.get("ik_enabled") and module_type not in ("arm", "leg"):
+            elif use_spline and chain_id in spline_curves:
+                _constrain_spline_ik_chain(
+                    armature_obj, chain_id, chain_bones, bones_info,
+                    spline_curves[chain_id])
+            elif ik_enabled and module_type not in ("arm", "leg"):
                 ik_snap = chain_info.get("ik_snap", False)
                 _constrain_ik_chain(armature_obj, chain_id, chain_bones, bones_info, ik_snap)
             else:
                 _constrain_fk_chain(armature_obj, chain_id, chain_bones, bones_info)
+
+            # Apply IK limits if requested
+            if chain_info.get("ik_limits") and ik_enabled:
+                apply_ik_limits(armature_obj, chain_id, chain_bones, bones_info, module_type)
 
         # Calibrate all IK pole angles using the depsgraph
         _calibrate_pole_angles(armature_obj)
@@ -169,6 +207,17 @@ def disassemble_wrap_rig(armature_obj, scan_data=None):
                 pbone.constraints.remove(c)
     finally:
         bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Remove spline curve objects (before bone removal)
+    spline_curves = [
+        obj for obj in bpy.data.objects
+        if obj.name.startswith(WRAP_SPLINE_PREFIX) and obj.parent == armature_obj
+    ]
+    for obj in spline_curves:
+        curve_data = obj.data
+        bpy.data.objects.remove(obj, do_unlink=True)
+        if curve_data and curve_data.users == 0:
+            bpy.data.curves.remove(curve_data)
 
     # Remove generated bones (in edit mode)
     bpy.ops.object.mode_set(mode='EDIT')
@@ -272,8 +321,7 @@ def _create_fk_chain(edit_bones, chain_id, chain_bones, bones_info,
     if orig_to_mch is None:
         orig_to_mch = {}
     created = []
-    prev_ctrl = None
-    prev_mch = None
+    chain_bone_set = set(chain_bones)
 
     for bone_name in chain_bones:
         orig = edit_bones.get(bone_name)
@@ -289,10 +337,12 @@ def _create_fk_chain(edit_bones, chain_id, chain_bones, bones_info,
         mch.tail = orig.tail.copy()
         mch.roll = orig.roll
 
-        if prev_mch:
-            mch.parent = prev_mch
+        # Respect original hierarchy: find parent MCH within same chain,
+        # or fall back to cross-chain parent for root bones.
+        mch_parent = _find_intra_chain_parent(edit_bones, orig, chain_bone_set, orig_to_mch)
+        if mch_parent:
+            mch.parent = mch_parent
         else:
-            # First MCH in chain — find cross-chain MCH parent
             parent_mch = _find_cross_chain_parent(edit_bones, orig, orig_to_mch)
             if parent_mch:
                 mch.parent = parent_mch
@@ -304,15 +354,14 @@ def _create_fk_chain(edit_bones, chain_id, chain_bones, bones_info,
         ctrl.tail = orig.tail.copy()
         ctrl.roll = orig.roll
 
-        if prev_ctrl:
-            ctrl.parent = prev_ctrl
+        ctrl_parent = _find_intra_chain_parent(edit_bones, orig, chain_bone_set, orig_to_ctrl)
+        if ctrl_parent:
+            ctrl.parent = ctrl_parent
         else:
             parent_ctrl = _find_cross_chain_parent(edit_bones, orig, orig_to_ctrl)
             if parent_ctrl:
                 ctrl.parent = parent_ctrl
 
-        prev_ctrl = ctrl
-        prev_mch = mch
         orig_to_ctrl[bone_name] = ctrl_name
         orig_to_mch[bone_name] = mch_name
         created.append(mch_name)
@@ -403,18 +452,27 @@ def _constrain_arm(armature_obj, chain_id, chain_bones, bones_info):
 
     DEF → MCH and MCH → CTRL-FK via _constrain_fk_chain.
     IK constraint goes on the MCH bone (not DEF).
+    chain_count is calculated dynamically from bone positions so that
+    arms with intermediate bones (e.g. upper_arm → mid → lower_arm)
+    have IK covering the full span.
     Pole angle is set later by _calibrate_pole_angles.
     """
     _constrain_fk_chain(armature_obj, chain_id, chain_bones, bones_info)
 
     roles = {bones_info.get(b, {}).get("role", ""): b for b in chain_bones}
     lower_arm_bone = roles.get("lower_arm")
+    upper_arm_bone = roles.get("upper_arm")
 
-    if lower_arm_bone:
+    if lower_arm_bone and upper_arm_bone:
         lower_role = bones_info.get(lower_arm_bone, {}).get("role", lower_arm_bone)
         mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{lower_role}"
         ik_target = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
         ik_pole = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_pole"
+
+        # Dynamic chain_count: number of bones from upper_arm to lower_arm
+        upper_idx = chain_bones.index(upper_arm_bone)
+        lower_idx = chain_bones.index(lower_arm_bone)
+        chain_count = lower_idx - upper_idx + 1
 
         mch_pbone = armature_obj.pose.bones.get(mch_name)
         if mch_pbone and armature_obj.pose.bones.get(ik_target):
@@ -422,7 +480,7 @@ def _constrain_arm(armature_obj, chain_id, chain_bones, bones_info):
             con.name = f"{WRAP_CONSTRAINT_PREFIX}IK_arm"
             con.target = armature_obj
             con.subtarget = ik_target
-            con.chain_count = 2
+            con.chain_count = chain_count
             con.influence = 0.0  # Start with FK, user toggles IK
 
             if armature_obj.pose.bones.get(ik_pole):
@@ -488,18 +546,25 @@ def _constrain_leg(armature_obj, chain_id, chain_bones, bones_info):
 
     DEF → MCH and MCH → CTRL-FK via _constrain_fk_chain.
     IK constraint goes on the MCH bone (not DEF).
+    chain_count is calculated dynamically from bone positions.
     Pole angle is set later by _calibrate_pole_angles.
     """
     _constrain_fk_chain(armature_obj, chain_id, chain_bones, bones_info)
 
     roles = {bones_info.get(b, {}).get("role", ""): b for b in chain_bones}
     lower_leg_bone = roles.get("lower_leg")
+    upper_leg_bone = roles.get("upper_leg")
 
-    if lower_leg_bone:
+    if lower_leg_bone and upper_leg_bone:
         lower_role = bones_info.get(lower_leg_bone, {}).get("role", lower_leg_bone)
         mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{lower_role}"
         ik_target = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
         ik_pole = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_pole"
+
+        # Dynamic chain_count: number of bones from upper_leg to lower_leg
+        upper_idx = chain_bones.index(upper_leg_bone)
+        lower_idx = chain_bones.index(lower_leg_bone)
+        chain_count = lower_idx - upper_idx + 1
 
         mch_pbone = armature_obj.pose.bones.get(mch_name)
         if mch_pbone and armature_obj.pose.bones.get(ik_target):
@@ -507,7 +572,7 @@ def _constrain_leg(armature_obj, chain_id, chain_bones, bones_info):
             con.name = f"{WRAP_CONSTRAINT_PREFIX}IK_leg"
             con.target = armature_obj
             con.subtarget = ik_target
-            con.chain_count = 2
+            con.chain_count = chain_count
             con.influence = 0.0  # Start with FK
 
             if armature_obj.pose.bones.get(ik_pole):
@@ -760,6 +825,75 @@ def snap_ik_to_fk(armature_obj, chain_id):
                 bpy.context.view_layer.update()
 
 
+def snap_spline_to_fk(armature_obj, chain_id):
+    """Snap spline hook bones to match the current FK pose.
+
+    Call before switching from FK to Spline IK so the curve follows the FK pose.
+    Reads the posed MCH bone positions and places each hook control bone at
+    its parametric position along the chain.
+    """
+    from mathutils import Matrix
+
+    sd = armature_obj.bt_scan
+    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+    if len(chain_bones) < 2:
+        return
+
+    # Collect posed MCH bone head/tail positions
+    segments = []  # list of (head, tail, length)
+    for bone_item in chain_bones:
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        if not mch_pb:
+            continue
+        h = mch_pb.head.copy()
+        t = mch_pb.tail.copy()
+        segments.append((h, t, (t - h).length))
+
+    if not segments:
+        return
+
+    total_len = sum(s[2] for s in segments)
+    if total_len < 0.0001:
+        return
+
+    # Find all spline hook bones for this chain
+    hook_bones = []
+    for i in range(10):  # max 5 hooks, but be safe
+        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_Spline_{i:02d}"
+        pb = armature_obj.pose.bones.get(ctrl_name)
+        if pb:
+            hook_bones.append(pb)
+        else:
+            break
+
+    if not hook_bones:
+        return
+
+    n_hooks = len(hook_bones)
+
+    for idx, hook_pb in enumerate(hook_bones):
+        t = idx / (n_hooks - 1) if n_hooks > 1 else 0.0
+
+        if t <= 0.0:
+            pos = segments[0][0]
+        elif t >= 1.0:
+            pos = segments[-1][1]
+        else:
+            target_len = t * total_len
+            accum = 0.0
+            pos = segments[-1][1]  # fallback
+            for head, tail, seg_len in segments:
+                if accum + seg_len >= target_len:
+                    frac = (target_len - accum) / seg_len if seg_len > 0 else 0
+                    pos = head.lerp(tail, frac)
+                    break
+                accum += seg_len
+
+        hook_pb.matrix = Matrix.Translation(pos)
+        bpy.context.view_layer.update()
+
+
 def _calculate_pole_position(head_a, head_b, head_c, module_type="generic"):
     """Calculate IK pole position from 3-bone geometry with anatomical validation.
 
@@ -890,6 +1024,318 @@ def _constrain_ik_chain(armature_obj, chain_id, chain_bones, bones_info,
         # pole_angle is set later by _calibrate_pole_angles()
 
 
+# --- Spline IK Chain ---
+
+def _create_spline_ik_chain(edit_bones, chain_id, chain_bones, bones_info,
+                             orig_to_ctrl=None, orig_to_mch=None):
+    """Create FK controls + spline hook bones for a Spline IK chain.
+
+    Returns (created_bone_names, spline_info) where spline_info is a dict
+    with control point positions and hook bone names for curve creation.
+    """
+    created = _create_fk_chain(edit_bones, chain_id, chain_bones, bones_info,
+                                orig_to_ctrl, orig_to_mch)
+
+    if len(chain_bones) < 2:
+        return created, None
+
+    # Determine number of control points (3–5 based on chain length)
+    n_bones = len(chain_bones)
+    if n_bones <= 4:
+        n_controls = 3
+    elif n_bones <= 8:
+        n_controls = 4
+    else:
+        n_controls = 5
+
+    # Calculate control point positions evenly along the chain
+    positions = []
+    for i in range(n_controls):
+        t = i / (n_controls - 1)
+        if t == 0.0:
+            bone = edit_bones.get(chain_bones[0])
+            pos = bone.head.copy() if bone else Vector((0, 0, 0))
+        elif t >= 1.0:
+            bone = edit_bones.get(chain_bones[-1])
+            pos = bone.tail.copy() if bone else Vector((0, 0, 0))
+        else:
+            # Walk along cumulative bone lengths
+            bone_lengths = []
+            for bn in chain_bones:
+                b = edit_bones.get(bn)
+                bone_lengths.append((b.tail - b.head).length if b else 0.0)
+            total_len = sum(bone_lengths)
+            target_len = t * total_len
+            accum = 0.0
+            pos = Vector((0, 0, 0))
+            for j, bn in enumerate(chain_bones):
+                b = edit_bones.get(bn)
+                if not b:
+                    continue
+                seg_len = bone_lengths[j]
+                if accum + seg_len >= target_len:
+                    frac = (target_len - accum) / seg_len if seg_len > 0 else 0
+                    pos = b.head.lerp(b.tail, frac)
+                    break
+                accum += seg_len
+        positions.append(pos)
+
+    # Create CTRL hook bones at each control point
+    hook_names = []
+    first_bone = edit_bones.get(chain_bones[0])
+    bone_len = 0.5
+    if first_bone:
+        bone_len = max((first_bone.tail - first_bone.head).length * 0.4, 0.3)
+
+    for i, pos in enumerate(positions):
+        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_Spline_{i:02d}"
+        ctrl = edit_bones.new(ctrl_name)
+        ctrl.head = pos
+        ctrl.tail = pos + Vector((0, 0, bone_len))
+        ctrl.roll = 0
+        # Parent ALL hooks to cross-chain parent so the whole spline
+        # follows the body when parent bones rotate
+        if first_bone and orig_to_mch:
+            parent_mch = _find_cross_chain_parent(edit_bones, first_bone, orig_to_mch)
+            if parent_mch:
+                ctrl.parent = parent_mch
+        created.append(ctrl_name)
+        hook_names.append(ctrl_name)
+
+    spline_info = {
+        "positions": positions,
+        "hook_names": hook_names,
+        "n_bones": n_bones,
+    }
+    return created, spline_info
+
+
+def _create_spline_curve(armature_obj, chain_id, spline_info):
+    """Create a Bezier curve object and hook it to the spline control bones.
+
+    Called in Object mode after bones have been created.
+    """
+    positions = spline_info["positions"]
+    hook_names = spline_info["hook_names"]
+
+    curve_name = f"{WRAP_SPLINE_PREFIX}{chain_id}"
+    curve_data = bpy.data.curves.new(name=curve_name, type='CURVE')
+    curve_data.dimensions = '3D'
+    curve_data.resolution_u = 24
+
+    spline = curve_data.splines.new('BEZIER')
+    spline.bezier_points.add(len(positions) - 1)  # Already has 1 point
+
+    for i, pt in enumerate(spline.bezier_points):
+        pt.co = positions[i]
+        pt.handle_left_type = 'AUTO'
+        pt.handle_right_type = 'AUTO'
+
+    curve_obj = bpy.data.objects.new(curve_name, curve_data)
+    bpy.context.collection.objects.link(curve_obj)
+    curve_obj.parent = armature_obj
+    curve_obj.hide_viewport = False
+    curve_obj.hide_render = True
+
+    # Hook each control point to its bone
+    for i, hook_bone_name in enumerate(hook_names):
+        hook_mod = curve_obj.modifiers.new(name=f"Hook_{i:02d}", type='HOOK')
+        hook_mod.object = armature_obj
+        hook_mod.subtarget = hook_bone_name
+        # Each bezier point has 3 vertices: left_handle, knot, right_handle
+        vertex_indices = [3 * i, 3 * i + 1, 3 * i + 2]
+        hook_mod.vertex_indices_set(vertex_indices)
+
+    return curve_obj
+
+
+def _constrain_spline_ik_chain(armature_obj, chain_id, chain_bones, bones_info,
+                                curve_obj):
+    """Add FK + Spline IK constraints for a chain.
+
+    SPLINE_IK constraint goes on the LAST MCH bone (walks UP the parent chain,
+    same as regular IK in Blender).
+    FK COPY_TRANSFORMS are set up on all MCH bones (toggled for FK/IK switching).
+    """
+    _constrain_fk_chain(armature_obj, chain_id, chain_bones, bones_info)
+
+    if len(chain_bones) < 2 or not curve_obj:
+        return
+
+    # SPLINE_IK goes on the LAST MCH bone (walks up the chain like regular IK)
+    last_role = bones_info.get(chain_bones[-1], {}).get("role", chain_bones[-1])
+    mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{last_role}"
+    mch_pbone = armature_obj.pose.bones.get(mch_name)
+    if not mch_pbone:
+        return
+
+    con = mch_pbone.constraints.new('SPLINE_IK')
+    con.name = f"{WRAP_CONSTRAINT_PREFIX}SplineIK_{chain_id}"
+    con.target = curve_obj
+    con.chain_count = len(chain_bones)
+    con.use_chain_offset = False
+    con.y_scale_mode = 'BONE_ORIGINAL'
+    con.xz_scale_mode = 'BONE_ORIGINAL'
+    con.influence = 0.0  # Start in FK mode
+
+
+# --- IK Rotation Limits ---
+
+def _detect_bend_axis(armature_obj, bone_name):
+    """Detect the primary bend axis for a bone by examining rest-pose geometry.
+
+    Returns ('X', 'Y', or 'Z') and the sign (+1 or -1) of the natural bend.
+    """
+    pbone = armature_obj.pose.bones.get(bone_name)
+    if not pbone or not pbone.parent:
+        return 'X', 1
+
+    parent = pbone.parent
+    parent_dir = (parent.bone.tail_local - parent.bone.head_local).normalized()
+    child_dir = (pbone.bone.tail_local - pbone.bone.head_local).normalized()
+
+    # Cross product gives the rotation axis in armature space
+    bend_axis_world = parent_dir.cross(child_dir)
+    if bend_axis_world.length < 0.0001:
+        return 'X', 1
+
+    # Transform to bone-local space
+    bone_matrix = pbone.bone.matrix_local.to_3x3()
+    bend_axis_local = bone_matrix.inverted() @ bend_axis_world
+    bend_axis_local.normalize()
+
+    # Find dominant axis
+    components = [
+        ('X', bend_axis_local.x),
+        ('Y', bend_axis_local.y),
+        ('Z', bend_axis_local.z),
+    ]
+    axis, value = max(components, key=lambda c: abs(c[1]))
+    return axis, (1 if value >= 0 else -1)
+
+
+def apply_ik_limits(armature_obj, chain_id, chain_bones, bones_info, module_type):
+    """Apply IK solver limits to MCH bones based on module type.
+
+    Uses bone-local IK limit properties (ik_min_x/max_x etc.) which are
+    evaluated INSIDE the IK solver — these work with pole targets, unlike
+    LIMIT_ROTATION constraints which are ignored by IK.
+    """
+    for i, bone_name in enumerate(chain_bones):
+        role = bones_info.get(bone_name, {}).get("role", bone_name)
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{role}"
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        if not mch_pb:
+            continue
+
+        if module_type in ("arm", "leg"):
+            _apply_limb_limits(armature_obj, mch_pb, role, module_type)
+        elif module_type in ("tail", "tentacle"):
+            _apply_chain_limits(mch_pb, module_type)
+        else:
+            _apply_chain_limits(mch_pb, "generic")
+
+
+def _apply_limb_limits(armature_obj, mch_pb, role, module_type):
+    """Apply anatomical IK limits for arm/leg joints."""
+    bend_axis, bend_sign = _detect_bend_axis(armature_obj, mch_pb.name)
+
+    is_mid_joint = role in ("lower_arm", "lower_leg")
+
+    if is_mid_joint:
+        # Mid-joint (elbow/knee): single-axis bend, no hyperextension
+        for axis in ('X', 'Y', 'Z'):
+            use_attr = f"use_ik_limit_{axis.lower()}"
+            min_attr = f"ik_min_{axis.lower()}"
+            max_attr = f"ik_max_{axis.lower()}"
+            stiff_attr = f"ik_stiffness_{axis.lower()}"
+
+            if axis == bend_axis:
+                setattr(mch_pb, use_attr, True)
+                if bend_sign > 0:
+                    setattr(mch_pb, min_attr, 0.0)
+                    setattr(mch_pb, max_attr, math.radians(160))
+                else:
+                    setattr(mch_pb, min_attr, math.radians(-160))
+                    setattr(mch_pb, max_attr, 0.0)
+                setattr(mch_pb, stiff_attr, 0.0)
+            else:
+                # Lock secondary axes
+                setattr(mch_pb, use_attr, True)
+                setattr(mch_pb, min_attr, math.radians(-5))
+                setattr(mch_pb, max_attr, math.radians(5))
+                setattr(mch_pb, stiff_attr, 0.9)
+    else:
+        # Root/end joints (shoulder/hip, wrist/ankle): moderate limits
+        for axis in ('X', 'Y', 'Z'):
+            use_attr = f"use_ik_limit_{axis.lower()}"
+            min_attr = f"ik_min_{axis.lower()}"
+            max_attr = f"ik_max_{axis.lower()}"
+            stiff_attr = f"ik_stiffness_{axis.lower()}"
+            setattr(mch_pb, use_attr, True)
+            setattr(mch_pb, min_attr, math.radians(-120))
+            setattr(mch_pb, max_attr, math.radians(120))
+            setattr(mch_pb, stiff_attr, 0.0)
+
+
+def _apply_chain_limits(mch_pb, module_type):
+    """Apply IK limits for chain-type modules (tail, tentacle, generic)."""
+    if module_type == "tail":
+        limit = math.radians(45)
+        stiffness = 0.1
+    elif module_type == "tentacle":
+        limit = math.radians(60)
+        stiffness = 0.05
+    else:
+        limit = math.radians(90)
+        stiffness = 0.0
+
+    for axis in ('x', 'y', 'z'):
+        setattr(mch_pb, f"use_ik_limit_{axis}", True)
+        setattr(mch_pb, f"ik_min_{axis}", -limit)
+        setattr(mch_pb, f"ik_max_{axis}", limit)
+        setattr(mch_pb, f"ik_stiffness_{axis}", stiffness)
+
+
+def toggle_ik_limits(armature_obj, chain_id, enable):
+    """Toggle IK rotation limits on/off for a chain at runtime.
+
+    Simply flips the use_ik_limit_x/y/z flags on all MCH bones in the chain.
+    The actual limit values are preserved so re-enabling restores them.
+    """
+    sd = armature_obj.bt_scan
+    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+
+    for bone_item in chain_bones:
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        if not mch_pb:
+            continue
+        mch_pb.use_ik_limit_x = enable
+        mch_pb.use_ik_limit_y = enable
+        mch_pb.use_ik_limit_z = enable
+
+
+def _find_intra_chain_parent(edit_bones, orig_bone, chain_bone_set, orig_to_name):
+    """Walk up the original hierarchy to find the nearest parent within the same chain.
+
+    Respects branching hierarchies: if bone A and bone B are both children
+    of bone C (all in the same chain), A's MCH parent will be C's MCH — not B's.
+    Returns None if no in-chain parent exists (bone is the chain root).
+    """
+    parent = orig_bone.parent
+    while parent:
+        if parent.name in chain_bone_set:
+            mapped_name = orig_to_name.get(parent.name)
+            if mapped_name:
+                eb = edit_bones.get(mapped_name)
+                if eb:
+                    return eb
+            return None  # Parent is in chain but not yet mapped — shouldn't happen
+        parent = parent.parent
+    return None
+
+
 def _find_cross_chain_parent(edit_bones, orig_bone, orig_to_name):
     """Walk up the original hierarchy to find the nearest mapped bone parent.
 
@@ -914,7 +1360,8 @@ def _sort_chains_by_dependency(chains, bones_info, armature_obj):
     """
     priority = {
         "root": 0, "spine": 1, "neck_head": 2,
-        "arm": 3, "leg": 3, "finger": 4, "generic": 5, "skip": 6,
+        "arm": 3, "leg": 3, "wing": 3, "jaw": 3, "eye": 3,
+        "tail": 4, "tentacle": 4, "finger": 4, "generic": 5, "skip": 6,
     }
     bone_lookup = {b.name: b for b in armature_obj.data.bones}
 

@@ -242,7 +242,7 @@ class BT_OT_SetBoneLabel(bpy.types.Operator):
 # ---------------------------------------------------------------------------
 
 _draw_handle = None
-_hover_info = {"bone": None, "end": None, "pos": None}
+_hover_info = {"bone": None, "pos": None}
 _active = False
 
 _anim_current = None
@@ -273,25 +273,24 @@ def _lerp(a, b, t):
     return a + (b - a) * t
 
 
-def _update_hover(bone_name, end):
+def _update_hover(bone_name):
     global _anim_current, _anim_current_t, _anim_prev, _anim_prev_t
-    new = (bone_name, end) if bone_name else None
-    if new == _anim_current:
+    if bone_name == _anim_current:
         return
     now = time.monotonic()
     if _anim_current:
         _anim_prev = _anim_current
         _anim_prev_t = now
-    _anim_current = new
-    if new:
+    _anim_current = bone_name
+    if bone_name:
         _anim_current_t = now
 
 
-def _hover_factor(bone_name, end):
+def _hover_factor(bone_name):
     now = time.monotonic()
-    if _anim_current and bone_name == _anim_current[0] and end == _anim_current[1]:
+    if _anim_current and bone_name == _anim_current:
         return _smoothstep(min(1.0, (now - _anim_current_t) / ANIM_DURATION))
-    if _anim_prev and bone_name == _anim_prev[0] and end == _anim_prev[1]:
+    if _anim_prev and bone_name == _anim_prev:
         return 1.0 - _smoothstep(min(1.0, (now - _anim_prev_t) / ANIM_DURATION))
     return 0.0
 
@@ -410,7 +409,7 @@ def _world_to_screen(context, pos):
 # ---------------------------------------------------------------------------
 
 def _get_bone_points(context):
-    """Get bone head/tail screen-projectable points, skipping generated bones."""
+    """Get bone center screen-projectable points, skipping generated bones."""
     obj = context.active_object
     if not obj or obj.type != 'ARMATURE' or obj.mode == 'POSE':
         return []
@@ -423,8 +422,8 @@ def _get_bone_points(context):
                 name.startswith(MECHANISM_PREFIX) or name.startswith(WRAP_CTRL_PREFIX) or
                 name.startswith(WRAP_MCH_PREFIX)):
             continue
-        points.append((name, "head", mat @ bone.head_local))
-        points.append((name, "tail", mat @ bone.tail_local))
+        center = (bone.head_local + bone.tail_local) / 2
+        points.append((name, mat @ center))
     return points
 
 
@@ -445,25 +444,19 @@ def _draw_callback(context):
 
     points = _get_bone_points(context)
     bt_count = 0
-    total = 0
-    seen_bones = set()
+    total = len(points)
 
-    for bone_name, end, world_pos in points:
+    for bone_name, world_pos in points:
         screen = _world_to_screen(context, world_pos)
         if screen is None:
             continue
 
         sx, sy = screen
         is_bt = bone_name.startswith('BT_')
-        factor = _hover_factor(bone_name, end)
-
-        if bone_name not in seen_bones:
-            seen_bones.add(bone_name)
-            total += 1
-            if is_bt:
-                bt_count += 1
+        factor = _hover_factor(bone_name)
 
         if is_bt:
+            bt_count += 1
             # Green for BT-named bones
             _draw_ring(shader, sx, sy,
                        CIRCLE_RADIUS + 2, CIRCLE_RADIUS, COLOR_BT_OUTLINE)
@@ -486,10 +479,8 @@ def _draw_callback(context):
 
         # Label on hover
         if factor > 0.1:
-            end_tag = "h" if end == "head" else "t"
-            label = f"{bone_name} ({end_tag})"
             r = CIRCLE_RADIUS + 2 if is_bt else _lerp(CIRCLE_RADIUS, HOVER_RADIUS, factor)
-            _draw_label(sx, sy + r + 8, label, factor)
+            _draw_label(sx, sy + r + 8, bone_name, factor)
 
     # Header
     _draw_header(context,
@@ -511,7 +502,7 @@ def _hit_test(context, mx, my):
     best = None
     best_dist = HOVER_RADIUS + OUTLINE_THICKNESS + 2
 
-    for bone_name, end, world_pos in points:
+    for bone_name, world_pos in points:
         screen = _world_to_screen(context, world_pos)
         if screen is None:
             continue
@@ -519,7 +510,7 @@ def _hit_test(context, mx, my):
         dist = (dx * dx + dy * dy) ** 0.5
         if dist < best_dist:
             best_dist = dist
-            best = (bone_name, end, world_pos)
+            best = (bone_name, world_pos)
     return best
 
 
@@ -556,22 +547,19 @@ class BT_OT_BoneNamingOverlay(bpy.types.Operator):
             hit = _hit_test(context, event.mouse_region_x, event.mouse_region_y)
             if hit:
                 _hover_info["bone"] = hit[0]
-                _hover_info["end"] = hit[1]
-                _hover_info["pos"] = hit[2]
-                _update_hover(hit[0], hit[1])
+                _hover_info["pos"] = hit[1]
+                _update_hover(hit[0])
             else:
                 _hover_info["bone"] = None
-                _hover_info["end"] = None
                 _hover_info["pos"] = None
-                _update_hover(None, None)
+                _update_hover(None)
             context.area.tag_redraw()
             return {'PASS_THROUGH'}
 
         if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
             hit = _hit_test(context, event.mouse_region_x, event.mouse_region_y)
             if hit:
-                bone_name = hit[0]
-                bpy.ops.bt.set_bone_label('INVOKE_DEFAULT', bone_name=bone_name)
+                bpy.ops.bt.set_bone_label('INVOKE_DEFAULT', bone_name=hit[0])
                 return {'RUNNING_MODAL'}
 
         return {'PASS_THROUGH'}
@@ -596,7 +584,6 @@ class BT_OT_BoneNamingOverlay(bpy.types.Operator):
 
         _active = True
         _hover_info["bone"] = None
-        _hover_info["end"] = None
         _hover_info["pos"] = None
         _anim_current = None
         _anim_prev = None

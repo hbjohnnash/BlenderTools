@@ -56,6 +56,19 @@ class BT_ScanChainItem(bpy.types.PropertyGroup):
         description="Enable FK/IK snapping (limits IK to 2 bones for stable switching)",
         default=False,
     )
+    ik_type: EnumProperty(
+        name="IK Type",
+        items=[
+            ('STANDARD', "Standard", "Standard IK solver"),
+            ('SPLINE', "Spline", "Spline IK — smooth curve deformation for long chains"),
+        ],
+        default='STANDARD',
+    )
+    ik_limits: BoolProperty(
+        name="Limits",
+        description="Apply joint rotation limits inside the IK solver (prevents hyperextension)",
+        default=False,
+    )
     # Runtime state — which mode is currently active (only used when wrap rig exists)
     ik_active: BoolProperty(name="IK Active", default=False)
     bone_count: IntProperty(name="Bones", default=0)

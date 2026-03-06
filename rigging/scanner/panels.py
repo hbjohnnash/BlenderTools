@@ -84,13 +84,25 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
                 )
                 op.chain_id = active_chain.chain_id
                 op.mode = 'FK'
+                # Show "Spline" or "IK" based on chain's ik_type
+                ik_label = "Spline" if active_chain.ik_type == 'SPLINE' else "IK"
+                ik_icon = 'CURVE_BEZCURVE' if active_chain.ik_type == 'SPLINE' else 'CON_KINEMATIC'
                 op = row.operator(
-                    "bt.toggle_fk_ik", text="IK",
-                    icon='CON_KINEMATIC',
+                    "bt.toggle_fk_ik", text=ik_label,
+                    icon=ik_icon,
                     depress=active_chain.ik_active,
                 )
                 op.chain_id = active_chain.chain_id
                 op.mode = 'IK'
+                # IK Limits toggle
+                if active_chain.ik_enabled:
+                    op = row.operator(
+                        "bt.toggle_ik_limits",
+                        text="",
+                        icon='CON_ROTLIMIT' if active_chain.ik_limits else 'UNLOCKED',
+                        depress=active_chain.ik_limits,
+                    )
+                    op.chain_id = active_chain.chain_id
         else:
             # ── Chain Config ──
             box = layout.box()
@@ -104,8 +116,13 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
                 row.prop(chain, "fk_enabled", text="FK", toggle=True)
                 row.prop(chain, "ik_enabled", text="IK", toggle=True)
                 if chain.ik_enabled:
-                    row.prop(chain, "ik_snap", text="Snap", toggle=True)
+                    row.prop(chain, "ik_type", text="")
+                    if chain.ik_type == 'STANDARD':
+                        row.prop(chain, "ik_snap", text="Snap", toggle=True)
                 row.label(text=f"{chain.bone_count} bones")
+                if chain.ik_enabled:
+                    row = sub.row(align=True)
+                    row.prop(chain, "ik_limits", text="Joint Limits", toggle=True, icon='CON_ROTLIMIT')
 
             # ── Batch Skip ──
             box = layout.box()

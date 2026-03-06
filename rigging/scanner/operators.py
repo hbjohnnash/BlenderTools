@@ -4,7 +4,7 @@ import bpy
 from .scan import scan_skeleton
 from .wrap_assembly import (
     assemble_wrap_rig, disassemble_wrap_rig, bake_to_def,
-    snap_fk_to_ik, snap_ik_to_fk,
+    snap_fk_to_ik, snap_ik_to_fk, snap_spline_to_fk, toggle_ik_limits,
 )
 from .floor_contact import (
     setup_floor_contact, remove_floor_contact, toggle_toe_bend_for_chain,
@@ -39,6 +39,8 @@ def _scan_data_to_props(armature_obj, scan_data):
         item.ik_enabled = info["module_type"] in ("arm", "leg", "wing")
         item.fk_enabled = True
         item.ik_snap = info["module_type"] in ("arm", "leg", "wing")
+        item.ik_type = 'SPLINE' if info["module_type"] in ("tail", "tentacle") else 'STANDARD'
+        item.ik_limits = info["module_type"] in ("arm", "leg", "wing")
 
     sd.unmapped_bones = ",".join(scan_data.get("unmapped_bones", []))
 
@@ -73,6 +75,8 @@ def _props_to_scan_data(armature_obj):
             "ik_enabled": item.ik_enabled,
             "fk_enabled": item.fk_enabled,
             "ik_snap": item.ik_snap,
+            "ik_type": item.ik_type,
+            "ik_limits": item.ik_limits,
         }
 
     unmapped = [s.strip() for s in sd.unmapped_bones.split(",") if s.strip()]
@@ -139,6 +143,8 @@ class BT_OT_ApplyWrapRig(bpy.types.Operator):
                 scan_data["chains"][cid]["module_type"] = chain_item.module_type
                 scan_data["chains"][cid]["ik_enabled"] = chain_item.ik_enabled
                 scan_data["chains"][cid]["fk_enabled"] = chain_item.fk_enabled
+                scan_data["chains"][cid]["ik_type"] = chain_item.ik_type
+                scan_data["chains"][cid]["ik_limits"] = chain_item.ik_limits
                 # Update bone module_types to match chain override
                 for bone_name in scan_data["chains"][cid]["bones"]:
                     if bone_name in scan_data["bones"]:
@@ -204,8 +210,14 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
             return {'FINISHED'}
 
         # Snap controls BEFORE switching so the pose is preserved
-        # Only snap for chains with ik_snap enabled (stable 2-bone IK)
-        if chain_item.ik_snap:
+        if chain_item.ik_type == 'SPLINE':
+            # Spline IK: snap hooks to FK pose, or FK controls to spline pose
+            if use_ik:
+                snap_spline_to_fk(armature, self.chain_id)
+            else:
+                snap_fk_to_ik(armature, self.chain_id)
+        elif chain_item.ik_snap:
+            # Standard 2-bone IK: snap target/pole to FK, or FK to IK
             if use_ik:
                 snap_ik_to_fk(armature, self.chain_id)
             else:
@@ -214,17 +226,38 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
         # Toggle constraints on MCH bones (not DEF bones)
         chain_bones = [b for b in sd.bones if b.chain_id == self.chain_id and not b.skip]
 
+        # Find which MCH bones are inside the IK chain range.
+        # Bones outside (e.g. foot/toe below IK target) keep FK active.
+        ik_bone_set = set()
         for bone_item in chain_bones:
             mch_name = f"{WRAP_MCH_PREFIX}{self.chain_id}_{bone_item.role}"
             mch_pbone = armature.pose.bones.get(mch_name)
             if not mch_pbone:
                 continue
             for con in mch_pbone.constraints:
+                if con.type in ('IK', 'SPLINE_IK') and con.name.startswith(WRAP_CONSTRAINT_PREFIX):
+                    # Walk up from the IK bone to find all bones in chain_count
+                    walk = mch_pbone
+                    for _ in range(con.chain_count):
+                        if walk:
+                            ik_bone_set.add(walk.name)
+                            walk = walk.parent
+
+        for bone_item in chain_bones:
+            mch_name = f"{WRAP_MCH_PREFIX}{self.chain_id}_{bone_item.role}"
+            mch_pbone = armature.pose.bones.get(mch_name)
+            if not mch_pbone:
+                continue
+            in_ik_range = mch_name in ik_bone_set
+            for con in mch_pbone.constraints:
                 if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
                     continue
                 if con.type == 'COPY_TRANSFORMS':
-                    con.influence = 0.0 if use_ik else 1.0
-                elif con.type == 'IK':
+                    # Only disable FK for bones inside the IK chain range
+                    if in_ik_range:
+                        con.influence = 0.0 if use_ik else 1.0
+                    # Bones outside IK range always keep FK on
+                elif con.type in ('IK', 'SPLINE_IK'):
                     con.influence = 1.0 if use_ik else 0.0
 
         # Update runtime state (build config fk_enabled/ik_enabled stays untouched)
@@ -241,6 +274,42 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
 
         mode_name = "IK" if use_ik else "FK"
         self.report({'INFO'}, f"{self.chain_id}: switched to {mode_name}")
+        return {'FINISHED'}
+
+
+class BT_OT_ToggleIKLimits(bpy.types.Operator):
+    bl_idname = "bt.toggle_ik_limits"
+    bl_label = "Toggle IK Limits"
+    bl_description = "Enable or disable IK rotation limits for a chain"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    chain_id: bpy.props.StringProperty(name="Chain ID")
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj and obj.type == 'ARMATURE' and obj.bt_scan.has_wrap_rig
+
+    def execute(self, context):
+        armature = context.active_object
+        sd = armature.bt_scan
+
+        chain_item = None
+        for ch in sd.chains:
+            if ch.chain_id == self.chain_id:
+                chain_item = ch
+                break
+
+        if not chain_item:
+            self.report({'WARNING'}, f"Chain '{self.chain_id}' not found")
+            return {'CANCELLED'}
+
+        new_state = not chain_item.ik_limits
+        toggle_ik_limits(armature, self.chain_id, new_state)
+        chain_item.ik_limits = new_state
+
+        state = "enabled" if new_state else "disabled"
+        self.report({'INFO'}, f"{self.chain_id}: IK limits {state}")
         return {'FINISHED'}
 
 
@@ -479,6 +548,7 @@ classes = (
     BT_OT_ScanSkeleton,
     BT_OT_ApplyWrapRig,
     BT_OT_ToggleFKIK,
+    BT_OT_ToggleIKLimits,
     BT_OT_ClearWrapRig,
     BT_OT_ClearScanData,
     BT_OT_BatchSkipSelected,
