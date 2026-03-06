@@ -383,7 +383,7 @@ class BT_OT_EditBoneIKLimits(bpy.types.Operator):
     bl_idname = "bt.edit_bone_ik_limits"
     bl_label = "Edit IK Limits"
     bl_description = "Adjust IK rotation limits for the selected bone"
-    bl_options = {'REGISTER'}
+    bl_options = {'REGISTER', 'UNDO'}
 
     # Per-axis limits (stored in radians, displayed as degrees via ANGLE subtype)
     min_x: bpy.props.FloatProperty(name="Min X", default=0.0, min=-math.pi, max=0.0, subtype='ANGLE')
