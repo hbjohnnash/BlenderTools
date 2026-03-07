@@ -58,7 +58,7 @@ def retarget_action(source_action, target_armature, mapping, new_action_name=Non
         target_armature.animation_data_create()
 
     # Create slot for target
-    slot = new_action.slots.new(for_id=target_armature)
+    slot = new_action.slots.new(name=target_armature.name, id_type='OBJECT')
     target_armature.animation_data.action = new_action
     target_armature.animation_data.action_slot = slot
 

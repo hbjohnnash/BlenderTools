@@ -7,6 +7,7 @@ user clicks bones sequentially to fill each slot.
 Hidden in pose mode.
 """
 
+import re
 import bpy
 import blf
 import gpu
@@ -19,6 +20,26 @@ from ..core.constants import (
     WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX,
 )
 from .modules import get_module_items, get_module_class, MODULE_REGISTRY
+
+
+def _detect_side(bone_name):
+    """Detect L/R/C side from a bone name.
+
+    Handles BT convention (BT_{Type}_{Side}_{Role}), dot-separated (.L, .R),
+    and underscore-separated (_L, _R) — only when L/R is a standalone segment,
+    not part of a longer word like 'Leg' or 'Lower'.
+    """
+    # BT convention: 3rd segment is side
+    if bone_name.startswith("BT_"):
+        parts = bone_name.split('_', 3)
+        if len(parts) >= 3 and parts[2] in ('L', 'R', 'C'):
+            return parts[2]
+    # Standalone _L or .L followed by separator or end-of-string
+    if re.search(r'[_.]L(?=[_.]|$)', bone_name):
+        return 'L'
+    if re.search(r'[_.]R(?=[_.]|$)', bone_name):
+        return 'R'
+    return 'C'
 
 
 # ---------------------------------------------------------------------------
@@ -514,11 +535,7 @@ def _finish_assignment(context):
         return
 
     # Detect side from origin bone
-    side = 'C'
-    if "_L" in _assign_origin_bone or _assign_origin_bone.endswith(".L"):
-        side = 'L'
-    elif "_R" in _assign_origin_bone or _assign_origin_bone.endswith(".R"):
-        side = 'R'
+    side = _detect_side(_assign_origin_bone)
 
     cursor_pos = list(_assign_origin_pos) if _assign_origin_pos else [0, 0, 0]
 
@@ -634,11 +651,7 @@ class BT_OT_AddModuleAtPoint(bpy.types.Operator):
 
         # Direct add — create fresh bones
         cursor_pos = list(context.scene.cursor.location)
-        side = 'C'
-        if "_L" in bone_name or bone_name.endswith(".L") or ".L." in bone_name:
-            side = 'L'
-        elif "_R" in bone_name or bone_name.endswith(".R") or ".R." in bone_name:
-            side = 'R'
+        side = _detect_side(bone_name)
 
         config_entry = {
             "type": self.module_type,

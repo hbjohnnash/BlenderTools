@@ -2,7 +2,7 @@
 
 ## What is BlenderTools?
 
-A comprehensive Blender 5.0+ addon for seam creation, modular rigging, skinning, animation generation, and LLM bridge integration. You model; BlenderTools handles everything after.
+A comprehensive Blender 5.0+ addon for seam creation, modular rigging, skinning, animation tools, and LLM bridge integration. You model; BlenderTools handles everything after.
 
 ## Installation
 
@@ -16,10 +16,11 @@ A comprehensive Blender 5.0+ addon for seam creation, modular rigging, skinning,
 All panels are in the 3D Viewport sidebar (press `N`) under the **BlenderTools** tab.
 
 ### Panel Sections:
+- **BlenderTools (Header)** — Subsystem toggles + unified Overlay controls (Module, FK/IK, CoM, Trajectory, Onion Skin)
 - **Seams** — UV seam creation tools
-- **Rigging** — Modular rig builder + Skeleton Scanner + Viewport Module Overlay
+- **Rigging** — Modular rig builder + Skeleton Scanner + Center of Mass / Balance + Control Shapes
 - **Skinning** — Weight painting tools
-- **Animation** — Procedural generators + root motion extraction
+- **Animation** — Mechanical animation, path/camera, root motion, trajectory editing, onion skinning
 - **Export** — Rig scaling & UE FBX export
 - **LLM Bridge** — HTTP server for Claude Code integration
 
@@ -54,25 +55,46 @@ All 13 rig modules use a universal **three-tier architecture: CTRL -> MCH -> DEF
 1. Import your character (FBX)
 2. Select the armature
 3. Open BlenderTools > Rigging > Skeleton Scanner
-4. Click "Scan Skeleton" — bones are auto-detected
-5. Review/edit chain assignments in the panel (configure FK/IK/Snap per chain)
-6. Click "Apply Wrap Rig" — three-tier rig (CTRL/MCH/DEF) wraps original bones with FK/IK controls
+4. (Optional) Click **"Name Bones"** to label bones with BT convention via interactive overlay
+5. (Optional) Click **"Auto-Name Chain"** to auto-name child bones after naming the root
+6. Click **"Scan Skeleton"** — bones are auto-detected
+7. Review/edit chain assignments in the panel (configure FK/IK/Snap per chain)
+8. Click **"Apply Wrap Rig"** — three-tier rig wraps original bones with FK/IK controls
+9. Use the **FK/IK Overlay** at the bottom of the viewport to toggle chains
 
 ### Skin:
 1. Select both mesh and armature
 2. Open BlenderTools > Skinning
 3. Click "Auto Weight" (Heat Map method)
 
-### Animate:
-1. Select the armature
-2. Open BlenderTools > Animation
-3. Click "Generate Walk Cycle"
-
 ### Floor contact (IK legs):
 1. Apply a wrap rig with leg chains in IK mode
 2. Open Rigging > Skeleton Scanner > Floor Contact section
 3. Set floor level, enable toe auto-bend if desired
 4. Click "Floor Contact" to toggle on — feet won't go below the floor
+
+### Center of Mass + Balance:
+1. Select armature in Pose mode
+2. Open Rigging > Center of Mass (or use header Overlays toggle)
+3. Click "Show CoM" — crosshair shows center of mass, colored by balance
+4. Base of Support polygon from foot/hand contact bones
+5. Balance indicator bar (green = stable, yellow = marginal, red = unstable)
+6. Edit per-bone masses by pinning individual bones
+
+### Bone Trajectory (Cascadeur-style):
+1. Select armature in Pose mode
+2. Select bones with location keyframes
+3. Enable Trajectory overlay (header panel or Animation > Trajectory)
+4. Bone positions at keyframes appear as yellow dots connected by a curve
+5. Click + drag any keyframe dot to edit the bone's location at that frame
+6. FCurve values update in real-time during drag
+
+### Onion Skinning / Ghost Frames:
+1. Select armature in Pose mode
+2. Enable Onion Skin (header panel or Animation > Onion Skin)
+3. Past frames shown in blue, future frames in orange (semi-transparent meshes)
+4. Configure ghost count (before/after), frame step, and opacity
+5. Camera-independent — works in any viewport angle
 
 ### Extract root motion:
 1. Select armature with animation

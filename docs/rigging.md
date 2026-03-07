@@ -58,9 +58,22 @@ Supported skeleton types:
 ### Bone Naming Convention
 Bones can be named using the BT convention: `BT_{TypeCamel}_{Side}_{Role}`. CamelCase type names (no underscores) for unambiguous parsing via `name.split('_', 3)`.
 
-Examples: `BT_Spine_C_hips`, `BT_Arm_L_upper_arm`, `BT_NeckHead_C_neck`, `BT_Leg_R_foot`
+**Chain numbering** allows multiple chains of the same type on the same side (e.g. multiple fingers per hand, multiple legs on an insect). The naming dialog includes a **Chain** field (1–10):
+- **Indexed types** (finger, tail, tentacle, generic): Chain number is always embedded in the role — `{chain}_{bone}` (e.g. `BT_Finger_R_1_01`, `BT_Finger_R_2_03`)
+- **Named-role types** (arm, leg, spine, etc.): Chain number is only embedded when > 1 to keep biped names clean — `BT_Arm_L_upper_arm` (chain 1), `BT_Arm_L_2_upper_arm` (chain 2)
 
-The **Name Bones overlay** (`bt.bone_naming_overlay`) provides an interactive viewport tool: hover over bones to see clickable circles (white=unlabeled, green=BT-named), click to open a dialog with Type/Side/Role dropdowns that renames the bone automatically.
+Examples:
+
+| Name | Type | Side | Chain | Role |
+|------|------|------|-------|------|
+| `BT_Spine_C_hips` | Spine | C | 1 | hips |
+| `BT_Arm_L_upper_arm` | Arm | L | 1 | upper_arm |
+| `BT_Arm_L_2_upper_arm` | Arm | L | 2 | upper_arm |
+| `BT_Finger_R_1_01` | Finger | R | 1 | 01 |
+| `BT_Finger_R_3_02` | Finger | R | 3 | 02 |
+| `BT_Leg_L_3_foot` | Leg | L | 3 | foot |
+
+The **Name Bones overlay** (`bt.bone_naming_overlay`) provides an interactive viewport tool: hover over bones to see clickable circles (white=unlabeled, green=BT-named), click to open a dialog with Type/Side/Chain/Role dropdowns that renames the bone automatically.
 
 Generated bone naming:
 - `CTRL-Wrap_{chain}_{mode}_{role}` — Control bones (e.g. `CTRL-Wrap_arm_L_FK_upper_arm`)
@@ -237,6 +250,26 @@ All bones follow: `{prefix}{ModuleName}_{side}_{part}`
 
 The `hidden_collections` property tracks which collections were hidden during rig creation for proper restoration on clear.
 
+## Control Bone Custom Shapes
+
+Procedural shape library for visual bone representation. Shapes are mesh objects in a hidden `BT_Shapes` collection, reused via `bone.custom_shape`. Sizing uses `custom_shape_scale_xyz` (no mesh duplication).
+
+**Built-in shapes:** circle, cube, diamond, sphere, arrow, square, line
+
+**Auto-assignment (on rig generation):**
+- FK controls → circle (scale 0.8)
+- IK targets → cube (scale 0.6)
+- IK poles → diamond (scale 0.5)
+- Spline hooks → sphere (scale 0.4)
+
+**User extension:** Any mesh can be added to the library via `bt.add_custom_shape`. It moves the active mesh object into the `BT_Shapes` collection.
+
+**Operators:**
+- `bt.assign_bone_shape` — Assign a shape from the library to selected bones
+- `bt.resize_ctrl_bones` — Scale custom shapes of selected bones
+- `bt.clear_bone_shapes` — Remove custom shapes from selected bones
+- `bt.add_custom_shape` — Add active mesh to the shape library
+
 ## Connection Points
 
 Modules expose named connection points for parenting:
@@ -286,12 +319,55 @@ When using IK legs, the floor contact system prevents feet from going below a co
 - `bt.edit_bone_ik_limits` — Per-bone IK limit editor (gear icon or right-click in pose mode)
 - `bt.bake_to_def` — Bake animation onto DEF bones for clean export
 - `bt.bone_naming_overlay` — Interactive bone naming overlay (BT convention)
+- `bt.auto_name_chain` — Auto-name selected child bones based on root bone's BT name
 - `bt.set_bone_label` — Dialog to set Type/Side/Role on a bone
+- `bt.ik_overlay` — FK/IK toggle overlay at viewport bottom (clickable buttons per chain)
+- `bt.toggle_com` — Toggle Center of Mass + Base of Support + Balance visualization
+- `bt.recalc_com_masses` — Recalculate auto masses from mesh vertex weights
 - `bt.toggle_floor_contact` — Add/remove floor constraints on leg IK targets
 - `bt.update_floor_level` — Update floor Z level on existing constraints
 - `bt.batch_skip_selected` — Skip/unskip chains by bone selection
 - `bt.batch_skip_pattern` — Skip/unskip chains by glob pattern
 - `bt.batch_unskip_all` — Unskip all chains at once
+- `bt.assign_bone_shape` — Assign custom shape to selected bones
+- `bt.resize_ctrl_bones` — Scale custom shapes of selected bones
+- `bt.clear_bone_shapes` — Remove custom shapes from selected bones
+- `bt.add_custom_shape` — Add active mesh to shape library
+
+## Auto-Name Chain
+
+After naming one bone with the BT convention, select its descendants and click **"Auto-Name Chain"** (chain link icon). Walks the selection depth-first and assigns incrementing names:
+- **Indexed types** (finger, tail, tentacle, generic): increments the bone index (01 → 02 → 03)
+- **Named-role types** (arm, leg, etc.): walks the role list (upper_arm → lower_arm → hand)
+Unrelated selected bones are deselected.
+
+## FK/IK Overlay
+
+A clickable bar at the bottom of the viewport showing FK/IK state for each IK-capable chain:
+- **Blue** = FK mode, **Orange** = IK mode
+- Click a button to toggle that chain's FK/IK mode
+- Shows "Spline" for spline IK chains
+- ESC to dismiss, toggle via panel button or `bt.ik_overlay`
+
+## Center of Mass + Base of Support
+
+Pose-mode visualization for balance analysis:
+
+### Center of Mass (CoM)
+- Crosshair marker at the weighted average of all deform bone positions
+- Per-bone mass auto-calculated from mesh vertex weights (vertex group influence)
+- Users can override individual bone masses via the panel (pin icon)
+
+### Base of Support (BoS)
+- Convex hull polygon projected on the ground plane from foot/hand contact bones
+- Detection: scan data (leg foot/toe + arm hand for quadrupeds) → name fallback (foot/toe/hand/paw/hoof/claw) → Z-position fallback (leaf deform bones in bottom 15% of skeleton)
+
+### Balance Indicator
+- Stability ratio: signed distance from CoM ground projection to nearest BoS edge, normalized
+- Color gradient: green (>50% = stable) → yellow (50% = marginal) → red (0% = on edge)
+- Bar with needle at bottom-right of viewport
+
+**Operators:** `bt.toggle_com`, `bt.recalc_com_masses`
 
 ## Bridge API
 

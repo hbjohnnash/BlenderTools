@@ -2,7 +2,7 @@
 
 from .name_maps import detect_skeleton_type, apply_name_map
 from .heuristics import analyze_by_heuristics
-from .bone_naming import parse_bt_name
+from .bone_naming import parse_bt_name, INDEXED_TYPES
 
 
 def scan_skeleton(armature_obj):
@@ -82,6 +82,22 @@ def scan_skeleton(armature_obj):
     }
 
 
+def _normalize_role(role, type_internal):
+    """Strip chain-number prefix from roles for non-indexed types.
+
+    For named-role types (arm, leg, etc.), "2_upper_arm" → "upper_arm" so
+    that wrap assembly role lookups work regardless of chain numbering.
+    For indexed types (finger, tail, etc.), the role is kept as-is since
+    the chain number is part of the identity (e.g. "1_01").
+    """
+    if type_internal in INDEXED_TYPES:
+        return role
+    parts = role.split('_', 1)
+    if len(parts) == 2 and parts[0].isdigit():
+        return parts[1]
+    return role
+
+
 def _detect_bt_convention(armature_obj):
     """Detect bones named with the BT_{Type}_{Side}_{Role} convention.
 
@@ -114,7 +130,7 @@ def _detect_bt_convention(armature_obj):
             for name in sub_chains[0]:
                 info = parsed[name]
                 result[name] = {
-                    "role": info['role'],
+                    "role": _normalize_role(info['role'], type_internal),
                     "side": side,
                     "module_type": type_internal,
                     "chain_id": chain_id,
@@ -127,7 +143,7 @@ def _detect_bt_convention(armature_obj):
                 for name in chain_names:
                     info = parsed[name]
                     result[name] = {
-                        "role": info['role'],
+                        "role": _normalize_role(info['role'], type_internal),
                         "side": side,
                         "module_type": type_internal,
                         "chain_id": chain_id,

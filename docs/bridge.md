@@ -53,7 +53,6 @@ python blender_api.py <command> [options]
 | `/blendertools/rig/floor-contact` | `{"armature":"X","action":"toggle"}` | Toggle floor constraints on leg IK targets |
 | `/blendertools/skin/auto-weight` | `{"mesh":"X","armature":"Y","method":"heat_map"}` | Auto weight |
 | `/blendertools/skin/rigid-bind` | `{"mesh":"X","armature":"Y"}` | Rigid bind |
-| `/blendertools/anim/procedural` | `{"armature":"X","type":"walk","params":{}}` | Procedural anim |
 | `/blendertools/anim/mechanical` | `{"object":"X","type":"piston_cycle","params":{}}` | Mechanical anim |
 | `/blendertools/export/scale-rig` | `{"armature":"X","factor":100.0}` | Scale rig + keyframes |
 | `/blendertools/anim/root-motion-setup` | `{"armature":"X"}` | Setup root motion extraction |
@@ -99,7 +98,6 @@ python blender_api.py screenshot -o viewport.png
 python blender_api.py rig-load --armature Armature --config presets/rig_configs/biped_human.json
 python blender_api.py rig-generate --armature Armature
 python blender_api.py skin --mesh Body --armature Armature
-python blender_api.py animate --armature Armature --type walk
 
 # Scale rig and export to UE
 python blender_api.py scale-rig --armature Armature --factor 100.0

@@ -4,157 +4,6 @@ import bpy
 from ..core.utils import create_bone_fcurve, create_fcurve
 
 
-class BT_OT_GenerateWalkCycle(bpy.types.Operator):
-    bl_idname = "bt.generate_walk_cycle"
-    bl_label = "Generate Walk Cycle"
-    bl_description = "Generate a procedural walk cycle animation"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    speed: bpy.props.FloatProperty(name="Speed", default=1.0, min=0.1, max=5.0)
-    stride: bpy.props.FloatProperty(name="Stride", default=0.4, min=0.1, max=2.0)
-    arm_swing: bpy.props.FloatProperty(name="Arm Swing", default=0.3, min=0.0, max=1.0)
-    frame_count: bpy.props.IntProperty(name="Frame Count", default=24, min=8, max=120)
-
-    @classmethod
-    def poll(cls, context):
-        return (context.active_object is not None
-                and context.active_object.type == 'ARMATURE')
-
-    def execute(self, context):
-        from .procedural.locomotion import generate_walk_cycle
-
-        arm_obj = context.active_object
-        params = {
-            "speed": self.speed,
-            "stride": self.stride,
-            "arm_swing": self.arm_swing,
-            "frame_count": self.frame_count,
-        }
-        keyframe_data = generate_walk_cycle(params)
-        self._apply_keyframes(arm_obj, keyframe_data, "WalkCycle")
-        self.report({'INFO'}, "Generated walk cycle")
-        return {'FINISHED'}
-
-    def _apply_keyframes(self, arm_obj, keyframe_data, action_name):
-        """Map generic keyframe data to actual bone FCurves."""
-        bone_map = self._build_bone_map(arm_obj)
-        full_action = f"{arm_obj.name}_{action_name}"
-
-        for key, frames in keyframe_data.items():
-            parts = key.rsplit("_", 2)
-            if len(parts) < 3:
-                continue
-
-            bone_key = "_".join(parts[:-2])
-            prop_name = parts[-2]
-            axis = parts[-1]
-
-            axis_map = {"x": 0, "y": 1, "z": 2}
-            idx = axis_map.get(axis, 0)
-
-            prop_map = {"location": "location", "rotation": "rotation_euler", "scale": "scale"}
-            data_prop = prop_map.get(prop_name, prop_name)
-
-            bone_name = bone_map.get(bone_key)
-            if bone_name:
-                create_bone_fcurve(arm_obj, full_action, bone_name, data_prop, idx, frames)
-
-    def _build_bone_map(self, arm_obj):
-        """Build a mapping from generic names to actual bone names."""
-        bones = arm_obj.data.bones
-        mapping = {}
-
-        for b in bones:
-            name = b.name.lower()
-            if "hip" in name or "spine" in name and "001" in name:
-                mapping["hip"] = b.name
-            if "foot" in name and "_l" in name.lower():
-                mapping["foot_L"] = b.name
-            if "foot" in name and "_r" in name.lower():
-                mapping["foot_R"] = b.name
-            if "arm" in name and "upper" in name and "_l" in name.lower():
-                mapping["arm_L"] = b.name
-            if "arm" in name and "upper" in name and "_r" in name.lower():
-                mapping["arm_R"] = b.name
-
-        return mapping
-
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
-
-
-class BT_OT_GenerateRunCycle(bpy.types.Operator):
-    bl_idname = "bt.generate_run_cycle"
-    bl_label = "Generate Run Cycle"
-    bl_description = "Generate a procedural run cycle animation"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    speed: bpy.props.FloatProperty(name="Speed", default=2.0, min=0.5, max=5.0)
-    stride: bpy.props.FloatProperty(name="Stride", default=0.6, min=0.2, max=3.0)
-
-    @classmethod
-    def poll(cls, context):
-        return (context.active_object is not None
-                and context.active_object.type == 'ARMATURE')
-
-    def execute(self, context):
-        from .procedural.locomotion import generate_run_cycle
-        arm_obj = context.active_object
-        keyframe_data = generate_run_cycle({"speed": self.speed, "stride": self.stride})
-        BT_OT_GenerateWalkCycle._apply_keyframes(self, arm_obj, keyframe_data, "RunCycle")
-        self.report({'INFO'}, "Generated run cycle")
-        return {'FINISHED'}
-
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
-
-
-class BT_OT_GenerateIdle(bpy.types.Operator):
-    bl_idname = "bt.generate_idle"
-    bl_label = "Generate Idle"
-    bl_description = "Generate a subtle idle breathing/sway animation"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        return (context.active_object is not None
-                and context.active_object.type == 'ARMATURE')
-
-    def execute(self, context):
-        from .procedural.locomotion import generate_idle
-        arm_obj = context.active_object
-        keyframe_data = generate_idle()
-        BT_OT_GenerateWalkCycle._apply_keyframes(self, arm_obj, keyframe_data, "Idle")
-        self.report({'INFO'}, "Generated idle animation")
-        return {'FINISHED'}
-
-
-class BT_OT_GenerateBreathing(bpy.types.Operator):
-    bl_idname = "bt.generate_breathing"
-    bl_label = "Generate Breathing"
-    bl_description = "Generate procedural breathing animation"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    rate: bpy.props.FloatProperty(name="Breaths/Min", default=15.0, min=5.0, max=40.0)
-    depth: bpy.props.FloatProperty(name="Depth", default=0.03, min=0.005, max=0.1)
-
-    @classmethod
-    def poll(cls, context):
-        return (context.active_object is not None
-                and context.active_object.type == 'ARMATURE')
-
-    def execute(self, context):
-        from .procedural.breathing import generate_breathing
-        arm_obj = context.active_object
-        keyframe_data = generate_breathing({"rate": self.rate, "depth": self.depth})
-        BT_OT_GenerateWalkCycle._apply_keyframes(self, arm_obj, keyframe_data, "Breathing")
-        self.report({'INFO'}, "Generated breathing animation")
-        return {'FINISHED'}
-
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
-
-
 class BT_OT_MechanicalAnim(bpy.types.Operator):
     bl_idname = "bt.mechanical_anim"
     bl_label = "Mechanical Animation"
@@ -196,7 +45,9 @@ class BT_OT_MechanicalAnim(bpy.types.Operator):
         for key, frames in data.items():
             parts = key.rsplit("_", 1)
             prop = parts[0]
-            idx = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+            suffix = parts[1] if len(parts) > 1 else "0"
+            axis_map = {"x": 0, "y": 1, "z": 2}
+            idx = axis_map.get(suffix, int(suffix) if suffix.isdigit() else 0)
 
             prop_map = {
                 "piston_location": "location",
@@ -345,10 +196,6 @@ class BT_OT_PushToNLA(bpy.types.Operator):
 
 
 classes = (
-    BT_OT_GenerateWalkCycle,
-    BT_OT_GenerateRunCycle,
-    BT_OT_GenerateIdle,
-    BT_OT_GenerateBreathing,
     BT_OT_MechanicalAnim,
     BT_OT_FollowPath,
     BT_OT_OrbitCamera,

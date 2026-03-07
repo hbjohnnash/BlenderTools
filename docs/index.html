@@ -3,728 +3,314 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BlenderTools Documentation</title>
+<title>BlenderTools</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
   :root {
-    --bg: #0b0f14;
-    --bg-sidebar: #0f1318;
-    --bg-card: #141920;
-    --bg-code: #111820;
-    --bg-hover: #171e28;
-    --border: #1e2633;
-    --border-subtle: #161d28;
-    --text: #d8dee9;
-    --text-bright: #eceff4;
-    --text-muted: #697386;
-    --accent: #6ea1ff;
-    --accent-bright: #88b4ff;
-    --accent-dim: rgba(110,161,255,0.08);
-    --accent-glow: rgba(110,161,255,0.15);
-    --green: #4cd67d;
-    --green-dim: rgba(76,214,125,0.1);
-    --orange: #e8a946;
-    --orange-dim: rgba(232,169,70,0.1);
-    --purple: #c4a1ff;
-    --red: #f85149;
-    --radius: 10px;
-    --radius-sm: 6px;
-    --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
-    --shadow-md: 0 4px 16px rgba(0,0,0,0.35);
-    --shadow-lg: 0 8px 32px rgba(0,0,0,0.4);
-    --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    --bg: #0a0a0a;
+    --bg2: #111111;
+    --bg3: #181818;
+    --bg4: #1e1e1e;
+    --border: #2a2a2a;
+    --border-bright: #3a3a3a;
+    --text: #c8c8c8;
+    --text-bright: #f0f0f0;
+    --text-dim: #666;
+    --neon-blue: #3e8bff;
+    --neon-green: #00ff88;
+    --neon-pink: #ff3e6c;
+    --neon-orange: #ff6b35;
+    --neon-purple: #b366ff;
+    --neon-yellow: #ffe03e;
+    --neon-cyan: #00e5ff;
+    --mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    --sans: 'Inter', -apple-system, 'Segoe UI', sans-serif;
   }
-
   * { margin: 0; padding: 0; box-sizing: border-box; }
-
   html { scroll-behavior: smooth; }
-
-  body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    line-height: 1.7;
-    display: flex;
-    min-height: 100vh;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
-  /* ── Scrollbar ── */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  body { font-family: var(--sans); background: var(--bg); color: var(--text); line-height: 1.65; display: flex; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+  ::selection { background: rgba(62,139,255,0.3); color: #fff; }
+  ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
 
-  /* ── Sidebar ── */
-  .sidebar {
-    width: 272px;
-    min-width: 272px;
-    background: var(--bg-sidebar);
-    border-right: 1px solid var(--border-subtle);
-    padding: 0;
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    overflow-y: auto;
-    z-index: 100;
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
+  /* ── SIDEBAR ── */
+  .sidebar { width: 260px; min-width: 260px; background: var(--bg2); border-right: 3px solid var(--neon-blue); position: fixed; top: 0; left: 0; bottom: 0; overflow-y: auto; z-index: 100; }
+  .sidebar-head { padding: 28px 20px 24px; border-bottom: 2px solid var(--border); }
+  .sidebar-head h1 { font-family: var(--mono); font-size: 18px; font-weight: 800; color: var(--neon-blue); letter-spacing: -0.5px; text-transform: uppercase; }
+  .sidebar-head .ver { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .sidebar nav { padding: 12px 0; }
+  .nav-section { padding: 18px 20px 6px; font-family: var(--mono); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: var(--text-dim); }
+  .nav-link { display: block; padding: 10px 20px; color: var(--text-dim); text-decoration: none; font-family: var(--mono); font-size: 13px; font-weight: 600; border-left: 3px solid transparent; transition: all 0.15s; cursor: pointer; }
+  .nav-link:hover { color: var(--text-bright); background: rgba(255,255,255,0.03); border-left-color: var(--border-bright); }
+  .nav-link.active { color: var(--neon-blue); background: rgba(62,139,255,0.06); border-left-color: var(--neon-blue); }
+  .nav-dot { display: inline-block; width: 8px; height: 8px; margin-right: 10px; }
 
-  .sidebar-header {
-    padding: 28px 22px 20px;
-    border-bottom: 1px solid var(--border-subtle);
-    background: linear-gradient(180deg, rgba(110,161,255,0.04) 0%, transparent 100%);
-  }
+  /* ── MAIN ── */
+  .main { margin-left: 260px; flex: 1; min-width: 0; }
+  .page { display: none; max-width: 860px; margin: 0 auto; padding: 48px 48px 100px; animation: fadeIn 0.2s ease; }
+  .page.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-  .sidebar-header h1 {
-    font-size: 18px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    letter-spacing: -0.3px;
-    color: var(--text-bright);
-  }
-
-  .sidebar-header .logo {
-    width: 34px;
-    height: 34px;
-    background: linear-gradient(135deg, var(--accent), var(--purple));
-    border-radius: 9px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 17px;
-    font-weight: 800;
-    color: #0b0f14;
-    box-shadow: 0 2px 12px rgba(110,161,255,0.25);
-  }
-
-  .sidebar-header .version {
-    font-size: 11.5px;
-    color: var(--text-muted);
-    margin-top: 6px;
-    margin-left: 46px;
-    letter-spacing: 0.2px;
-  }
-
-  .sidebar nav {
-    padding: 16px 0;
-  }
-
-  .nav-section {
-    padding: 16px 22px 6px;
-    font-size: 10.5px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--text-muted);
-  }
-
-  .nav-section:first-child { padding-top: 4px; }
-
-  .nav-link {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    padding: 9px 22px;
-    color: var(--text-muted);
-    text-decoration: none;
-    font-size: 13.5px;
-    font-weight: 450;
-    cursor: pointer;
-    border-left: 2px solid transparent;
-    transition: all var(--transition);
-    margin: 1px 0;
-  }
-
-  .nav-link:hover {
-    color: var(--text);
-    background: var(--accent-dim);
-    border-left-color: rgba(110,161,255,0.3);
-  }
-
-  .nav-link.active {
-    color: var(--accent-bright);
-    background: var(--accent-dim);
-    border-left-color: var(--accent);
-    font-weight: 600;
-  }
-
-  .nav-icon {
-    width: 20px;
-    text-align: center;
-    font-size: 14px;
-    opacity: 0.6;
-    transition: opacity var(--transition);
-  }
-
-  .nav-link:hover .nav-icon,
-  .nav-link.active .nav-icon { opacity: 1; }
-
-  /* ── Main content ── */
-  .main {
-    margin-left: 272px;
-    flex: 1;
-    min-width: 0;
-    background: var(--bg);
-  }
-
-  .page {
-    display: none;
-    max-width: 820px;
-    margin: 0 auto;
-    padding: 48px 56px 96px;
-    animation: fadeIn 0.3s ease;
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  .page.active {
-    display: block;
-  }
-
-  /* ── Typography ── */
-  h1 {
-    font-size: 30px;
-    font-weight: 700;
-    margin-bottom: 12px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--border);
-    letter-spacing: -0.5px;
-    color: var(--text-bright);
-  }
-
-  .page > h1:first-child {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-
-  .page-icon {
-    font-size: 26px;
-    opacity: 0.8;
-  }
-
-  h2 {
-    font-size: 20px;
-    font-weight: 650;
-    margin-top: 48px;
-    margin-bottom: 16px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border-subtle);
-    color: var(--text-bright);
-    letter-spacing: -0.3px;
-  }
-
-  h3 {
-    font-size: 16px;
-    font-weight: 600;
-    margin-top: 32px;
-    margin-bottom: 10px;
-    color: var(--accent);
-    letter-spacing: -0.2px;
-  }
-
-  p {
-    margin-bottom: 14px;
-    color: var(--text);
-  }
-
+  /* ── TYPOGRAPHY ── */
+  .page-title { font-family: var(--mono); font-size: 32px; font-weight: 800; color: var(--text-bright); text-transform: uppercase; letter-spacing: -1px; padding-bottom: 16px; border-bottom: 3px solid var(--neon-blue); margin-bottom: 32px; }
+  .page-title span { color: var(--neon-blue); }
+  h2 { font-family: var(--mono); font-size: 18px; font-weight: 700; color: var(--neon-green); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 48px; margin-bottom: 16px; padding: 10px 0; border-bottom: 2px solid var(--border); }
+  h3 { font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--neon-orange); text-transform: uppercase; margin-top: 28px; margin-bottom: 10px; letter-spacing: 0.5px; }
+  h4 { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--neon-purple); margin-top: 20px; margin-bottom: 8px; }
+  p { margin-bottom: 12px; }
   strong { color: var(--text-bright); font-weight: 600; }
+  a { color: var(--neon-blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
 
-  a { color: var(--accent); text-decoration: none; transition: color var(--transition); }
-  a:hover { color: var(--accent-bright); text-decoration: underline; }
+  /* ── CODE ── */
+  code { font-family: var(--mono); font-size: 12px; background: var(--bg3); border: 1px solid var(--border); padding: 2px 6px; color: var(--neon-orange); }
+  pre { background: var(--bg2); border: 2px solid var(--border); padding: 16px 20px; margin: 12px 0 20px; overflow-x: auto; line-height: 1.6; }
+  pre code { background: none; border: none; padding: 0; color: var(--text); font-size: 12px; }
+  .cm { color: var(--text-dim); }
 
-  /* ── Lists ── */
-  ul, ol {
-    margin: 10px 0 18px 24px;
-  }
+  /* ── TABLES ── */
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: 13px; }
+  th { background: var(--bg3); text-align: left; padding: 10px 14px; font-family: var(--mono); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); border: 2px solid var(--border); }
+  td { padding: 9px 14px; border: 1px solid var(--border); vertical-align: top; }
+  td code { font-size: 11px; white-space: nowrap; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
 
-  li {
-    margin-bottom: 6px;
-    line-height: 1.65;
-  }
+  /* ── LISTS ── */
+  ul, ol { margin: 8px 0 16px 24px; }
+  li { margin-bottom: 5px; line-height: 1.6; }
 
-  li code {
-    font-weight: 500;
-  }
+  /* ── CARDS ── */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin: 20px 0; }
+  .card { background: var(--bg2); border: 2px solid var(--border); padding: 20px; transition: border-color 0.15s; }
+  .card:hover { border-color: var(--neon-blue); }
+  .card h3 { margin: 0 0 8px; color: var(--text-bright); font-size: 14px; }
+  .card p { color: var(--text-dim); font-size: 12px; margin: 0; }
 
-  /* ── Code ── */
-  code {
-    font-family: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-    font-size: 12.5px;
-    background: var(--bg-code);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 2.5px 7px;
-    color: var(--orange);
-  }
+  /* ── WORKFLOW BLOCKS ── */
+  .workflow { background: var(--bg2); border: 2px solid var(--border); margin: 20px 0; }
+  .workflow-head { font-family: var(--mono); font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; padding: 14px 20px; border-bottom: 2px solid var(--border); display: flex; align-items: center; gap: 12px; }
+  .workflow-head .wf-tag { padding: 3px 10px; font-size: 10px; font-weight: 700; color: var(--bg); }
+  .workflow-steps { padding: 20px; display: flex; flex-wrap: wrap; gap: 0; }
+  .wf-step { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; flex: 1; min-width: 180px; }
+  .wf-num { font-family: var(--mono); font-size: 22px; font-weight: 800; line-height: 1; min-width: 28px; }
+  .wf-step-text { font-size: 13px; line-height: 1.5; }
+  .wf-step-text strong { display: block; font-size: 12px; font-family: var(--mono); margin-bottom: 2px; }
+  .wf-arrow { color: var(--text-dim); font-size: 18px; display: flex; align-items: center; padding: 0 4px; }
 
-  pre {
-    background: var(--bg-code);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 18px 22px;
-    margin: 14px 0 22px;
-    overflow-x: auto;
-    line-height: 1.6;
-    box-shadow: var(--shadow-sm);
-    position: relative;
-  }
+  /* ── COLLAPSIBLE DETAILS ── */
+  details { margin: 12px 0; border: 2px solid var(--border); }
+  details[open] { border-color: var(--border-bright); }
+  summary { font-family: var(--mono); font-size: 13px; font-weight: 700; padding: 12px 16px; cursor: pointer; color: var(--text-bright); background: var(--bg2); text-transform: uppercase; letter-spacing: 0.5px; user-select: none; transition: background 0.15s; list-style: none; display: flex; align-items: center; gap: 10px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: '+'; font-family: var(--mono); font-size: 16px; font-weight: 800; color: var(--neon-green); width: 20px; text-align: center; }
+  details[open] summary::before { content: '-'; color: var(--neon-pink); }
+  summary:hover { background: var(--bg3); }
+  .details-body { padding: 16px 20px; }
+  .details-body h3:first-child { margin-top: 0; }
 
-  pre code {
-    background: none;
-    border: none;
-    padding: 0;
-    color: var(--text);
-    font-size: 12.5px;
-  }
+  /* ── CALLOUTS ── */
+  .callout { border-left: 4px solid var(--neon-blue); background: var(--bg2); padding: 14px 18px; margin: 16px 0; font-size: 13px; }
+  .callout.tip { border-left-color: var(--neon-green); }
+  .callout.warn { border-left-color: var(--neon-orange); }
+  .callout-title { font-family: var(--mono); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .callout .callout-title { color: var(--neon-blue); }
+  .callout.tip .callout-title { color: var(--neon-green); }
+  .callout.warn .callout-title { color: var(--neon-orange); }
 
-  /* Syntax highlights in code */
-  .kw { color: var(--purple); }
-  .str { color: var(--green); }
-  .cm { color: var(--text-muted); font-style: italic; }
-  .num { color: var(--orange); }
+  /* ── BADGES ── */
+  .badge { display: inline-block; padding: 2px 8px; font-family: var(--mono); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .badge-organic { background: rgba(0,255,136,0.1); color: var(--neon-green); border: 1px solid rgba(0,255,136,0.3); }
+  .badge-mechanical { background: rgba(255,107,53,0.1); color: var(--neon-orange); border: 1px solid rgba(255,107,53,0.3); }
+  .badge-get { background: rgba(62,139,255,0.1); color: var(--neon-blue); border: 1px solid rgba(62,139,255,0.3); }
+  .badge-post { background: rgba(0,255,136,0.1); color: var(--neon-green); border: 1px solid rgba(0,255,136,0.3); }
 
-  /* ── Tables ── */
-  table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    margin: 14px 0 24px;
-    font-size: 13.5px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-    box-shadow: var(--shadow-sm);
-  }
+  /* ── COLOR UTILS ── */
+  .c-blue { color: var(--neon-blue); }
+  .c-green { color: var(--neon-green); }
+  .c-pink { color: var(--neon-pink); }
+  .c-orange { color: var(--neon-orange); }
+  .c-purple { color: var(--neon-purple); }
+  .c-yellow { color: var(--neon-yellow); }
+  .c-cyan { color: var(--neon-cyan); }
+  .bg-blue { background: var(--neon-blue); }
+  .bg-green { background: var(--neon-green); }
+  .bg-pink { background: var(--neon-pink); }
+  .bg-orange { background: var(--neon-orange); }
+  .bg-purple { background: var(--neon-purple); }
 
-  th {
-    background: var(--bg-card);
-    text-align: left;
-    padding: 11px 16px;
-    font-weight: 600;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-muted);
-    border-bottom: 1px solid var(--border);
-  }
-
-  td {
-    padding: 11px 16px;
-    border-bottom: 1px solid var(--border-subtle);
-    vertical-align: top;
-  }
-
-  tr:last-child td { border-bottom: none; }
-
-  tr:hover td {
-    background: var(--accent-dim);
-  }
-
-  td code {
-    font-size: 11.5px;
-    white-space: nowrap;
-  }
-
-  /* ── Cards ── */
-  .card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-    gap: 14px;
-    margin: 24px 0;
-  }
-
-  .card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 22px;
-    transition: all var(--transition);
-    cursor: pointer;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, var(--accent), var(--purple));
-    opacity: 0;
-    transition: opacity var(--transition);
-  }
-
-  .card:hover {
-    border-color: var(--accent);
-    transform: translateY(-3px);
-    box-shadow: var(--shadow-md), 0 0 0 1px rgba(110,161,255,0.1);
-  }
-
-  .card:hover::before { opacity: 1; }
-
-  .card-icon {
-    font-size: 26px;
-    margin-bottom: 12px;
-    opacity: 0.85;
-  }
-
-  .card h3 {
-    margin: 0 0 8px;
-    color: var(--text-bright);
-    font-size: 15px;
-    letter-spacing: -0.2px;
-  }
-
-  .card p {
-    color: var(--text-muted);
-    font-size: 12.5px;
-    margin: 0;
-    line-height: 1.55;
-  }
-
-  /* ── Callouts ── */
-  .callout {
-    background: var(--bg-card);
-    border-left: 3px solid var(--accent);
-    border-radius: 2px var(--radius) var(--radius) 2px;
-    padding: 16px 20px;
-    margin: 18px 0;
-    font-size: 13.5px;
-    border: 1px solid var(--border-subtle);
-    border-left: 3px solid var(--accent);
-  }
-
-  .callout.tip {
-    border-left-color: var(--green);
-    background: linear-gradient(135deg, var(--green-dim), var(--bg-card));
-  }
-  .callout.warn {
-    border-left-color: var(--orange);
-    background: linear-gradient(135deg, var(--orange-dim), var(--bg-card));
-  }
-
-  .callout-title {
-    font-weight: 600;
-    margin-bottom: 6px;
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--accent);
-  }
-
-  .callout.tip .callout-title { color: var(--green); }
-  .callout.warn .callout-title { color: var(--orange); }
-
-  /* ── Badges ── */
-  .badge {
-    display: inline-block;
-    padding: 2px 9px;
-    border-radius: 12px;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    vertical-align: middle;
-  }
-
-  .badge-organic { background: rgba(76,214,125,0.12); color: var(--green); border: 1px solid rgba(76,214,125,0.2); }
-  .badge-mechanical { background: rgba(232,169,70,0.12); color: var(--orange); border: 1px solid rgba(232,169,70,0.2); }
-  .badge-get { background: rgba(110,161,255,0.1); color: var(--accent); border: 1px solid rgba(110,161,255,0.2); }
-  .badge-post { background: rgba(76,214,125,0.1); color: var(--green); border: 1px solid rgba(76,214,125,0.2); }
-
-  /* ── Workflow steps ── */
-  .steps {
-    counter-reset: step;
-    list-style: none;
-    margin-left: 0;
-    padding-left: 0;
-  }
-
-  .steps li {
-    counter-increment: step;
-    position: relative;
-    padding: 14px 0 14px 52px;
-    border-left: 2px solid var(--border);
-    margin-left: 16px;
-    line-height: 1.6;
-  }
-
-  .steps li::before {
-    content: counter(step);
-    position: absolute;
-    left: -14px;
-    top: 13px;
-    width: 26px;
-    height: 26px;
-    background: linear-gradient(135deg, var(--accent), #5b8fef);
-    color: var(--bg);
-    border-radius: 50%;
-    font-size: 12px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 2px 8px rgba(110,161,255,0.3);
-  }
-
-  .steps li:last-child { border-left-color: transparent; }
-
-  /* ── Strikethrough ── */
-  s { color: var(--text-muted); opacity: 0.6; }
-
-  /* ── Selection ── */
-  ::selection {
-    background: rgba(110,161,255,0.25);
-    color: var(--text-bright);
-  }
-
-  /* ── Mobile ── */
-  .menu-toggle {
-    display: none;
-    position: fixed;
-    top: 14px;
-    left: 14px;
-    z-index: 200;
-    width: 42px;
-    height: 42px;
-    background: var(--bg-sidebar);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    color: var(--text);
-    font-size: 20px;
-    cursor: pointer;
-    align-items: center;
-    justify-content: center;
-    box-shadow: var(--shadow-md);
-    backdrop-filter: blur(8px);
-  }
-
+  /* ── MOBILE ── */
+  .menu-toggle { display: none; position: fixed; top: 12px; left: 12px; z-index: 200; width: 40px; height: 40px; background: var(--bg2); border: 2px solid var(--neon-blue); color: var(--neon-blue); font-size: 18px; cursor: pointer; font-family: var(--mono); font-weight: 800; }
   @media (max-width: 768px) {
-    .sidebar {
-      transform: translateX(-100%);
-      box-shadow: var(--shadow-lg);
-    }
+    .sidebar { transform: translateX(-100%); transition: transform 0.2s; }
     .sidebar.open { transform: translateX(0); }
     .main { margin-left: 0; }
-    .menu-toggle { display: flex; }
-    .page { padding: 64px 24px 64px; }
+    .menu-toggle { display: flex; align-items: center; justify-content: center; }
+    .page { padding: 60px 20px 80px; }
+    .workflow-steps { flex-direction: column; }
+    .wf-arrow { display: none; }
     .card-grid { grid-template-columns: 1fr; }
-  }
-
-  @media (min-width: 769px) and (max-width: 1100px) {
-    .page { padding: 40px 32px 80px; }
   }
 </style>
 </head>
 <body>
 
-<button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+<button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">=</button>
 
 <aside class="sidebar">
-  <div class="sidebar-header">
-    <h1><span class="logo">B</span> BlenderTools</h1>
-    <div class="version">v1.0.0 &middot; Blender 5.0+</div>
+  <div class="sidebar-head">
+    <h1>BlenderTools</h1>
+    <div class="ver">v1.0.0 // Blender 5.0+</div>
   </div>
   <nav>
-    <div class="nav-section">Getting Started</div>
-    <a class="nav-link active" data-page="overview">
-      <span class="nav-icon">&#9673;</span> Overview
-    </a>
-
+    <div class="nav-section">Start</div>
+    <a class="nav-link active" data-page="overview"><span class="nav-dot bg-blue"></span>Overview</a>
     <div class="nav-section">Systems</div>
-    <a class="nav-link" data-page="seams">
-      <span class="nav-icon">&#9698;</span> Seams
-    </a>
-    <a class="nav-link" data-page="rigging">
-      <span class="nav-icon">&#9881;</span> Rigging
-    </a>
-    <a class="nav-link" data-page="skinning">
-      <span class="nav-icon">&#9638;</span> Skinning
-    </a>
-    <a class="nav-link" data-page="animation">
-      <span class="nav-icon">&#9654;</span> Animation
-    </a>
-    <a class="nav-link" data-page="export">
-      <span class="nav-icon">&#10548;</span> Export &amp; Scale
-    </a>
-
+    <a class="nav-link" data-page="seams"><span class="nav-dot bg-green"></span>Seams</a>
+    <a class="nav-link" data-page="rigging"><span class="nav-dot bg-orange"></span>Rigging</a>
+    <a class="nav-link" data-page="skinning"><span class="nav-dot bg-pink"></span>Skinning</a>
+    <a class="nav-link" data-page="animation"><span class="nav-dot bg-purple"></span>Animation</a>
+    <a class="nav-link" data-page="export"><span class="nav-dot bg-blue"></span>Export &amp; Scale</a>
     <div class="nav-section">Integration</div>
-    <a class="nav-link" data-page="bridge">
-      <span class="nav-icon">&#8644;</span> LLM Bridge
-    </a>
-
+    <a class="nav-link" data-page="bridge"><span class="nav-dot bg-cyan"></span>LLM Bridge</a>
     <div class="nav-section">Reference</div>
-    <a class="nav-link" data-page="rig-config">
-      <span class="nav-icon">&#123;</span> Rig Config Format
-    </a>
+    <a class="nav-link" data-page="rig-config"><span class="nav-dot bg-orange"></span>Rig Config Format</a>
   </nav>
 </aside>
 
-<main class="main">
+<div class="main">
 
-<!-- ═══════════════════════ OVERVIEW ═══════════════════════ -->
+<!-- ================================================================ -->
+<!-- OVERVIEW -->
+<!-- ================================================================ -->
 <div class="page active" id="page-overview">
-
-<h1><span class="page-icon">&#9673;</span> BlenderTools</h1>
-<p>A comprehensive Blender 5.0+ addon for seam creation, modular rigging, skinning, animation generation, and LLM bridge integration. <strong>You model; BlenderTools handles everything after.</strong></p>
-
-<h2>Quick Start</h2>
+<div class="page-title"><span>//</span> BlenderTools</div>
+<p>Comprehensive Blender 5.0+ addon. <strong>You model; BlenderTools handles everything after.</strong></p>
 
 <div class="card-grid">
-  <div class="card" onclick="navigateTo('seams')">
-    <div class="card-icon">&#9698;</div>
-    <h3>Seams</h3>
-    <p>6 UV seam algorithms + presets. Angle, material, hard-edge, island-aware, projection.</p>
-  </div>
-  <div class="card" onclick="navigateTo('rigging')">
-    <div class="card-icon">&#9881;</div>
-    <h3>Rigging</h3>
-    <p>13 modular rig modules + skeleton scanner. Viewport overlay placement, bone slot mapping, FK/IK with snapping, floor contact.</p>
-  </div>
-  <div class="card" onclick="navigateTo('skinning')">
-    <div class="card-icon">&#9638;</div>
-    <h3>Skinning</h3>
-    <p>Auto-weight, rigid bind, cleanup tools. Heat map, envelope, or hybrid methods.</p>
-  </div>
-  <div class="card" onclick="navigateTo('animation')">
-    <div class="card-icon">&#9654;</div>
-    <h3>Animation</h3>
-    <p>Procedural walk/run/idle, breathing, mechanical. Root motion extraction, camera tools, NLA.</p>
-  </div>
-  <div class="card" onclick="navigateTo('export')">
-    <div class="card-icon">&#10548;</div>
-    <h3>Export &amp; Scale</h3>
-    <p>Scale rigs mid-project. One-click UE export with 100x/0.01 workaround, SK_/A_ naming.</p>
-  </div>
-  <div class="card" onclick="navigateTo('bridge')">
-    <div class="card-icon">&#8644;</div>
-    <h3>LLM Bridge</h3>
-    <p>HTTP server for Claude Code. Query scenes, execute commands, capture viewports.</p>
-  </div>
-  <div class="card" onclick="navigateTo('rig-config')">
-    <div class="card-icon">&#123;</div>
-    <h3>Rig Configs</h3>
-    <p>JSON format reference. Biped, quadruped, mech presets with full option docs.</p>
-  </div>
+  <div class="card" onclick="showPage('seams')"><h3 class="c-green">Seams</h3><p>6 UV seam algorithms + 3 presets</p></div>
+  <div class="card" onclick="showPage('rigging')"><h3 class="c-orange">Rigging</h3><p>13 modules + scanner + wrap rig + custom shapes</p></div>
+  <div class="card" onclick="showPage('skinning')"><h3 class="c-pink">Skinning</h3><p>Heat map, envelope, hybrid, rigid bind</p></div>
+  <div class="card" onclick="showPage('animation')"><h3 class="c-purple">Animation</h3><p>Mechanical, path/camera, root motion, trajectory, onion skin</p></div>
+  <div class="card" onclick="showPage('export')"><h3 class="c-blue">Export</h3><p>Scale rig + UE FBX export pipeline</p></div>
+  <div class="card" onclick="showPage('bridge')"><h3 class="c-cyan">Bridge</h3><p>HTTP API on port 19785 for Claude Code</p></div>
 </div>
 
 <h2>Installation</h2>
-<ol class="steps">
-  <li>Open <strong>Blender 5.0.1+</strong></li>
-  <li>Edit &gt; Preferences &gt; Extensions &gt; <strong>Install from Disk</strong></li>
-  <li>Select the <code>BlenderTools.zip</code> file</li>
-  <li>Enable <strong>"BlenderTools"</strong> in the addon list</li>
+<ol>
+  <li>Open Blender 5.0.1+</li>
+  <li>Edit &gt; Preferences &gt; Extensions &gt; Install from Disk</li>
+  <li>Select <code>BlenderTools.zip</code></li>
+  <li>Enable "BlenderTools" in addon list</li>
 </ol>
 
 <h2>UI Location</h2>
 <p>All panels live in the <strong>3D Viewport sidebar</strong> (press <code>N</code>) under the <strong>BlenderTools</strong> tab.</p>
-
 <table>
   <tr><th>Panel</th><th>Purpose</th></tr>
-  <tr><td><strong>Seams</strong></td><td>UV seam creation tools</td></tr>
-  <tr><td><strong>Rigging</strong></td><td>Modular rig builder + skeleton scanner</td></tr>
-  <tr><td><strong>Skinning</strong></td><td>Weight painting tools</td></tr>
-  <tr><td><strong>Animation</strong></td><td>Procedural animation generators</td></tr>
-  <tr><td><strong>Export</strong></td><td>Rig scaling &amp; UE FBX export</td></tr>
-  <tr><td><strong>LLM Bridge</strong></td><td>HTTP server for Claude Code</td></tr>
+  <tr><td>Seams</td><td>UV seam creation tools</td></tr>
+  <tr><td>Rigging</td><td>Modular rig builder + skeleton scanner</td></tr>
+  <tr><td>Skinning</td><td>Weight painting tools</td></tr>
+  <tr><td>Animation</td><td>Mechanical animation, path/camera, root motion</td></tr>
+  <tr><td>Export</td><td>Rig scaling &amp; UE FBX export</td></tr>
+  <tr><td>LLM Bridge</td><td>HTTP server for Claude Code</td></tr>
 </table>
 
-<h2>Typical Workflow</h2>
-<ol class="steps">
-  <li><strong>Seam your mesh</strong> &mdash; Select mesh &gt; Seams by Angle (30&deg;) &gt; UV Unwrap</li>
-  <li><strong>Rig it</strong> &mdash; Use Viewport Overlay to click-place modules, load a config preset, or import FBX &gt; Scan Skeleton &gt; Apply Wrap Rig</li>
-  <li><strong>Skin it</strong> &mdash; Select mesh + armature &gt; Auto Weight (Heat Map)</li>
-  <li><strong>Animate</strong> &mdash; Generate Walk Cycle, or extract root motion from existing animations</li>
-  <li><strong>Floor contact</strong> &mdash; Enable floor constraints on IK legs to prevent foot clipping</li>
-  <li><strong>Bridge</strong> &mdash; Start Bridge &gt; <code>python blender_api.py ping</code></li>
-</ol>
-
-<h2>Blender 5.0 Compatibility</h2>
-<div class="callout tip">
-  <div class="callout-title">Modern APIs Only</div>
-  <p>This addon uses Blender 5.0 APIs exclusively &mdash; no legacy code paths.</p>
-</div>
-<table>
-  <tr><th>Feature</th><th>5.0 API Used</th><th>Legacy Avoided</th></tr>
-  <tr><td>Animation</td><td>Channelbag API</td><td><s>action.fcurves</s></td></tr>
-  <tr><td>Sharp edges</td><td><code>mesh.attributes["sharp_edge"]</code></td><td><s>dict-like access</s></td></tr>
-  <tr><td>Screenshots</td><td><code>gpu</code> module</td><td><s>BGL</s></td></tr>
-  <tr><td>Addon format</td><td><code>blender_manifest.toml</code></td><td><s>bl_info only</s></td></tr>
-</table>
-
+<h2>Typical End-to-End</h2>
+<div class="workflow">
+  <div class="workflow-head"><span class="wf-tag bg-blue">Full Pipeline</span> Model to Unreal Engine</div>
+  <div class="workflow-steps">
+    <div class="wf-step"><div class="wf-num c-blue">1</div><div class="wf-step-text"><strong>Seam</strong>Angle/preset seams + UV unwrap</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-orange">2</div><div class="wf-step-text"><strong>Rig</strong>Modules from scratch, or scan + wrap existing skeleton</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-pink">3</div><div class="wf-step-text"><strong>Skin</strong>Auto weight (heat map) + cleanup</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-purple">4</div><div class="wf-step-text"><strong>Animate</strong>Mechanical, path/camera, or root motion extract</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-blue">5</div><div class="wf-step-text"><strong>Export</strong>Scale 100x + FBX to UE</div></div>
+  </div>
 </div>
 
-<!-- ═══════════════════════ SEAMS ═══════════════════════ -->
+<details>
+  <summary>Blender 5.0 Compatibility</summary>
+  <div class="details-body">
+    <table>
+      <tr><th>Feature</th><th>5.0 API Used</th><th>Legacy Avoided</th></tr>
+      <tr><td>Animation</td><td>Channelbag API</td><td><s>action.fcurves</s></td></tr>
+      <tr><td>Sharp edges</td><td><code>mesh.attributes["sharp_edge"]</code></td><td><s>dict-like access</s></td></tr>
+      <tr><td>Screenshots</td><td><code>gpu</code> module</td><td><s>BGL</s></td></tr>
+      <tr><td>Addon format</td><td><code>blender_manifest.toml</code></td><td><s>bl_info only</s></td></tr>
+    </table>
+  </div>
+</details>
+</div>
+
+<!-- ================================================================ -->
+<!-- SEAMS -->
+<!-- ================================================================ -->
 <div class="page" id="page-seams">
-
-<h1><span class="page-icon">&#9698;</span> Seams</h1>
-<p>Six UV seam algorithms plus preset combinations. All work on the active mesh object.</p>
+<div class="page-title"><span>//</span> Seams</div>
+<p>6 UV seam algorithms for any mesh type. Select a mesh, choose a method, unwrap.</p>
 
 <h2>Methods</h2>
 
-<h3>Seams by Angle</h3>
-<p>Marks edges as seams where the dihedral angle between adjacent faces exceeds a threshold.</p>
-<div class="callout tip">
-  <div class="callout-title">When to use</div>
-  General-purpose, good first pass for any model.
-</div>
-<table>
-  <tr><th>Parameter</th><th>Range</th><th>Description</th></tr>
-  <tr><td><code>Angle Threshold</code></td><td>0&ndash;180&deg; (default 30&deg;)</td><td>Lower = more seams</td></tr>
-  <tr><td><code>Clear Existing</code></td><td>bool</td><td>Remove existing seams first</td></tr>
-</table>
+<details open>
+  <summary>Seams by Angle</summary>
+  <div class="details-body">
+    <p>Marks edges as seams where the dihedral angle between adjacent faces exceeds a threshold. General-purpose, good first pass for any model.</p>
+    <table>
+      <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>Angle Threshold</code></td><td>30&deg;</td><td>0&ndash;180&deg;. Lower = more seams</td></tr>
+      <tr><td><code>Clear Existing</code></td><td>true</td><td>Remove existing seams first</td></tr>
+    </table>
+  </div>
+</details>
 
-<h3>Seams by Material</h3>
-<p>Marks edges where adjacent faces have different material assignments.</p>
-<div class="callout tip">
-  <div class="callout-title">When to use</div>
-  Models with distinct material regions (skin vs clothing, metal vs rubber).
-</div>
+<details>
+  <summary>Seams by Material</summary>
+  <div class="details-body">
+    <p>Marks edges where adjacent faces have different material assignments. Best for models with distinct material regions (skin vs. clothing, metal vs. rubber).</p>
+  </div>
+</details>
 
-<h3>Seams by Hard Edge</h3>
-<p>Marks seams at sharp/hard edges using Blender 5.0's <code>sharp_edge</code> attribute.</p>
-<div class="callout tip">
-  <div class="callout-title">When to use</div>
-  Hard-surface models where you've already marked sharp edges for shading.
-</div>
+<details>
+  <summary>Seams by Hard Edge</summary>
+  <div class="details-body">
+    <p>Marks seams at sharp/hard edges using Blender 5.0's <code>sharp_edge</code> attribute. Best for hard-surface models where you've already marked sharp edges for shading.</p>
+  </div>
+</details>
 
-<h3>Island-Aware Seams</h3>
-<p>Iterative algorithm that starts with angle-based seams and adds more at high-distortion edges.</p>
-<div class="callout tip">
-  <div class="callout-title">When to use</div>
-  When you need control over UV island count and stretch.
-</div>
-<table>
-  <tr><th>Parameter</th><th>Range</th><th>Description</th></tr>
-  <tr><td><code>Max Islands</code></td><td>0 = unlimited</td><td>Cap on island count</td></tr>
-  <tr><td><code>Max Stretch</code></td><td>0&ndash;1</td><td>Target distortion threshold</td></tr>
-</table>
+<details>
+  <summary>Island-Aware Seams</summary>
+  <div class="details-body">
+    <p>Iterative algorithm: starts with angle-based seams, then adds more at high-distortion edges. Control over UV island count and stretch.</p>
+    <table>
+      <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>Max Islands</code></td><td>0 (unlimited)</td><td>Cap on island count</td></tr>
+      <tr><td><code>Max Stretch</code></td><td>0.5</td><td>0&ndash;1 target distortion threshold</td></tr>
+    </table>
+  </div>
+</details>
 
-<h3>Seams by Projection</h3>
-<p>Marks seams based on projection mapping directions.</p>
-<div class="callout tip">
-  <div class="callout-title">When to use</div>
-  Simple shapes that map well to box/cylinder/sphere projections.
-</div>
-<table>
-  <tr><th>Mode</th><th>Strategy</th></tr>
-  <tr><td><code>BOX</code></td><td>Seams where face normals change dominant axis</td></tr>
-  <tr><td><code>CYLINDER</code></td><td>Seams at cap transitions + one vertical cut</td></tr>
-  <tr><td><code>SPHERE</code></td><td>Single longitude cut</td></tr>
-</table>
+<details>
+  <summary>Seams by Projection</summary>
+  <div class="details-body">
+    <p>Projection-based seams for simple shapes. Modes:</p>
+    <ul>
+      <li><strong>BOX</strong> &mdash; Seams where face normals change dominant axis</li>
+      <li><strong>CYLINDER</strong> &mdash; Seams at cap transitions + one vertical cut</li>
+      <li><strong>SPHERE</strong> &mdash; Single longitude cut</li>
+    </ul>
+  </div>
+</details>
 
-<h3>Seam Presets</h3>
-<p>Apply a predefined combination of seam methods.</p>
+<details>
+  <summary>Clear All Seams</summary>
+  <div class="details-body"><p>Removes all seams from the active mesh. Useful before applying a new method from scratch.</p></div>
+</details>
+
+<h2>Presets</h2>
 <table>
   <tr><th>Preset</th><th>Methods</th></tr>
   <tr><td><code>character_body</code></td><td>Angle (60&deg;) + Material + Hard Edge</td></tr>
@@ -732,1062 +318,851 @@
   <tr><td><code>organic</code></td><td>Island-Aware + Material</td></tr>
 </table>
 
-<h3>Clear All Seams</h3>
-<p>Removes all seams from the active mesh. Useful before applying a new seam method from scratch.</p>
-
 <h2>Bridge API</h2>
-<pre><code>python blender_api.py seam --object Cube --threshold 30
+<pre><code>python blender_api.py seam --object Cube --method angle --threshold 30
 python blender_api.py seam --object Cube --preset hard_surface</code></pre>
-
 </div>
 
-<!-- ═══════════════════════ RIGGING ═══════════════════════ -->
+<!-- ================================================================ -->
+<!-- RIGGING -->
+<!-- ================================================================ -->
 <div class="page" id="page-rigging">
+<div class="page-title"><span>//</span> Rigging</div>
+<p>13 modules, skeleton scanner, wrap rig. Universal <strong>CTRL &rarr; MCH &rarr; DEF</strong> architecture across everything.</p>
 
-<h1><span class="page-icon">&#9881;</span> Rigging</h1>
-<p>Modular rigging system. Each body part is a self-contained module that creates its own bones, constraints, and controls. Modules are assembled into a complete rig. For imported skeletons, the Skeleton Scanner wraps existing bones with controls.</p>
-
-<h2>Universal Three-Tier Architecture</h2>
 <div class="callout">
-  <div class="callout-title">CTRL &rarr; MCH &rarr; DEF</div>
-  <strong>All 13 rig modules</strong> and the wrap rig use the same three-tier bone architecture:<br><br>
-  <strong>DEF bones</strong> (deform): Only carry <code>COPY_TRANSFORMS</code> from their paired MCH bone. Never carry rig logic. <code>use_deform=True</code>.<br>
-  <strong>MCH bones</strong> (mechanism): Carry all rig logic (FK copy, IK, DAMPED_TRACK, STRETCH_TO, etc.). Parented to their CTRLs. <code>use_deform=False</code>.<br>
-  <strong>CTRL bones</strong> (controls): User-facing control bones for animation. <code>use_deform=False</code>.<br><br>
-  This means rig logic <strong>never touches</strong> your deform bones directly. DEF bones always follow MCH via a clean COPY_TRANSFORMS constraint.
+  <div class="callout-title">Three-Tier Architecture</div>
+  <strong>DEF</strong> (deform): only COPY_TRANSFORMS from MCH. Never carries rig logic. <code>use_deform=True</code>.<br>
+  <strong>MCH</strong> (mechanism): all rig logic (FK, IK, DAMPED_TRACK, STRETCH_TO). <code>use_deform=False</code>.<br>
+  <strong>CTRL</strong> (controls): user-facing bones for animation. <code>use_deform=False</code>.<br>
+  Rig logic <strong>never touches</strong> deform bones directly.
 </div>
 
-<p>Each module uses its own constraint prefix for clean identification and removal:</p>
-<table>
-  <tr><th>Module</th><th>Prefix</th></tr>
-  <tr><td>Spine</td><td><code>BT_Spine_</code></td></tr>
-  <tr><td>Arm</td><td><code>BT_Arm_</code></td></tr>
-  <tr><td>Leg</td><td><code>BT_Leg_</code></td></tr>
-  <tr><td>Neck/Head</td><td><code>BT_NeckHead_</code></td></tr>
-  <tr><td>Tail</td><td><code>BT_Tail_</code></td></tr>
-  <tr><td>Piston</td><td><code>BT_Piston_</code></td></tr>
-  <tr><td>Wheel</td><td><code>BT_Wheel_</code></td></tr>
-  <tr><td>Wing</td><td><code>BT_Wing_</code></td></tr>
-  <tr><td>Tentacle</td><td><code>BT_Tentacle_</code></td></tr>
-  <tr><td>Finger Chain</td><td><code>BT_Finger_</code></td></tr>
-  <tr><td>Jaw</td><td><code>BT_Jaw_</code></td></tr>
-  <tr><td>Eye</td><td><code>BT_Eye_</code></td></tr>
-  <tr><td>Custom Chain</td><td><code>BT_Chain_</code></td></tr>
-  <tr><td>Wrap Rig</td><td><code>BT_Wrap_</code></td></tr>
-</table>
-
-<h2>Bone Naming Convention</h2>
-<p>For custom skeletons, bones can be named using the <strong>BT convention</strong>: <code>BT_{TypeCamel}_{Side}_{Role}</code>. CamelCase type names (no underscores) ensure unambiguous parsing via <code>name.split('_', 3)</code>.</p>
-<table>
-  <tr><th>Example</th><th>Type</th><th>Side</th><th>Role</th></tr>
-  <tr><td><code>BT_Spine_C_hips</code></td><td>Spine</td><td>C</td><td>hips</td></tr>
-  <tr><td><code>BT_Arm_L_upper_arm</code></td><td>Arm</td><td>L</td><td>upper_arm</td></tr>
-  <tr><td><code>BT_NeckHead_C_neck</code></td><td>NeckHead</td><td>C</td><td>neck</td></tr>
-  <tr><td><code>BT_Leg_R_foot</code></td><td>Leg</td><td>R</td><td>foot</td></tr>
-</table>
-<div class="callout tip">
-  <div class="callout-title">Name Bones Overlay</div>
-  Click <strong>&ldquo;Name Bones&rdquo;</strong> in the Skeleton Scanner panel to activate an interactive overlay. Hover over any bone to see a clickable circle (white = unlabeled, green = BT-named). Click to open a dialog with Type, Side, and Role dropdowns that renames the bone automatically. The scanner auto-detects BT-named bones at 100% confidence before trying name maps or heuristics.
+<!-- ── WORKFLOW 1: MODULAR RIG ── -->
+<h2>Workflow: Build From Scratch (Modular)</h2>
+<div class="workflow">
+  <div class="workflow-head"><span class="wf-tag bg-orange">Modular</span> Create a rig for a new armature</div>
+  <div class="workflow-steps">
+    <div class="wf-step"><div class="wf-num c-orange">1</div><div class="wf-step-text"><strong>Add Modules</strong>Click-to-place or viewport overlay. Pick module type + side for each body part.</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-orange">2</div><div class="wf-step-text"><strong>Or Load Config</strong>Load a preset: <code>biped_human</code>, <code>quadruped</code>, <code>mech_walker</code></div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-orange">3</div><div class="wf-step-text"><strong>Generate Rig</strong>Creates all CTRL + MCH + DEF bones with constraints.</div></div>
+  </div>
 </div>
 
-<h2>Four Workflows</h2>
+<details>
+  <summary>Viewport Module Overlay (Interactive)</summary>
+  <div class="details-body">
+    <ol>
+      <li>Select armature, open BlenderTools &gt; Rigging</li>
+      <li>Click <strong>"Toggle Module Overlay"</strong> &mdash; white circles on bone heads/tails</li>
+      <li>Hover to highlight, click to open module picker menu</li>
+      <li>Choose a module type &mdash; placed at that bone position</li>
+      <li>For piston/wheel: <strong>"Map Existing Bones"</strong> enters assignment mode (click bones for each slot, RMB skip, ESC cancel)</li>
+      <li>Repeat, then <strong>"Generate Rig"</strong></li>
+    </ol>
+    <div class="callout tip"><div class="callout-title">Tip</div>Overlay is hidden in Pose mode. Only shows in Object/Edit mode.</div>
+  </div>
+</details>
 
-<h3>Viewport Module Overlay (Interactive Placement)</h3>
-<ol class="steps">
-  <li>Select an armature and open BlenderTools &gt; Rigging</li>
-  <li>Click <strong>"Toggle Module Overlay"</strong> &mdash; white circles appear on bone heads and tails (alpha 0.3)</li>
-  <li>Hover over a circle &mdash; it brightens to alpha 0.9 with a thick white outline</li>
-  <li>Click a circle to open the <strong>module picker menu</strong></li>
-  <li>Choose a module type &mdash; it is placed at that bone position</li>
-  <li>For modules with bone slots (piston, wheel): two menu entries appear &mdash; <strong>"Add"</strong> (creates new DEF bones) and <strong>"Map Existing Bones"</strong> (enters assignment mode)</li>
-  <li>Repeat for all body parts, then <strong>"Generate Rig"</strong></li>
-</ol>
-<div class="callout tip">
-  <div class="callout-title">Overlay visibility</div>
-  The overlay is automatically hidden in Pose mode. It only shows in Object and Edit mode.
-</div>
+<details>
+  <summary>Click-to-Place</summary>
+  <div class="details-body">
+    <ol>
+      <li>Select armature, position 3D cursor</li>
+      <li>Click <strong>"Add Rig Module"</strong></li>
+      <li>Choose module type, name, side</li>
+      <li>Repeat, then <strong>"Generate Rig"</strong></li>
+    </ol>
+  </div>
+</details>
 
-<h3>Click-to-Place</h3>
-<ol class="steps">
-  <li>Select an armature</li>
-  <li>Position the 3D cursor where you want the module</li>
-  <li>Click <strong>"Add Rig Module"</strong></li>
-  <li>Choose module type, name, and side</li>
-  <li>Repeat for all body parts</li>
-  <li>Click <strong>"Generate Rig"</strong></li>
-</ol>
+<details>
+  <summary>Config File</summary>
+  <div class="details-body">
+    <ol>
+      <li>Select armature</li>
+      <li>Click <strong>"Load Rig Config"</strong> &mdash; choose preset</li>
+      <li>Click <strong>"Generate Rig"</strong></li>
+    </ol>
+  </div>
+</details>
 
-<h3>Config File</h3>
-<ol class="steps">
-  <li>Select an armature</li>
-  <li>Click <strong>"Load Rig Config"</strong></li>
-  <li>Choose a preset (biped_human, quadruped, mech_walker)</li>
-  <li>Click <strong>"Generate Rig"</strong></li>
-</ol>
-
-<h3>Skeleton Scanner (Wrap Existing Bones)</h3>
-<p>For imported skeletons (Mixamo, UE Mannequin, or any source) that have deform bones but no control rig:</p>
-<ol class="steps">
-  <li>Select the armature</li>
-  <li>Open Rigging &gt; <strong>Skeleton Scanner</strong></li>
-  <li><strong>(Optional)</strong> Click <strong>&ldquo;Name Bones&rdquo;</strong> to label bones with the BT convention via interactive overlay</li>
-  <li>Click <strong>"Scan Skeleton"</strong> &mdash; auto-detects bone roles via BT convention (Step 0), name maps, then position heuristics</li>
-  <li>Review chains and bone assignments &mdash; edit module types, roles, or skip bones. Configure FK/IK/Snap per chain.</li>
-  <li>Click <strong>"Apply Wrap Rig"</strong> &mdash; three-layer rig (CTRL &rarr; MCH &rarr; DEF) wraps the original bones with FK/IK controls</li>
-</ol>
-<div class="callout tip">
-  <div class="callout-title">Non-destructive</div>
-  Original bones are <strong>never renamed or deleted</strong>. Clear Wrap Rig removes only generated CTRL/MCH bones and constraints.
-</div>
-
-<table>
-  <tr><th>Skeleton Type</th><th>Detection</th><th>Bones Mapped</th></tr>
-  <tr><td><strong>BT Convention</strong></td><td><code>BT_{Type}_{Side}_{Role}</code> parsing</td><td>100% confidence, instant detection (Step 0)</td></tr>
-  <tr><td><strong>Mixamo</strong></td><td>Name map (~55 entries)</td><td>Auto-detected at 40% match threshold</td></tr>
-  <tr><td><strong>UE Mannequin</strong></td><td>Name map (~55 entries)</td><td>Auto-detected at 40% match threshold</td></tr>
-  <tr><td><strong>Unknown</strong></td><td>Position/hierarchy heuristics</td><td>Spine, arms, legs inferred from bone geometry</td></tr>
-</table>
-
-<p><strong>Generated bone naming:</strong></p>
-<table>
-  <tr><th>Prefix</th><th>Example</th><th>Purpose</th></tr>
-  <tr><td><code>CTRL-Wrap_</code></td><td><code>CTRL-Wrap_arm_L_FK_upper_arm</code></td><td>Animator FK controls</td></tr>
-  <tr><td><code>CTRL-Wrap_</code></td><td><code>CTRL-Wrap_arm_L_IK_target</code></td><td>IK target</td></tr>
-  <tr><td><code>CTRL-Wrap_</code></td><td><code>CTRL-Wrap_leg_R_IK_pole</code></td><td>IK pole vector</td></tr>
-  <tr><td><code>CTRL-Wrap_</code></td><td><code>CTRL-Wrap_tail_C_Spline_00</code></td><td>Spline IK hook control</td></tr>
-  <tr><td><code>MCH-Wrap_</code></td><td><code>MCH-Wrap_arm_L_upper_arm</code></td><td>Intermediate layer (hidden)</td></tr>
-  <tr><td><code>BT_Wrap_Spline_</code></td><td><code>BT_Wrap_Spline_tail_C</code></td><td>Spline IK Bezier curve (object)</td></tr>
-</table>
-
-<h3>Wrap Rig Constraint Flow</h3>
-<div class="callout">
-  <div class="callout-title">Wrap Rig Three-Tier Details</div>
-  The wrap rig follows the universal three-tier pattern with FK/IK switching on the MCH layer:<br>
-  <strong>DEF</strong> (original bones) &rarr; COPY_TRANSFORMS from <strong>MCH</strong> (always influence=1.0, never toggled)<br>
-  <strong>MCH</strong> &rarr; COPY_TRANSFORMS from <strong>CTRL-FK</strong> (LOCAL space, toggled for FK) + IK or SPLINE_IK constraint (toggled for IK)<br>
-  <strong>CTRL</strong> &rarr; FK controls that animators manipulate, plus IK target/pole bones or Spline hook controls<br><br>
-  The MCH&rarr;CTRL-FK constraint uses <strong>LOCAL space</strong> so that child chains (e.g. fingers parented to hand MCH) correctly inherit world-space movement from their MCH parent when the parent chain is in IK mode.
-</div>
-
-<p><strong>Cross-chain hierarchy:</strong> Chains are processed in dependency order (root &rarr; spine &rarr; neck/head &rarr; arm/leg &rarr; finger &rarr; generic). The first CTRL bone in each chain auto-parents to the nearest ancestor&rsquo;s CTRL from a parent chain. Moving spine controls moves all attached limbs.</p>
-
-<p><strong>IK bone sizes:</strong> IK target and pole bones are sized proportionally to their chain (30% of the lower bone&rsquo;s length), not tiny hardcoded values.</p>
-
-<h3>FK/IK Build Config vs. Runtime State</h3>
-<p>Build configuration and runtime state are separate:</p>
-<ul>
-  <li><code>fk_enabled</code> / <code>ik_enabled</code> &mdash; Control whether FK/IK controls are <strong>generated</strong> during build (build-time settings).</li>
-  <li><code>ik_type</code> &mdash; <code>STANDARD</code> or <code>SPLINE</code>. Standard IK uses a target + pole. Spline IK uses a Bezier curve with hook controls for smooth chain deformation. Default <code>SPLINE</code> for tail/tentacle, <code>STANDARD</code> for all others.</li>
-  <li><code>ik_snap</code> &mdash; Per-chain toggle (build-time, Standard IK only). When enabled, supports FK/IK snapping. Default ON for arms/legs.</li>
-  <li><code>ik_limits</code> &mdash; Apply IK joint rotation limits (prevents hyperextension). Uses IK solver properties (<code>ik_min_x</code>, <code>ik_stiffness_x</code>, etc.) which work with pole targets. Default ON for arms/legs/wings. Toggleable at runtime.</li>
-  <li><code>ik_active</code> &mdash; Tracks which mode is <strong>currently active</strong> at runtime. All chains start in FK mode after applying the wrap rig.</li>
-</ul>
-
-<h3>Spline IK</h3>
-<p>For long chains like tails and tentacles, standard IK distributes motion poorly across many joints. <strong>Spline IK</strong> uses a Bezier curve driven by hook control bones for smooth, art-directable chain deformation.</p>
-<div class="callout">
-  <div class="callout-title">How Spline IK Works</div>
-  <ol>
-    <li>A Bezier curve (<code>BT_Wrap_Spline_{chain_id}</code>) is created along the chain, parented to the armature</li>
-    <li>3&ndash;5 hook control bones (<code>CTRL-Wrap_{chain}_Spline_00</code> etc.) are placed at even intervals along the chain length</li>
-    <li>Hook modifiers bind each curve control point to its hook bone</li>
-    <li>A <code>SPLINE_IK</code> constraint on the <strong>last</strong> MCH bone drives the entire chain to follow the curve (walks up the parent chain, same as regular IK)</li>
-    <li>Moving hook bones reshapes the curve, smoothly deforming all bones in the chain</li>
-  </ol>
-  Control point count is based on chain length: 3 for &le;4 bones, 4 for &le;8, 5 for 9+. All hook bones are parented to the cross-chain MCH parent so the entire spline follows the body when parent bones rotate.
-  <br><br><strong>Spline FK/IK snapping:</strong> When switching FK &rarr; Spline, hook bones are repositioned along the FK-posed chain. When switching Spline &rarr; FK, FK controls snap to the spline-solved MCH poses.
-</div>
-
-<h3>IK Rotation Limits</h3>
-<p>Joint rotation limits use Blender&rsquo;s IK bone limit properties (<code>ik_min_x</code>, <code>ik_max_x</code>, <code>ik_stiffness_x</code>, etc.) which are evaluated <strong>inside</strong> the IK solver. Unlike <code>LIMIT_ROTATION</code> constraints (which IK ignores), these work with pole targets.</p>
-<div class="callout tip">
-  <div class="callout-title">Why IK limits, not LIMIT_ROTATION?</div>
-  Blender&rsquo;s IK solver overwrites bone transforms, ignoring post-IK constraints like <code>LIMIT_ROTATION</code>. IK bone limits (<code>use_ik_limit_x</code>, <code>ik_min_x</code>, <code>ik_max_x</code>) and stiffness (<code>ik_stiffness_x</code>) are evaluated <em>inside</em> the solver during solving. Combined with stiffness on secondary axes, this prevents hyperextension even with pole targets.
-</div>
-<p><strong>Defaults by module type:</strong></p>
-<ul>
-  <li><strong>Arm/Leg mid-joints</strong> (elbow/knee): Single-axis bend (auto-detected), 0&deg;&ndash;160&deg;, secondary axes locked (stiffness 0.9)</li>
-  <li><strong>Arm/Leg root/end joints</strong>: &plusmn;120&deg; all axes</li>
-  <li><strong>Tail</strong>: &plusmn;45&deg; per joint, stiffness 0.1</li>
-  <li><strong>Tentacle</strong>: &plusmn;60&deg; per joint, stiffness 0.05</li>
-  <li><strong>Generic</strong>: &plusmn;90&deg; per joint, no stiffness</li>
-</ul>
-<p>The <code>bt.toggle_ik_limits</code> operator flips limits on/off per chain at runtime. Limit values are preserved so re-enabling restores them instantly.</p>
-<p><strong>Per-bone editing:</strong> The <code>bt.edit_bone_ik_limits</code> operator opens a dialog to adjust per-axis min/max angles and stiffness for individual bones. Access via the gear icon in the FK/IK panel or right-click &rarr; "Edit IK Limits" in pose mode.</p>
-
-<h3>Dynamic Arm/Leg chain_count</h3>
-<p>Arm and leg IK <code>chain_count</code> is calculated dynamically from the actual bone span (upper&rarr;lower index in the chain), not hardcoded to 2. This means arms/legs with intermediate bones (e.g. upper_arm &rarr; mid_arm &rarr; lower_arm &rarr; hand) have IK covering the full chain.</p>
-
-<h3>FK/IK Toggle with Snapping</h3>
-<p>FK/IK switching works on <strong>any chain</strong> with IK or Spline IK constraints. The <code>bt.toggle_fk_ik</code> operator handles the switching. For Spline IK chains, the toggle shows &ldquo;Spline&rdquo; instead of &ldquo;IK&rdquo;.</p>
-
-<div class="callout tip">
-  <div class="callout-title">Pose Snapping</div>
-  <strong>Standard IK</strong> (when <code>ik_snap</code> enabled, 2-bone arms/legs):<br>
-  &bull; <strong>IK &rarr; FK:</strong> FK bones snap to match the IK-solved pose<br>
-  &bull; <strong>FK &rarr; IK:</strong> IK target snaps to chain end, pole angle recalibrated<br><br>
-  <strong>Spline IK</strong> (always enabled for spline chains):<br>
-  &bull; <strong>Spline &rarr; FK:</strong> FK controls snap to spline-solved MCH poses<br>
-  &bull; <strong>FK &rarr; Spline:</strong> Hook bones repositioned along the FK-posed chain
-</div>
-
-<p><strong>Panel modes</strong> change based on wrap rig state:</p>
-<ul>
-  <li><strong>Before wrap rig exists (config mode):</strong> FK/IK/Type/Snap/Limits config visible. Bone mapping, batch skip, and unmapped bones sections all visible.</li>
-  <li><strong>After wrap rig exists (rig mode):</strong> FK/IK toggle buttons (&ldquo;FK&rdquo; + &ldquo;IK&rdquo; or &ldquo;Spline&rdquo;) + IK limits toggle icon. Appears when any bone in an IK-capable chain is selected.</li>
-</ul>
-
-<p><strong>IK control visibility:</strong> IK target, pole, and spline hook bones are placed in per-chain bone collections (<code>IK_arm_L</code>, <code>IK_tail_C</code>, etc.) that start hidden. Toggling to IK shows the collection for that chain; toggling to FK hides it.</p>
-
-<table>
-  <tr><th>Mode</th><th>MCH FK COPY_TRANSFORMS</th><th>MCH IK/SPLINE_IK Constraint</th></tr>
-  <tr><td><strong>FK</strong></td><td>Influence = 1.0</td><td>Influence = 0.0</td></tr>
-  <tr><td><strong>IK</strong></td><td>Influence = 0.0</td><td>Influence = 1.0</td></tr>
-  <tr><td><strong>TOGGLE</strong></td><td colspan="2">Switches to the opposite of the current mode</td></tr>
-</table>
-<p><em>Note: DEF bones always have COPY_TRANSFORMS from MCH at influence=1.0 (never toggled). Bones outside the IK <code>chain_count</code> range (e.g. foot/toe below an IK target) keep FK active in both modes.</em></p>
-
-<h4>Branching Hierarchy Support</h4>
-<p>The wrap rig respects the original skeleton&rsquo;s branching hierarchy. If a spine chain branches (e.g. <code>spine_01</code> has children <code>spine_02</code> and <code>hips</code>), the MCH hierarchy mirrors this &mdash; <code>MCH_hips</code> is parented to <code>MCH_spine_01</code>, not to <code>MCH_chest</code>. Rotating the chest does not cascade to the hips, tail, or legs.</p>
-
-<p>Operator properties:</p>
-<ul>
-  <li><code>chain_id</code> (StringProperty) &mdash; The chain to switch, e.g. <code>"arm_L"</code>, <code>"leg_R"</code>, <code>"tail_C"</code></li>
-  <li><code>mode</code> (EnumProperty) &mdash; <code>FK</code>, <code>IK</code>, or <code>TOGGLE</code></li>
-</ul>
-
-<h3>Batch Skip Tools</h3>
-<p>Three operators for quickly skipping/unskipping chains during scan review:</p>
-<table>
-  <tr><th>Operator</th><th>Description</th></tr>
-  <tr><td><code>bt.batch_skip_selected</code></td><td>Select bones in pose/edit mode, click <strong>Skip Selected</strong> or <strong>Unskip Selected</strong> to set module_type on their containing chains</td></tr>
-  <tr><td><code>bt.batch_skip_pattern</code></td><td>Glob pattern matching (e.g. <code>Automatic*</code>, <code>*Piston*</code>) with <strong>Skip</strong> and <strong>Unskip</strong> buttons</td></tr>
-  <tr><td><code>bt.batch_unskip_all</code></td><td>Quick reset &mdash; unskips all chains at once, with count display</td></tr>
-</table>
-<div class="callout tip">
-  <div class="callout-title">Skip scope</div>
-  &ldquo;Skip&rdquo; is only available as a chain-level module_type (not on individual bone dropdowns). Individual bones can be skipped using the X button next to each bone entry.
-</div>
-
-<h3>Pole Angle Calibration</h3>
-<p>IK pole angles are automatically calibrated during rig assembly using a <strong>depsgraph-based approach</strong>. The system sets <code>pole_angle=0</code>, lets Blender&rsquo;s IK solver run via dependency graph evaluation, measures the resulting bend twist, and applies the correction. This works universally for any bone roll or orientation.</p>
-
-<p><strong>Operators:</strong></p>
-<table>
-  <tr><th>Operator</th><th>Action</th></tr>
-  <tr><td><code>bt.scan_skeleton</code></td><td>Analyze armature, populate scan data for UI</td></tr>
-  <tr><td><code>bt.apply_wrap_rig</code></td><td>Generate wrap controls from (possibly edited) scan data</td></tr>
-  <tr><td><code>bt.clear_wrap_rig</code></td><td>Remove only generated bones + constraints (restores hidden collections)</td></tr>
-  <tr><td><code>bt.clear_scan_data</code></td><td>Clear wrap rig + all scan data</td></tr>
-  <tr><td><code>bt.toggle_fk_ik</code></td><td>Switch any IK-capable chain between FK/IK/Spline mode (with snap if enabled)</td></tr>
-  <tr><td><code>bt.toggle_ik_limits</code></td><td>Enable/disable IK joint rotation limits per chain at runtime</td></tr>
-  <tr><td><code>bt.edit_bone_ik_limits</code></td><td>Per-bone IK limit editor (gear icon or right-click in pose mode)</td></tr>
-  <tr><td><code>bt.bake_to_def</code></td><td>Bake animation onto DEF bones for clean FBX export</td></tr>
-  <tr><td><code>bt.toggle_floor_contact</code></td><td>Add/remove floor constraints on leg IK targets + toe auto-bend</td></tr>
-  <tr><td><code>bt.update_floor_level</code></td><td>Update floor Z level on existing constraints</td></tr>
-  <tr><td><code>bt.batch_skip_selected</code></td><td>Skip/unskip chains by bone selection</td></tr>
-  <tr><td><code>bt.batch_skip_pattern</code></td><td>Skip/unskip chains by glob pattern</td></tr>
-  <tr><td><code>bt.batch_unskip_all</code></td><td>Unskip all chains at once</td></tr>
-  <tr><td><code>bt.bone_naming_overlay</code></td><td>Interactive bone naming overlay (BT convention)</td></tr>
-  <tr><td><code>bt.set_bone_label</code></td><td>Dialog to set Type/Side/Role on a bone (used by overlay)</td></tr>
-</table>
-
-<h2>Module Types</h2>
-
-<h3>Organic Modules</h3>
-<table>
-  <tr><th>Module</th><th>Description</th><th>Key Options</th></tr>
-  <tr><td><code>spine</code> <span class="badge badge-organic">organic</span></td><td>FK chain + optional IK spline</td><td><code>bone_count</code>, <code>ik_spline</code></td></tr>
-  <tr><td><code>arm</code> <span class="badge badge-organic">organic</span></td><td>IK/FK arm with clavicle</td><td><code>twist_bones</code>, <code>clavicle</code></td></tr>
-  <tr><td><code>leg</code> <span class="badge badge-organic">organic</span></td><td>IK/FK leg with foot roll</td><td><code>twist_bones</code>, <code>foot_roll</code></td></tr>
-  <tr><td><code>neck_head</code> <span class="badge badge-organic">organic</span></td><td>Neck chain + head</td><td><code>neck_bones</code></td></tr>
-  <tr><td><code>tail</code> <span class="badge badge-organic">organic</span></td><td>FK chain + optional IK tip</td><td><code>bone_count</code>, <code>ik_tip</code>, <code>direction</code></td></tr>
-  <tr><td><code>wing</code> <span class="badge badge-organic">organic</span></td><td>Multi-segment + feather bones</td><td><code>segments</code>, <code>feather_bones</code></td></tr>
-  <tr><td><code>tentacle</code> <span class="badge badge-organic">organic</span></td><td>Long chain with taper</td><td><code>bone_count</code>, <code>taper</code></td></tr>
-  <tr><td><code>finger_chain</code> <span class="badge badge-organic">organic</span></td><td>Individual finger</td><td><code>bone_count</code>, <code>finger_name</code></td></tr>
-  <tr><td><code>jaw</code> <span class="badge badge-organic">organic</span></td><td>Hinge jaw + optional upper</td><td><code>upper_jaw</code></td></tr>
-  <tr><td><code>eye</code> <span class="badge badge-organic">organic</span></td><td>Aim-based + eyelids</td><td><code>eyelids</code>, <code>target_distance</code></td></tr>
-  <tr><td><code>custom_chain</code> <span class="badge badge-organic">organic</span></td><td>Generic FK/IK chain</td><td><code>bone_count</code>, <code>ik</code>, <code>direction</code></td></tr>
-</table>
-
-<h3>Mechanical Modules</h3>
-<table>
-  <tr><th>Module</th><th>Description</th><th>Key Options</th><th>Bone Slots</th></tr>
-  <tr><td><code>piston</code> <span class="badge badge-mechanical">mech</span></td><td>Linear piston with DAMPED_TRACK (rigid) or STRETCH_TO</td><td><code>stroke_length</code>, <code>direction</code>, <code>stretch_mode</code></td><td>Cylinder, Rod, Rod_Parent</td></tr>
-  <tr><td><code>wheel</code> <span class="badge badge-mechanical">mech</span></td><td>Rotation-based wheel + axle</td><td><code>radius</code></td><td>Wheel, Axle</td></tr>
-</table>
-
-<h2>Bone Slot Mapping</h2>
-<p>Modules with bone slots (piston, wheel) support <strong>mapping to existing bones</strong> rather than creating new DEF bones. This is accessed via the viewport overlay&rsquo;s &ldquo;Map Existing Bones&rdquo; menu entry.</p>
-
-<h3>Assignment Mode Workflow</h3>
-<ol class="steps">
-  <li>Click <strong>"Map Existing Bones"</strong> in the overlay menu</li>
-  <li>A header text appears in the viewport showing which slot to fill (e.g. &ldquo;Click bone for: Cylinder&rdquo;)</li>
-  <li>Click bones to assign them sequentially to each slot &mdash; assigned bones turn <strong>green</strong></li>
-  <li>RMB to skip a slot, Enter to confirm early, ESC to cancel</li>
-</ol>
-
-<h3>What Happens When Mapping</h3>
-<ul>
-  <li>Module creates <strong>MCH bones</strong> at mapped bone positions (parented to their CTRLs)</li>
-  <li>Module creates <strong>CTRL bones</strong> (parented to the mapped bone&rsquo;s skeleton parent)</li>
-  <li>Module <strong>skips creating DEF bones</strong> &mdash; uses the existing bones instead</li>
-  <li>Existing bones get <code>COPY_TRANSFORMS</code> from MCH (clean, non-destructive)</li>
-</ul>
-
-<h3>Piston Architecture</h3>
-<p>The piston uses a fixed, deterministic three-tier architecture. Default constraint is <strong>DAMPED_TRACK</strong> (rotation only, rigid). Configurable <code>stretch_mode</code>: <code>"none"</code> (default, DAMPED_TRACK), <code>"cylinder"</code>, <code>"rod"</code>, or <code>"both"</code> (uses STRETCH_TO for selected parts).</p>
-<pre><code>CTRL-Base (inherits cylinder&rsquo;s skeleton parent)
-   +-- MCH-Cylinder  <span class="cm">--DAMPED_TRACK--&gt;</span>  CTRL-Target
-CTRL-Target (inherits rod_parent&rsquo;s skeleton parent)
-   +-- MCH-Rod       <span class="cm">--DAMPED_TRACK--&gt;</span>  CTRL-Base
-
-DEF-Cylinder  <span class="cm">&lt;-- COPY_TRANSFORMS --</span>  MCH-Cylinder
-DEF-Rod       <span class="cm">&lt;-- COPY_TRANSFORMS --</span>  MCH-Rod</code></pre>
-<p><strong>Bone slots:</strong> Cylinder (outer body), Rod (inner shaft), Rod_Parent (explicit parent for CTRL-Target).</p>
-<div class="callout tip">
-  <div class="callout-title">Generic piston usage</div>
-  Works for any scenario: <strong>same-parent</strong> (decorative pistons), <strong>cross-joint</strong> (shock absorbers spanning knee/elbow), or <strong>free-standing</strong>. MCH bones are always parented to CTRLs; CTRLs inherit the mapped bone&rsquo;s skeleton parent for automatic movement.
-</div>
-
-<h3>Wheel Architecture</h3>
-<pre><code>CTRL-Position (inherits axle&rsquo;s skeleton parent)
-   +-- CTRL-Rotation
-   |      +-- MCH-Wheel  <span class="cm">(COPY_ROTATION from CTRL-Rotation)</span>
-   +-- MCH-Axle           <span class="cm">(COPY_LOCATION from CTRL-Position)</span>
-
-DEF-Axle   <span class="cm">&lt;-- COPY_TRANSFORMS --</span>  MCH-Axle
-DEF-Wheel  <span class="cm">&lt;-- COPY_TRANSFORMS --</span>  MCH-Wheel</code></pre>
-
-<h2>Naming Convention</h2>
-<p>All bones follow: <code>{prefix}{ModuleName}_{side}_{part}</code></p>
-<table>
-  <tr><th>Example</th><th>Meaning</th></tr>
-  <tr><td><code>DEF-Arm_L_Upper</code></td><td>Deform bone</td></tr>
-  <tr><td><code>CTRL-Arm_L_FK_Upper</code></td><td>Control bone</td></tr>
-  <tr><td><code>MCH-Leg_L_HeelPivot</code></td><td>Mechanism bone (hidden)</td></tr>
-</table>
-
-<h2>Bone Collections</h2>
-<table>
-  <tr><th>Collection</th><th>Purpose</th><th>Color</th><th>Visible</th><th><code>use_deform</code></th></tr>
-  <tr><td><strong>DEF</strong></td><td>Deform bones (for skinning/export)</td><td>&mdash;</td><td>Hidden when rig built, restored on clear</td><td><code>True</code></td></tr>
-  <tr><td><strong>CTRL</strong></td><td>FK control bones (for animators)</td><td>Blue (THEME06)</td><td>Yes</td><td><code>False</code></td></tr>
-  <tr><td><strong>IK_{chain_id}</strong></td><td>Per-chain IK target/pole bones (e.g. <code>IK_arm_L</code>)</td><td>Green (THEME04)</td><td>Hidden in FK, shown in IK</td><td><code>False</code></td></tr>
-  <tr><td><strong>MCH</strong></td><td>Intermediate/mechanism bones</td><td>Purple (THEME09)</td><td>No</td><td><code>False</code></td></tr>
-</table>
-<div class="callout">
-  <div class="callout-title">Collection State Tracking</div>
-  The <code>hidden_collections</code> property on the armature tracks which bone collections were hidden during rig creation. When the wrap rig is cleared, these collections are restored to their original visibility.
-</div>
-
-<h2>Connection Points</h2>
-<p>Modules expose named points for parenting. Use dot notation:</p>
-<pre><code>"parent_bone": "Spine.chest"</code></pre>
-<table>
-  <tr><th>Module</th><th>Points</th></tr>
-  <tr><td>Spine</td><td><code>hip</code>, <code>chest</code>, <code>mid</code></td></tr>
-  <tr><td>Arm</td><td><code>hand</code>, <code>shoulder</code>, <code>clavicle</code></td></tr>
-  <tr><td>Leg</td><td><code>hip</code>, <code>foot</code>, <code>toe</code></td></tr>
-  <tr><td>NeckHead</td><td><code>neck_base</code>, <code>head</code></td></tr>
-</table>
-
-<h2>Saving / Loading Configs</h2>
-<ul>
-  <li><strong>"Save Rig Config"</strong> saves current modules to <code>presets/rig_configs/</code></li>
-  <li><strong>"Load Rig Config"</strong> loads from the same directory</li>
-  <li>Config is also stored on the armature as a custom property (survives save/load)</li>
-</ul>
-
-<h2>Floor Contact</h2>
-<p>Prevents IK feet from going below a configurable floor level, with optional auto toe bend on ground contact.</p>
-<ul>
-  <li><strong>Floor constraint:</strong> <code>LIMIT_LOCATION</code> (min Z, world space) on each leg IK target</li>
-  <li><strong>Toe auto-bend:</strong> <code>TRANSFORM</code> constraint on the toe bone &mdash; maps IK target Z to toe X rotation. Active only in IK mode (toggled by FK/IK switch).</li>
-  <li><strong>Panel:</strong> Toggle button in Skeleton Scanner panel when wrap rig has legs. Configure floor level, toe bend on/off, max angle.</li>
-</ul>
-
-<h2>Root Motion Extraction</h2>
-<p>One-click workflow using the reference-object pinning method (Pierrick Picaut). All key controllers (IK hands/feet + COG) are <strong>pinned</strong> to baked reference empties. The <strong>source bone</strong> (COG/hips) additionally has its XY travel + Z rotation extracted to the <strong>root bone</strong>.</p>
-<p>Panel is under <strong>Animation &gt; Root Motion</strong>. Operators: <code>bt.rm_setup</code>, <code>bt.rm_finalize</code>, <code>bt.rm_cancel</code>.</p>
-
-<h2>Bridge API</h2>
-<pre><code><span class="cm"># Modular rigging</span>
+<pre><code><span class="cm"># CLI</span>
 python blender_api.py rig-add --armature Armature --module arm --side L
-python blender_api.py rig-generate --armature Armature
-python blender_api.py rig-load --armature Armature --config path/to/biped.json
+python blender_api.py rig-load --armature Armature --config presets/rig_configs/biped_human.json
+python blender_api.py rig-generate --armature Armature</code></pre>
 
-<span class="cm"># Skeleton scanner</span>
+<!-- ── WORKFLOW 2: WRAP RIG ── -->
+<h2>Workflow: Wrap Existing Skeleton</h2>
+<div class="workflow">
+  <div class="workflow-head"><span class="wf-tag bg-green">Wrap</span> Rig an imported skeleton (Mixamo, UE, custom)</div>
+  <div class="workflow-steps">
+    <div class="wf-step"><div class="wf-num c-green">1</div><div class="wf-step-text"><strong>Name Bones</strong>(Optional) Label bones with BT convention via overlay</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-green">2</div><div class="wf-step-text"><strong>Scan Skeleton</strong>Auto-detects roles via BT convention, name maps, heuristics</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-green">3</div><div class="wf-step-text"><strong>Review &amp; Configure</strong>Edit chain types, FK/IK, skip bones</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-green">4</div><div class="wf-step-text"><strong>Apply Wrap Rig</strong>Generates CTRL + MCH around original bones</div></div>
+  </div>
+</div>
+
+<div class="callout tip"><div class="callout-title">Non-destructive</div>Original bones are <strong>never renamed or deleted</strong>. Clear Wrap Rig removes only generated CTRL/MCH bones and constraints.</div>
+
+<table>
+  <tr><th>Skeleton Type</th><th>Detection</th><th>Confidence</th></tr>
+  <tr><td><strong>BT Convention</strong></td><td><code>BT_{Type}_{Side}_{Role}</code> parsing</td><td>100% (Step 0)</td></tr>
+  <tr><td><strong>Mixamo</strong></td><td>Name map (~55 entries)</td><td>Auto-detected at 40% match</td></tr>
+  <tr><td><strong>UE Mannequin</strong></td><td>Name map (~55 entries)</td><td>Auto-detected at 40% match</td></tr>
+  <tr><td><strong>Unknown</strong></td><td>Position/hierarchy heuristics</td><td>Variable</td></tr>
+</table>
+
+<pre><code><span class="cm"># CLI</span>
 python blender_api.py rig-scan --armature Armature
 python blender_api.py rig-apply-wrap --armature Armature
-python blender_api.py rig-clear-wrap --armature Armature
+python blender_api.py rig-clear-wrap --armature Armature</code></pre>
 
-<span class="cm"># FK/IK toggle (works on any chain with IK constraints)</span>
-python blender_api.py rig-toggle-fk-ik --armature Armature --chain leg_L --mode IK
-python blender_api.py rig-toggle-fk-ik --armature Armature --chain arm_R --mode TOGGLE
+<!-- ── BONE NAMING ── -->
+<h2>Bone Naming Convention</h2>
+<p>Format: <code>BT_{TypeCamel}_{Side}_{Role}</code> &mdash; CamelCase type, parsed via <code>split('_', 3)</code>.</p>
+<p><strong>Chain numbering</strong> (1&ndash;10) supports multiple chains of the same type per side. The naming dialog shows <strong>Type / Side / Chain / Role</strong> dropdowns.</p>
+<ul>
+  <li><strong>Indexed types</strong> (finger, tail, tentacle, generic): chain always embedded &mdash; <code>{chain}_{bone}</code></li>
+  <li><strong>Named-role types</strong> (arm, leg, spine, etc.): chain only embedded when &gt; 1 (biped names stay clean)</li>
+</ul>
+<table>
+  <tr><th>Name</th><th>Type</th><th>Side</th><th>Chain</th><th>Role</th></tr>
+  <tr><td><code>BT_Spine_C_hips</code></td><td>Spine</td><td>C</td><td>1</td><td>hips</td></tr>
+  <tr><td><code>BT_Arm_L_upper_arm</code></td><td>Arm</td><td>L</td><td>1</td><td>upper_arm</td></tr>
+  <tr><td><code>BT_Arm_L_2_upper_arm</code></td><td>Arm</td><td>L</td><td>2</td><td>upper_arm</td></tr>
+  <tr><td><code>BT_Finger_R_1_01</code></td><td>Finger</td><td>R</td><td>1</td><td>01</td></tr>
+  <tr><td><code>BT_Finger_R_3_02</code></td><td>Finger</td><td>R</td><td>3</td><td>02</td></tr>
+  <tr><td><code>BT_Leg_L_3_foot</code></td><td>Leg</td><td>L</td><td>3</td><td>foot</td></tr>
+</table>
+<div class="callout tip"><div class="callout-title">Name Bones Overlay</div>Click <strong>"Name Bones"</strong> in the Skeleton Scanner panel. Hover over bones to see clickable circles (white = unlabeled, green = BT-named). Click to open Type/Side/Chain/Role dialog. The scanner auto-detects BT-named bones at 100% confidence before name maps or heuristics.</div>
+<div class="callout tip"><div class="callout-title">Auto-Name Chain</div>Name one root bone with BT convention, select its child bones, click the <strong>chain link icon</strong>. Children are auto-named: indexed types increment bone index (01&rarr;02&rarr;03), named-role types walk the role list (upper_arm&rarr;lower_arm&rarr;hand).</div>
 
-<span class="cm"># Floor contact</span>
-python blender_api.py floor-contact --armature Armature --action enable --level 0
-python blender_api.py floor-contact --armature Armature --action disable
+<!-- ── FK/IK ── -->
+<h2>FK/IK System</h2>
 
-<span class="cm"># Root motion extraction</span>
-python blender_api.py root-motion-setup --armature Armature
-python blender_api.py root-motion-finalize --armature Armature
-python blender_api.py root-motion-cancel --armature Armature</code></pre>
+<details open>
+  <summary>FK/IK Toggle &amp; Snapping</summary>
+  <div class="details-body">
+    <p>Works on <strong>any chain</strong> with IK constraints. All chains start in FK mode.</p>
+    <table>
+      <tr><th>Mode</th><th>MCH FK Constraint</th><th>MCH IK Constraint</th></tr>
+      <tr><td><strong>FK</strong></td><td>influence = 1.0</td><td>influence = 0.0</td></tr>
+      <tr><td><strong>IK</strong></td><td>influence = 0.0</td><td>influence = 1.0</td></tr>
+    </table>
+    <p><strong>IK range-aware</strong>: bones outside the IK <code>chain_count</code> (e.g. foot/toe below IK target) keep FK active in both modes.</p>
+    <h4>Snapping (Standard IK, arms/legs)</h4>
+    <ul>
+      <li><strong>IK &rarr; FK</strong>: FK bones snap to match the IK-solved pose</li>
+      <li><strong>FK &rarr; IK</strong>: IK target snaps to chain end, pole angle recalibrated</li>
+    </ul>
+    <h4>Snapping (Spline IK, tails/tentacles)</h4>
+    <ul>
+      <li><strong>Spline &rarr; FK</strong>: FK controls snap to spline-solved MCH poses</li>
+      <li><strong>FK &rarr; Spline</strong>: Hook bones repositioned along FK-posed chain</li>
+    </ul>
+    <p><strong>IK visibility</strong>: IK target/pole/hook bones are in per-chain collections (<code>IK_arm_L</code>, <code>IK_tail_C</code>) that show/hide with FK/IK toggle.</p>
+    <pre><code>python blender_api.py rig-toggle-fk-ik --armature Armature --chain leg_L --mode IK
+python blender_api.py rig-toggle-fk-ik --armature Armature --chain arm_R --mode TOGGLE</code></pre>
+  </div>
+</details>
 
+<details>
+  <summary>Spline IK (Tails, Tentacles)</summary>
+  <div class="details-body">
+    <p>For long chains, standard IK distributes motion poorly. <strong>Spline IK</strong> uses a Bezier curve driven by hook control bones for smooth deformation.</p>
+    <ol>
+      <li>Bezier curve <code>BT_Wrap_Spline_{chain_id}</code> created along chain, parented to armature</li>
+      <li>3&ndash;5 hook bones (<code>CTRL-Wrap_{chain}_Spline_00</code> etc.) at even intervals</li>
+      <li>Hook modifiers bind curve control points to hook bones</li>
+      <li><code>SPLINE_IK</code> on the <strong>last</strong> MCH bone drives the whole chain</li>
+      <li>Moving hook bones reshapes the curve, smoothly deforming all bones</li>
+    </ol>
+    <p>Control points: 3 for &le;4 bones, 4 for &le;8, 5 for 9+. All hooks parented to cross-chain MCH parent. Defaults to <code>SPLINE</code> for tail/tentacle.</p>
+  </div>
+</details>
+
+<details>
+  <summary>IK Rotation Limits</summary>
+  <div class="details-body">
+    <p>Uses Blender's IK bone limit properties (<code>ik_min_x</code>, <code>ik_max_x</code>, <code>ik_stiffness_x</code>) which are evaluated <strong>inside the IK solver</strong> &mdash; unlike <code>LIMIT_ROTATION</code> constraints which IK ignores.</p>
+    <table>
+      <tr><th>Module</th><th>Defaults</th></tr>
+      <tr><td>Arm/Leg mid-joints</td><td>Single-axis bend (auto-detected), 0&deg;&ndash;160&deg;, secondary axes locked (stiffness 0.9)</td></tr>
+      <tr><td>Arm/Leg root/end</td><td>&plusmn;120&deg; all axes</td></tr>
+      <tr><td>Tail</td><td>&plusmn;45&deg;, stiffness 0.1</td></tr>
+      <tr><td>Tentacle</td><td>&plusmn;60&deg;, stiffness 0.05</td></tr>
+      <tr><td>Generic</td><td>&plusmn;90&deg;, no stiffness</td></tr>
+    </table>
+    <p><strong>Runtime toggle</strong>: <code>bt.toggle_ik_limits</code> flips limits on/off per chain. Values preserved.<br>
+    <strong>Per-bone editor</strong>: <code>bt.edit_bone_ik_limits</code> (gear icon or right-click &rarr; "Edit IK Limits").</p>
+  </div>
+</details>
+
+<details>
+  <summary>Build Config vs. Runtime State</summary>
+  <div class="details-body">
+    <table>
+      <tr><th>Property</th><th>When</th><th>Description</th></tr>
+      <tr><td><code>fk_enabled</code> / <code>ik_enabled</code></td><td>Build</td><td>Whether FK/IK controls are generated</td></tr>
+      <tr><td><code>ik_type</code></td><td>Build</td><td><code>STANDARD</code> or <code>SPLINE</code>. Default SPLINE for tail/tentacle</td></tr>
+      <tr><td><code>ik_snap</code></td><td>Build</td><td>Enable snapping. Default ON for arms/legs. Standard IK only</td></tr>
+      <tr><td><code>ik_limits</code></td><td>Build + Runtime</td><td>Joint rotation limits. Default ON for arms/legs/wings</td></tr>
+      <tr><td><code>ik_active</code></td><td>Runtime</td><td>Currently active mode. All start FK</td></tr>
+    </table>
+  </div>
+</details>
+
+<!-- ── FLOOR CONTACT ── -->
+<details>
+  <summary>Floor Contact</summary>
+  <div class="details-body">
+    <p>Prevents IK feet from going below a configurable floor level. Optional auto toe bend on ground contact.</p>
+    <ul>
+      <li><strong>Floor constraint</strong>: <code>LIMIT_LOCATION</code> (min Z, world space) on each leg IK target</li>
+      <li><strong>Toe auto-bend</strong>: <code>TRANSFORM</code> constraint maps IK target Z to toe X rotation (active in IK mode only)</li>
+    </ul>
+    <pre><code>python blender_api.py floor-contact --armature Armature --action enable --level 0
+python blender_api.py floor-contact --armature Armature --action disable</code></pre>
+  </div>
+</details>
+
+<!-- ── FK/IK OVERLAY ── -->
+<details>
+  <summary>FK/IK Overlay</summary>
+  <div class="details-body">
+    <p>Clickable bar at the viewport bottom showing FK/IK state per chain. <strong>Blue</strong> = FK, <strong>Orange</strong> = IK. Click to toggle. Shows "Spline" for spline IK chains.</p>
+    <ul>
+      <li>Toggle via panel button or <code>bt.ik_overlay</code></li>
+      <li>ESC to dismiss</li>
+      <li>Only visible in pose mode with active wrap rig</li>
+    </ul>
+  </div>
+</details>
+
+<!-- ── CENTER OF MASS ── -->
+<details>
+  <summary>Center of Mass + Balance</summary>
+  <div class="details-body">
+    <p>Pose-mode visualization for balance analysis.</p>
+    <h4>Center of Mass (CoM)</h4>
+    <ul>
+      <li>Crosshair at weighted average of deform bone positions</li>
+      <li>Mass auto-calculated from mesh vertex weights; per-bone override available</li>
+      <li>Colored by balance: green (stable) &rarr; yellow &rarr; red (unstable)</li>
+    </ul>
+    <h4>Base of Support (BoS)</h4>
+    <ul>
+      <li>Convex hull polygon from foot/hand contact bones projected on ground</li>
+      <li>Detection tiers: scan data &rarr; name matching (foot/toe/hand/paw/hoof/claw) &rarr; Z-position (leaf deform bones near ground)</li>
+      <li>Works for bipeds and quadrupeds</li>
+    </ul>
+    <h4>Balance Indicator</h4>
+    <ul>
+      <li>Stability ratio bar at bottom-right with needle</li>
+      <li>Green (&gt;50%) &rarr; yellow (50%) &rarr; red (0% = on edge)</li>
+    </ul>
+  </div>
+</details>
+
+<!-- ── MODULE TYPES ── -->
+<h2>Module Types</h2>
+
+<details>
+  <summary>Organic Modules (11)</summary>
+  <div class="details-body">
+    <table>
+      <tr><th>Module</th><th>Description</th><th>Key Options</th></tr>
+      <tr><td><code>spine</code></td><td>FK chain + optional IK spline</td><td><code>bone_count</code>, <code>ik_spline</code></td></tr>
+      <tr><td><code>arm</code></td><td>IK/FK arm with clavicle</td><td><code>twist_bones</code>, <code>clavicle</code></td></tr>
+      <tr><td><code>leg</code></td><td>IK/FK leg with foot roll</td><td><code>twist_bones</code>, <code>foot_roll</code></td></tr>
+      <tr><td><code>neck_head</code></td><td>Neck chain + head</td><td><code>neck_bones</code></td></tr>
+      <tr><td><code>tail</code></td><td>FK chain + optional IK tip</td><td><code>bone_count</code>, <code>ik_tip</code>, <code>direction</code></td></tr>
+      <tr><td><code>wing</code></td><td>Multi-segment + feather bones</td><td><code>segments</code>, <code>feather_bones</code></td></tr>
+      <tr><td><code>tentacle</code></td><td>Long chain with taper</td><td><code>bone_count</code>, <code>taper</code></td></tr>
+      <tr><td><code>finger_chain</code></td><td>Individual finger</td><td><code>bone_count</code>, <code>finger_name</code></td></tr>
+      <tr><td><code>jaw</code></td><td>Hinge jaw + optional upper</td><td><code>upper_jaw</code></td></tr>
+      <tr><td><code>eye</code></td><td>Aim-based + eyelids</td><td><code>eyelids</code>, <code>target_distance</code></td></tr>
+      <tr><td><code>custom_chain</code></td><td>Generic FK/IK chain</td><td><code>bone_count</code>, <code>ik</code>, <code>direction</code></td></tr>
+    </table>
+  </div>
+</details>
+
+<details>
+  <summary>Mechanical Modules (2)</summary>
+  <div class="details-body">
+    <table>
+      <tr><th>Module</th><th>Description</th><th>Bone Slots</th></tr>
+      <tr><td><code>piston</code></td><td>DAMPED_TRACK (rigid) or STRETCH_TO. <code>stretch_mode</code>: none/cylinder/rod/both</td><td>Cylinder, Rod, Rod_Parent</td></tr>
+      <tr><td><code>wheel</code></td><td>Rotation-based wheel + axle</td><td>Wheel, Axle</td></tr>
+    </table>
+    <p>Both support <strong>bone slot mapping</strong>: reuse existing bones as DEF (skips DEF creation), wraps with MCH + CTRL.</p>
+  </div>
+</details>
+
+<details>
+  <summary>Control Bone Custom Shapes</summary>
+  <div class="details-body">
+    <p>Procedural shape library in a hidden <code>BT_Shapes</code> collection. Auto-assigned on rig generation:</p>
+    <table>
+      <tr><th>Bone Role</th><th>Shape</th><th>Scale</th></tr>
+      <tr><td>FK control</td><td>Circle</td><td>0.8</td></tr>
+      <tr><td>IK target</td><td>Cube</td><td>0.6</td></tr>
+      <tr><td>IK pole</td><td>Diamond</td><td>0.5</td></tr>
+      <tr><td>Spline hook</td><td>Sphere</td><td>0.4</td></tr>
+    </table>
+    <p>Built-in shapes: circle, cube, diamond, sphere, arrow, square, line. Users can extend by adding any mesh via <code>bt.add_custom_shape</code>.</p>
+    <p>Operators: <code>bt.assign_bone_shape</code>, <code>bt.resize_ctrl_bones</code>, <code>bt.clear_bone_shapes</code>, <code>bt.add_custom_shape</code></p>
+  </div>
+</details>
+
+<!-- ── REFERENCE ── -->
+<h2>Reference</h2>
+
+<details>
+  <summary>Generated Bone Naming</summary>
+  <div class="details-body">
+    <table>
+      <tr><th>Prefix</th><th>Example</th><th>Purpose</th></tr>
+      <tr><td><code>CTRL-Wrap_</code></td><td><code>CTRL-Wrap_arm_L_FK_upper_arm</code></td><td>FK controls</td></tr>
+      <tr><td><code>CTRL-Wrap_</code></td><td><code>CTRL-Wrap_arm_L_IK_target</code></td><td>IK target</td></tr>
+      <tr><td><code>CTRL-Wrap_</code></td><td><code>CTRL-Wrap_tail_C_Spline_00</code></td><td>Spline hook</td></tr>
+      <tr><td><code>MCH-Wrap_</code></td><td><code>MCH-Wrap_arm_L_upper_arm</code></td><td>Mechanism (hidden)</td></tr>
+    </table>
+    <p>Modular rig: <code>{prefix}{Module}_{side}_{part}</code> (e.g. <code>DEF-Arm_L_Upper</code>, <code>CTRL-Arm_L_FK_Upper</code>)</p>
+  </div>
+</details>
+
+<details>
+  <summary>Bone Collections</summary>
+  <div class="details-body">
+    <table>
+      <tr><th>Collection</th><th>Purpose</th><th>Color</th><th>Visible</th></tr>
+      <tr><td><strong>DEF</strong></td><td>Deform bones (skinning/export)</td><td>&mdash;</td><td>Hidden when rig built</td></tr>
+      <tr><td><strong>CTRL</strong></td><td>FK control bones</td><td>Blue (THEME06)</td><td>Yes</td></tr>
+      <tr><td><strong>IK_{chain_id}</strong></td><td>IK target/pole per chain</td><td>Green (THEME04)</td><td>FK: hidden, IK: shown</td></tr>
+      <tr><td><strong>MCH</strong></td><td>Mechanism bones</td><td>Purple (THEME09)</td><td>No</td></tr>
+    </table>
+  </div>
+</details>
+
+<details>
+  <summary>Constraint Prefixes</summary>
+  <div class="details-body">
+    <p>Every module prefixes constraints with <code>BT_{Module}_</code> for clean identification: <code>BT_Spine_</code>, <code>BT_Arm_</code>, <code>BT_Leg_</code>, <code>BT_NeckHead_</code>, <code>BT_Tail_</code>, <code>BT_Wing_</code>, <code>BT_Tentacle_</code>, <code>BT_Finger_</code>, <code>BT_Jaw_</code>, <code>BT_Eye_</code>, <code>BT_Piston_</code>, <code>BT_Wheel_</code>, <code>BT_Chain_</code>. Wrap rig uses <code>BT_Wrap_</code>.</p>
+  </div>
+</details>
+
+<details>
+  <summary>Connection Points</summary>
+  <div class="details-body">
+    <p>For parenting modules in config files. Use dot notation: <code>"parent_bone": "Spine.chest"</code></p>
+    <table>
+      <tr><th>Module</th><th>Points</th></tr>
+      <tr><td>Spine</td><td><code>hip</code>, <code>chest</code>, <code>mid</code></td></tr>
+      <tr><td>Arm</td><td><code>hand</code>, <code>shoulder</code>, <code>clavicle</code></td></tr>
+      <tr><td>Leg</td><td><code>hip</code>, <code>foot</code>, <code>toe</code></td></tr>
+      <tr><td>NeckHead</td><td><code>neck_base</code>, <code>head</code></td></tr>
+    </table>
+  </div>
+</details>
+
+<details>
+  <summary>All Operators</summary>
+  <div class="details-body">
+    <table>
+      <tr><th>Operator</th><th>Action</th></tr>
+      <tr><td><code>bt.scan_skeleton</code></td><td>Analyze armature, populate scan data</td></tr>
+      <tr><td><code>bt.apply_wrap_rig</code></td><td>Generate wrap controls from scan data</td></tr>
+      <tr><td><code>bt.clear_wrap_rig</code></td><td>Remove generated bones + constraints</td></tr>
+      <tr><td><code>bt.clear_scan_data</code></td><td>Clear wrap rig + all scan data</td></tr>
+      <tr><td><code>bt.toggle_fk_ik</code></td><td>FK/IK/Spline switch with snap</td></tr>
+      <tr><td><code>bt.toggle_ik_limits</code></td><td>Enable/disable IK limits per chain</td></tr>
+      <tr><td><code>bt.edit_bone_ik_limits</code></td><td>Per-bone IK limit editor</td></tr>
+      <tr><td><code>bt.bake_to_def</code></td><td>Bake animation onto DEF bones</td></tr>
+      <tr><td><code>bt.toggle_floor_contact</code></td><td>Floor constraints on leg IK targets</td></tr>
+      <tr><td><code>bt.bone_naming_overlay</code></td><td>Interactive bone naming overlay</td></tr>
+      <tr><td><code>bt.auto_name_chain</code></td><td>Auto-name selected child bones from root</td></tr>
+      <tr><td><code>bt.ik_overlay</code></td><td>FK/IK toggle overlay at viewport bottom</td></tr>
+      <tr><td><code>bt.toggle_com</code></td><td>Center of Mass + BoS + Balance display</td></tr>
+      <tr><td><code>bt.recalc_com_masses</code></td><td>Recalculate bone masses from vertex weights</td></tr>
+      <tr><td><code>bt.batch_skip_selected</code></td><td>Skip/unskip chains by selection</td></tr>
+      <tr><td><code>bt.batch_skip_pattern</code></td><td>Skip/unskip chains by glob pattern</td></tr>
+      <tr><td><code>bt.batch_unskip_all</code></td><td>Unskip all chains</td></tr>
+    </table>
+  </div>
+</details>
 </div>
 
-<!-- ═══════════════════════ SKINNING ═══════════════════════ -->
+<!-- ================================================================ -->
+<!-- SKINNING -->
+<!-- ================================================================ -->
 <div class="page" id="page-skinning">
+<div class="page-title"><span>//</span> Skinning</div>
 
-<h1><span class="page-icon">&#9638;</span> Skinning</h1>
-<p>Weight painting and vertex group tools. Select a mesh + armature to get started.</p>
+<h2>Workflow: Organic Character</h2>
+<div class="workflow">
+  <div class="workflow-head"><span class="wf-tag bg-pink">Organic</span></div>
+  <div class="workflow-steps">
+    <div class="wf-step"><div class="wf-num c-pink">1</div><div class="wf-step-text"><strong>Select</strong>Mesh + armature</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-pink">2</div><div class="wf-step-text"><strong>Auto Weight</strong>Heat Map (default)</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-pink">3</div><div class="wf-step-text"><strong>Test</strong>Deformation in Pose mode</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-pink">4</div><div class="wf-step-text"><strong>Cleanup</strong>Remove tiny weights, limit influences</div></div>
+  </div>
+</div>
+
+<h2>Workflow: Mechanical</h2>
+<div class="workflow">
+  <div class="workflow-head"><span class="wf-tag bg-orange">Mechanical</span></div>
+  <div class="workflow-steps">
+    <div class="wf-step"><div class="wf-num c-orange">1</div><div class="wf-step-text"><strong>Select</strong>Mesh + armature</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-orange">2</div><div class="wf-step-text"><strong>Rigid Bind</strong>100% weight to nearest bone</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-orange">3</div><div class="wf-step-text"><strong>Verify</strong>Each part moves with correct bone</div></div>
+  </div>
+</div>
 
 <h2>Methods</h2>
-
-<h3>Auto Weight</h3>
-<p>Wraps Blender's built-in automatic weighting with pre/post processing.</p>
 <table>
   <tr><th>Method</th><th>Best For</th><th>Description</th></tr>
   <tr><td><strong>Heat Map</strong></td><td>Organic meshes</td><td>Diffusion-based, default choice</td></tr>
   <tr><td><strong>Envelope</strong></td><td>Simple shapes</td><td>Bone envelope proximity</td></tr>
   <tr><td><strong>Hybrid</strong></td><td>Mixed models</td><td>Heat map + envelope blending</td></tr>
+  <tr><td><strong>Rigid Bind</strong></td><td>Mechanical</td><td>100% weight to nearest bone segment</td></tr>
 </table>
-<div class="callout">
-  <div class="callout-title">Auto Post-Processing</div>
-  Remove weights &lt; 0.01, limit to 4 influences per vertex, normalize.
-</div>
+<div class="callout tip"><div class="callout-title">Auto Post-Processing</div>Removes weights &lt; 0.01, limits to 4 influences per vertex, normalizes.</div>
 
-<h3>Rigid Bind</h3>
-<p>Assigns each vertex <strong>100% weight</strong> to the nearest deform bone segment. No blending.</p>
-<div class="callout tip">
-  <div class="callout-title">When to use</div>
-  Mechanical/hard-surface models where each face belongs entirely to one bone &mdash; robot limbs, armor plates, vehicle parts.
-</div>
-
-<h2>Cleanup Tools</h2>
-
-<h3>Weight Cleanup</h3>
-<table>
-  <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>Threshold</code></td><td>0.01</td><td>Remove weights below this value</td></tr>
-  <tr><td><code>Max Influences</code></td><td>4</td><td>Limit vertex groups per vertex</td></tr>
-</table>
-
-<h3>Merge Vertex Groups</h3>
-<p>Combine two vertex groups into one (adds weights, removes source).</p>
-
-<h3>Mirror Vertex Groups</h3>
-<p>Creates mirrored vertex groups based on <code>_L</code>/<code>_R</code> naming convention.</p>
-
-<h2>Workflows</h2>
-
-<h3>Organic Character</h3>
-<ol class="steps">
-  <li>Select mesh + armature</li>
-  <li>Auto Weight (Heat Map)</li>
-  <li>Test deformation in Pose mode</li>
-  <li>Weight Cleanup if needed</li>
-</ol>
-
-<h3>Mechanical Model</h3>
-<ol class="steps">
-  <li>Select mesh + armature</li>
-  <li>Rigid Bind</li>
-  <li>Verify each part moves with correct bone</li>
-</ol>
-
-<h3>Mixed (Organic + Armor)</h3>
-<ol class="steps">
-  <li>Auto Weight the body mesh</li>
-  <li>Rigid Bind the armor pieces separately</li>
-  <li>Cleanup weights on body</li>
-</ol>
+<details>
+  <summary>Cleanup Tools</summary>
+  <div class="details-body">
+    <table>
+      <tr><th>Tool</th><th>Description</th></tr>
+      <tr><td>Weight Cleanup</td><td>Threshold (default 0.01) + max influences (default 4)</td></tr>
+      <tr><td>Merge Vertex Groups</td><td>Combine two groups (adds weights, removes source)</td></tr>
+      <tr><td>Mirror Vertex Groups</td><td>Mirror based on <code>_L</code>/<code>_R</code> naming</td></tr>
+    </table>
+  </div>
+</details>
 
 <h2>Bridge API</h2>
 <pre><code>python blender_api.py skin --mesh Body --armature Armature --method heat_map
 python blender_api.py rigid-bind --mesh ArmorPlate --armature Armature</code></pre>
-
 </div>
 
-<!-- ═══════════════════════ ANIMATION ═══════════════════════ -->
+<!-- ================================================================ -->
+<!-- ANIMATION -->
+<!-- ================================================================ -->
 <div class="page" id="page-animation">
+<div class="page-title"><span>//</span> Animation</div>
 
-<h1><span class="page-icon">&#9654;</span> Animation</h1>
-<p>Procedural animation generators, camera tools, cycle management, and retargeting.</p>
-
-<h2>Procedural Generators</h2>
-
-<h3>Walk Cycle</h3>
-<p>Sine-wave based locomotion with hip bounce, leg stride, and arm swing.</p>
-<table>
-  <tr><th>Parameter</th><th>Range</th><th>Description</th></tr>
-  <tr><td><code>Speed</code></td><td>0.1 &ndash; 5.0</td><td>Animation speed multiplier</td></tr>
-  <tr><td><code>Stride</code></td><td>0.1 &ndash; 2.0</td><td>Step length</td></tr>
-  <tr><td><code>Arm Swing</code></td><td>0.0 &ndash; 1.0</td><td>Arm rotation amplitude</td></tr>
-  <tr><td><code>Frame Count</code></td><td>8 &ndash; 120</td><td>Cycle duration in frames</td></tr>
-</table>
-
-<h3>Run Cycle</h3>
-<p>Faster walk with aerial phase. Same parameters, higher defaults.</p>
-
-<h3>Idle</h3>
-<p>Subtle body sway animation for standing poses. 3-second default cycle.</p>
-
-<h3>Breathing</h3>
-<p>Chest scale + shoulder rise animation.</p>
-<table>
-  <tr><th>Parameter</th><th>Range</th><th>Description</th></tr>
-  <tr><td><code>Breaths/Min</code></td><td>5 &ndash; 40</td><td>Breathing rate</td></tr>
-  <tr><td><code>Depth</code></td><td>0.005 &ndash; 0.1</td><td>Breath intensity</td></tr>
-</table>
-
-<h3>Mechanical</h3>
-<table>
-  <tr><th>Type</th><th>Description</th></tr>
-  <tr><td><strong>Piston</strong></td><td>Linear stroke cycle</td></tr>
-  <tr><td><strong>Gear</strong></td><td>Continuous rotation with ratio</td></tr>
-  <tr><td><strong>Conveyor</strong></td><td>Repeating linear offset</td></tr>
-</table>
-
-<h2>Path &amp; Camera</h2>
-
-<h3>Follow Path</h3>
-<ol class="steps">
-  <li>Select object + curve</li>
-  <li>Set duration and banking</li>
-  <li>Object follows curve over specified frames</li>
-</ol>
-
-<h3>Orbit Camera</h3>
-<p>Creates a new camera that orbits around the 3D cursor. Automatically creates a target empty with Track-To constraint.</p>
-
-<h3>Camera Shake</h3>
-<p>Adds procedural noise-based shake to a camera. Intensity, frequency, and seed controls.</p>
-
-<h3>Focus Pull</h3>
-<p>Animate depth of field focus distance (requires DOF enabled on camera).</p>
-
-<h2>Cycle &amp; NLA</h2>
-
-<h3>Match Cycle Start/End</h3>
-<p>Sets the last keyframe of each FCurve to match the first &mdash; essential for seamless loops.</p>
-
-<h3>Push to NLA</h3>
-<p>Converts the active action into an NLA strip with optional repeat count.</p>
-
-<h2>Root Motion Extraction</h2>
-<p>One-click workflow using the reference-object pinning method (Pierrick Picaut). Pins key controllers to baked empties, freeing the root bone for motion extraction.</p>
-<ul>
-  <li><strong>Pinned bones</strong> &mdash; All controllers that hold position when root moves (IK hands/feet + COG/torso). Each gets a baked reference empty + COPY_TRANSFORMS constraint back.</li>
-  <li><strong>Source bone</strong> &mdash; One of the pinned bones (COG/hips/torso) whose XY travel + Z rotation are additionally extracted to the root bone. Defines the character&rsquo;s travel path.</li>
-  <li><strong>Root bone</strong> &mdash; Receives the extracted locomotion data. Created at origin if missing.</li>
-</ul>
-<ol>
-  <li><strong>Auto-detect</strong> source, root, and pinned controllers (from wrap rig data or heuristics)</li>
-  <li><strong>Setup</strong> &mdash; creates reference empties, pins controllers, extracts root travel</li>
-  <li><strong>Polish</strong> root curves in Graph Editor (optional)</li>
-  <li><strong>Finalize</strong> &mdash; bakes all controllers with visual keying, removes empties and constraints</li>
-</ol>
-<p>Panel: <strong>Animation &gt; Root Motion</strong>. Config phase shows bone selection; active phase shows Finalize/Cancel buttons.</p>
-
-<h2>Data Flow</h2>
-<div class="callout">
-  <div class="callout-title">Channelbag API</div>
-  All generators output pure math data. The <code>create_fcurve</code> helper handles Blender 5.0's channelbag pipeline:<br>
-  Action &rarr; Slot &rarr; Channelbag &rarr; FCurve &rarr; Keyframe Points
+<h2>Mechanical Animation</h2>
+<div class="card-grid">
+  <div class="card"><h3 class="c-orange">Piston</h3><p>Linear stroke cycle along bone axis.</p></div>
+  <div class="card"><h3 class="c-orange">Gear</h3><p>Continuous rotation with configurable ratio.</p></div>
+  <div class="card"><h3 class="c-orange">Conveyor</h3><p>Repeating linear offset.</p></div>
 </div>
 
-<h2>Bridge API</h2>
-<pre><code>python blender_api.py animate --armature Rig --type walk --params '{"speed":1.5}'
-python blender_api.py mechanical --object Piston --type piston_cycle
+<pre><code>python blender_api.py mechanical --object Piston --type piston_cycle</code></pre>
 
-<span class="cm"># Root motion</span>
-python blender_api.py root-motion-setup --armature Armature
+<details>
+  <summary>Path &amp; Camera Tools</summary>
+  <div class="details-body">
+    <ul>
+      <li><strong>Follow Path</strong> &mdash; Object follows curve over specified frames with banking</li>
+      <li><strong>Orbit Camera</strong> &mdash; Camera orbits 3D cursor with Track-To constraint</li>
+      <li><strong>Camera Shake</strong> &mdash; Procedural noise-based shake (intensity, frequency, seed)</li>
+      <li><strong>Focus Pull</strong> &mdash; Animate DOF focus distance</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Cycle &amp; NLA</summary>
+  <div class="details-body">
+    <ul>
+      <li><strong>Match Cycle Start/End</strong> &mdash; Sets last keyframe of each FCurve to match first (seamless loops)</li>
+      <li><strong>Push to NLA</strong> &mdash; Converts active action to NLA strip with optional repeat count</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Bone Trajectory (Cascadeur-style)</summary>
+  <div class="details-body">
+    <p>Interactive 3D visualization and editing of bone location keyframes.</p>
+    <ul>
+      <li>Select bones in Pose mode &rarr; enable via header Overlays or Animation &gt; Trajectory</li>
+      <li>Keyframe positions shown as <strong>yellow dots</strong> connected by a smooth curve (past=blue, future=green)</li>
+      <li><strong>Click + drag</strong> any keyframe dot to edit the bone's location at that frame</li>
+      <li>World-space delta inverse-transformed to bone-local coords &mdash; FCurve values update in real-time</li>
+      <li>Location channels only &mdash; no rotation, no new keyframes created</li>
+    </ul>
+    <p>Operator: <code>bt.trajectory</code> (modal, ESC to exit)</p>
+  </div>
+</details>
+
+<details>
+  <summary>Onion Skinning / Ghost Frames</summary>
+  <div class="details-body">
+    <p>Camera-independent ghost frame display for armatures with child meshes.</p>
+    <ul>
+      <li>Evaluates child meshes at past/future frames via depsgraph</li>
+      <li>Past ghosts: <span class="c-blue">blue</span>, future ghosts: <span class="c-orange">orange</span>, opacity fades with distance</li>
+      <li>GPU-cached batches in world space &mdash; survives viewport rotation, rebuilds only on frame change</li>
+      <li>Settings: ghost count before/after, frame step, opacity</li>
+    </ul>
+    <p>Operators: <code>bt.onion_skin</code> (toggle), <code>bt.onion_skin_refresh</code></p>
+  </div>
+</details>
+
+<h2>Workflow: Root Motion Extraction</h2>
+<div class="workflow">
+  <div class="workflow-head"><span class="wf-tag bg-purple">Root Motion</span> Pin controllers, extract root travel</div>
+  <div class="workflow-steps">
+    <div class="wf-step"><div class="wf-num c-purple">1</div><div class="wf-step-text"><strong>Setup</strong>Auto-detects source/root/pinned bones. Creates reference empties.</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-purple">2</div><div class="wf-step-text"><strong>Polish</strong>(Optional) Edit root curves in Graph Editor.</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-purple">3</div><div class="wf-step-text"><strong>Finalize</strong>Bakes controllers with visual keying, removes empties.</div></div>
+  </div>
+</div>
+<pre><code>python blender_api.py root-motion-setup --armature Armature
 python blender_api.py root-motion-finalize --armature Armature
 python blender_api.py root-motion-cancel --armature Armature</code></pre>
-
 </div>
 
-<!-- ═══════════════════════ BRIDGE ═══════════════════════ -->
+<!-- ================================================================ -->
+<!-- EXPORT -->
+<!-- ================================================================ -->
+<div class="page" id="page-export">
+<div class="page-title"><span>//</span> Export &amp; Scale</div>
+
+<div class="callout warn"><div class="callout-title">The Problem</div>Blender's FBX exporter inconsistently scales geometry vs. animation keyframes when importing into UE. Solution: scale the rig <strong>100x</strong> in Blender, export at <strong>0.01 global scale</strong>.</div>
+
+<h2>Workflow: Export to Unreal Engine</h2>
+<div class="workflow">
+  <div class="workflow-head"><span class="wf-tag bg-blue">Export</span> Blender to UE pipeline</div>
+  <div class="workflow-steps">
+    <div class="wf-step"><div class="wf-num c-blue">1</div><div class="wf-step-text"><strong>Bake to DEF</strong>(If wrap rig) Bake constraint-driven motion onto DEF bones.</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-blue">2</div><div class="wf-step-text"><strong>Scale Rig</strong>100x (handles bones, keyframes, constraints, child meshes).</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-blue">3</div><div class="wf-step-text"><strong>Export FBX</strong>Outputs SK_ mesh + A_ animations.</div></div>
+    <div class="wf-arrow">&rarr;</div>
+    <div class="wf-step"><div class="wf-num c-blue">4</div><div class="wf-step-text"><strong>Import in UE</strong>At scale 0.01.</div></div>
+  </div>
+</div>
+
+<pre><code>python blender_api.py rig-bake-to-def --armature Armature
+python blender_api.py scale-rig --armature Armature --factor 100.0
+python blender_api.py export-ue --armature Armature --output ./export
+python blender_api.py export-ue --armature Armature --mesh Body --separate-anim</code></pre>
+
+<details>
+  <summary>FBX Export Settings</summary>
+  <div class="details-body">
+    <table>
+      <tr><th>Setting</th><th>Value</th></tr>
+      <tr><td>Global Scale</td><td><code>0.01</code></td></tr>
+      <tr><td>Apply Unit Scale</td><td><code>False</code></td></tr>
+      <tr><td>Forward / Up</td><td><code>-Y</code> / <code>Z</code></td></tr>
+      <tr><td>Deform Bones Only</td><td><code>True</code></td></tr>
+      <tr><td>Leaf Bones</td><td><code>False</code></td></tr>
+    </table>
+    <h4>Options</h4>
+    <table>
+      <tr><th>Flag</th><th>Description</th></tr>
+      <tr><td><code>--no-mesh</code></td><td>Skip mesh export</td></tr>
+      <tr><td><code>--no-anim</code></td><td>Skip animation export</td></tr>
+      <tr><td><code>--separate-anim</code></td><td>Each action as its own FBX</td></tr>
+      <tr><td><code>--no-ue-naming</code></td><td>Skip SK_/A_ prefix</td></tr>
+    </table>
+    <h4>Output Structure</h4>
+    <pre><code>export/
+  SK_Armature.fbx          <span class="cm"># Skeletal mesh</span>
+  A_Armature.fbx           <span class="cm"># All animations</span>
+  A_Armature_Walk.fbx      <span class="cm"># Per-action (if --separate-anim)</span></code></pre>
+  </div>
+</details>
+
+<details>
+  <summary>Scale Rig Details</summary>
+  <div class="details-body">
+    <p>What gets scaled:</p>
+    <ul>
+      <li><strong>Armature object</strong> &mdash; scale applied via <code>transform_apply</code></li>
+      <li><strong>Location keyframes</strong> &mdash; all values + bezier handles (channelbag API)</li>
+      <li><strong>Constraint distances</strong> &mdash; LIMIT_DISTANCE, STRETCH_TO, FLOOR, LIMIT_LOCATION</li>
+      <li><strong>Child meshes</strong> &mdash; scaled and applied</li>
+      <li><strong>Rig config</strong> &mdash; position arrays and distance-related options</li>
+    </ul>
+  </div>
+</details>
+</div>
+
+<!-- ================================================================ -->
+<!-- BRIDGE -->
+<!-- ================================================================ -->
 <div class="page" id="page-bridge">
+<div class="page-title"><span>//</span> LLM Bridge</div>
+<p>HTTP server on <strong>port 19785</strong>. Start via BlenderTools tab &gt; LLM Bridge &gt; <strong>"Start Bridge"</strong>. Auto-start available in addon preferences.</p>
 
-<h1><span class="page-icon">&#8644;</span> LLM Bridge</h1>
-<p>HTTP server running inside Blender for Claude Code and external tool integration.</p>
-
-<h2>Starting the Server</h2>
-
-<h3>From Blender UI</h3>
-<p>BlenderTools tab &gt; LLM Bridge &gt; <strong>"Start Bridge"</strong></p>
-
-<h3>Auto-start</h3>
-<p>Edit &gt; Preferences &gt; Add-ons &gt; BlenderTools &gt; Enable <strong>"Auto-Start Bridge"</strong></p>
-
-<h3>Quick Test</h3>
-<ol class="steps">
-  <li>In Blender: click <strong>Start Bridge</strong></li>
-  <li>From terminal: <code>python blender_api.py ping</code></li>
-</ol>
-
-<div class="callout">
-  <div class="callout-title">Port</div>
-  Default <strong>19785</strong> (continues the 1978x series). Configurable in addon preferences.
-</div>
-
-<h2>External CLI</h2>
-<p>Uses only <code>urllib.request</code> &mdash; zero dependencies required.</p>
-<pre><code>python blender_api.py &lt;command&gt; [options]</code></pre>
+<h2>CLI</h2>
+<pre><code>python F:/Projects/BlenderTools/blender_api.py &lt;command&gt; [options]</code></pre>
 
 <h2>GET Endpoints</h2>
 <table>
   <tr><th>Endpoint</th><th>Description</th></tr>
-  <tr><td><span class="badge badge-get">GET</span> <code>/blendertools/ping</code></td><td>Health check</td></tr>
-  <tr><td><span class="badge badge-get">GET</span> <code>/blendertools/scene-summary</code></td><td>Compact scene JSON</td></tr>
-  <tr><td><span class="badge badge-get">GET</span> <code>/blendertools/object-info?name=X</code></td><td>Detailed object info</td></tr>
-  <tr><td><span class="badge badge-get">GET</span> <code>/blendertools/screenshot</code></td><td>Viewport capture (base64 PNG)</td></tr>
+  <tr><td><code>GET /blendertools/ping</code> <span class="badge badge-get">GET</span></td><td>Health check</td></tr>
+  <tr><td><code>GET /blendertools/scene-summary</code></td><td>Compact scene JSON (token-efficient)</td></tr>
+  <tr><td><code>GET /blendertools/object-info?name=X</code></td><td>Detailed object info</td></tr>
+  <tr><td><code>GET /blendertools/screenshot</code></td><td>Viewport capture (base64 PNG)</td></tr>
 </table>
 
 <h2>POST Endpoints</h2>
-<table>
-  <tr><th>Endpoint</th><th>Body</th></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/seam/by-angle</code></td><td><code>{"object":"X", "threshold":30}</code></td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/seam/preset</code></td><td><code>{"object":"X", "preset":"hard_surface"}</code></td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/rig/add-module</code></td><td><code>{"armature":"X", "module_type":"arm", "config":{...}}</code></td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/rig/generate</code></td><td><code>{"armature":"X"}</code></td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/rig/load-config</code></td><td><code>{"armature":"X", "config":{...}}</code></td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/rig/scan-skeleton</code></td><td><code>{"armature":"X"}</code></td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/rig/apply-wrap</code></td><td><code>{"armature":"X"}</code> (applies chain module_type overrides, resets ik_active to FK)</td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/rig/clear-wrap</code></td><td><code>{"armature":"X"}</code></td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/rig/toggle-fk-ik</code></td><td><code>{"armature":"X", "chain_id":"leg_L", "mode":"IK"}</code> (snaps pose if ik_snap enabled)</td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/rig/bake-to-def</code></td><td><code>{"armature":"X"}</code> (bake animation onto DEF bones for export)</td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/rig/floor-contact</code></td><td><code>{"armature":"X", "action":"toggle"}</code> (toggle/enable/disable floor constraints on leg IK)</td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/anim/root-motion-setup</code></td><td><code>{"armature":"X"}</code> (setup root motion extraction)</td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/anim/root-motion-finalize</code></td><td><code>{"armature":"X"}</code> (bake controllers + cleanup)</td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/anim/root-motion-cancel</code></td><td><code>{"armature":"X"}</code> (undo root motion setup)</td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/skin/auto-weight</code></td><td><code>{"mesh":"X", "armature":"Y", "method":"heat_map"}</code></td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/skin/rigid-bind</code></td><td><code>{"mesh":"X", "armature":"Y"}</code></td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/anim/procedural</code></td><td><code>{"armature":"X", "type":"walk", "params":{}}</code></td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/anim/mechanical</code></td><td><code>{"object":"X", "type":"piston_cycle", "params":{}}</code></td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/export/scale-rig</code></td><td><code>{"armature":"X", "factor":100.0}</code></td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/export/to-ue</code></td><td><code>{"armature":"X", "output":"./export", "export_mesh":true, "export_anim":true}</code></td></tr>
-  <tr><td><span class="badge badge-post">POST</span> <code>/blendertools/exec</code></td><td><code>{"code":"bpy.ops..."}</code></td></tr>
-</table>
+<details open>
+  <summary>All POST Endpoints</summary>
+  <div class="details-body">
+    <table>
+      <tr><th>Endpoint</th><th>Body</th></tr>
+      <tr><td><code>/seam/by-angle</code></td><td><code>{"object":"X", "threshold":30}</code></td></tr>
+      <tr><td><code>/seam/preset</code></td><td><code>{"object":"X", "preset":"hard_surface"}</code></td></tr>
+      <tr><td><code>/rig/add-module</code></td><td><code>{"armature":"X", "module_type":"arm", "config":{...}}</code></td></tr>
+      <tr><td><code>/rig/generate</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/rig/load-config</code></td><td><code>{"armature":"X", "config":{...}}</code></td></tr>
+      <tr><td><code>/rig/scan-skeleton</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/rig/apply-wrap</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/rig/clear-wrap</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/rig/toggle-fk-ik</code></td><td><code>{"armature":"X", "chain_id":"leg_L", "mode":"IK"}</code></td></tr>
+      <tr><td><code>/rig/bake-to-def</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/rig/floor-contact</code></td><td><code>{"armature":"X", "action":"toggle"}</code></td></tr>
+      <tr><td><code>/anim/root-motion-setup</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/anim/root-motion-finalize</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/anim/root-motion-cancel</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/skin/auto-weight</code></td><td><code>{"mesh":"X", "armature":"Y", "method":"heat_map"}</code></td></tr>
+      <tr><td><code>/skin/rigid-bind</code></td><td><code>{"mesh":"X", "armature":"Y"}</code></td></tr>
+      <tr><td><code>/anim/mechanical</code></td><td><code>{"object":"X", "type":"piston_cycle"}</code></td></tr>
+      <tr><td><code>/export/scale-rig</code></td><td><code>{"armature":"X", "factor":100.0}</code></td></tr>
+      <tr><td><code>/export/to-ue</code></td><td><code>{"armature":"X", "output":"./export"}</code></td></tr>
+      <tr><td><code>/exec</code></td><td><code>{"code":"bpy.ops..."}</code></td></tr>
+    </table>
+  </div>
+</details>
 
-<h2>Thread Safety</h2>
-<div class="callout warn">
-  <div class="callout-title">Important</div>
-  All Blender operations are dispatched to the main thread via <code>bpy.app.timers.register()</code>. The HTTP thread blocks until completion (30s timeout).
-</div>
+<div class="callout warn"><div class="callout-title">Thread Safety</div>All Blender operations dispatched to main thread via <code>bpy.app.timers.register()</code>. HTTP thread blocks until completion (30s timeout).</div>
+
+<h2>Exec Endpoint</h2>
+<p>Sandbox: only <code>bpy</code>, <code>mathutils</code>, <code>math</code>, <code>json</code>. Set <code>result</code> to return data.</p>
+<pre><code>python blender_api.py exec --code "
+import bpy, json
+arm = bpy.data.objects.get('Armature')
+result = json.dumps({
+    'bones': len(arm.data.bones),
+    'names': [b.name for b in arm.data.bones]
+})
+"</code></pre>
 
 <h2>Response Format</h2>
 <pre><code><span class="cm">// Success</span>
-{"success": true, "seams_marked": 42, ...}
+{"success": true, "seams_marked": 42}
 
 <span class="cm">// Error</span>
 {"success": false, "error": "Object not found: Cube"}</code></pre>
-
-<h2>Scene Summary Format</h2>
-<p>The scene summary is designed to be token-efficient for LLM consumption:</p>
-<ul>
-  <li>Object name, type, location</li>
-  <li><strong>Mesh:</strong> vertex/face count, materials, vertex groups, shape keys</li>
-  <li><strong>Armature:</strong> bone count, bone names, module count</li>
-  <li><strong>Camera:</strong> lens, clip start/end</li>
-  <li><strong>Light:</strong> type, energy</li>
-  <li>Parent relationships and active action names</li>
-</ul>
-
-<h2>CLI Examples</h2>
-<pre><code><span class="cm"># Check connection</span>
-python blender_api.py ping
-
-<span class="cm"># Get scene overview</span>
-python blender_api.py scene-summary
-
-<span class="cm"># Save viewport screenshot</span>
-python blender_api.py screenshot -o viewport.png
-
-<span class="cm"># Full rigging workflow</span>
-python blender_api.py rig-load --armature Armature \
-  --config presets/rig_configs/biped_human.json
-python blender_api.py rig-generate --armature Armature
-python blender_api.py skin --mesh Body --armature Armature
-python blender_api.py animate --armature Armature --type walk
-
-<span class="cm"># Scale rig and export to UE</span>
-python blender_api.py scale-rig --armature Armature --factor 100.0
-python blender_api.py export-ue --armature Armature --output ./export
-
-<span class="cm"># Skeleton scanner — wrap imported skeleton</span>
-python blender_api.py rig-scan --armature Armature
-python blender_api.py rig-apply-wrap --armature Armature
-python blender_api.py rig-clear-wrap --armature Armature
-
-<span class="cm"># FK/IK toggle (snaps pose if ik_snap enabled on chain)</span>
-python blender_api.py rig-toggle-fk-ik --armature Armature --chain leg_L --mode IK
-python blender_api.py rig-toggle-fk-ik --armature Armature --chain arm_R --mode TOGGLE
-python blender_api.py rig-toggle-fk-ik --armature Armature --chain tail_C --mode TOGGLE
-
-<span class="cm"># Bake animation to DEF bones for export</span>
-python blender_api.py rig-bake-to-def --armature Armature
-
-<span class="cm"># Floor contact</span>
-python blender_api.py floor-contact --armature Armature --action enable --level 0
-
-<span class="cm"># Root motion extraction</span>
-python blender_api.py root-motion-setup --armature Armature
-python blender_api.py root-motion-finalize --armature Armature</code></pre>
-
 </div>
 
-<!-- ═══════════════════════ EXPORT ═══════════════════════ -->
-<div class="page" id="page-export">
-
-<h1><span class="page-icon">&#10548;</span> Export &amp; Scale</h1>
-<p>Scale rigs mid-project and export UE-ready FBX files with correct unit scaling.</p>
-
-<h2>The Problem</h2>
-<p>Blender&rsquo;s FBX exporter <strong>Apply Unit Scale</strong> option inconsistently scales geometry vs. animation translation keyframes when importing into Unreal Engine. This causes animations to look correct in Blender but play at wrong scale in UE.</p>
-
-<div class="callout">
-  <div class="callout-title">The Solution</div>
-  Scale the rig <strong>100&times;</strong> in Blender, then export FBX at <strong>0.01 global scale</strong> with <code>apply_unit_scale=False</code>. BlenderTools automates this entire process.
-</div>
-
-<h2>Scale Rig</h2>
-<p>Rescale a rig by any factor without breaking animations or constraints.</p>
-
-<h3>What gets scaled:</h3>
-<ul>
-  <li><strong>Armature object</strong> &mdash; scale applied via <code>transform_apply</code></li>
-  <li><strong>Location keyframes</strong> &mdash; all values + bezier handles (via channelbag API)</li>
-  <li><strong>Constraint distances</strong> &mdash; LIMIT_DISTANCE, STRETCH_TO, FLOOR, LIMIT_LOCATION</li>
-  <li><strong>Child meshes</strong> &mdash; scaled and applied</li>
-  <li><strong>Rig config</strong> &mdash; position arrays and distance-related options</li>
-</ul>
-
-<h3>UI Usage</h3>
-<ol class="steps">
-  <li>Select the armature</li>
-  <li>BlenderTools &gt; Export &gt; Scale Rig &gt; <strong>"Scale Rig"</strong></li>
-  <li>Enter a factor (e.g. <code>2.0</code> to double, <code>0.5</code> to halve)</li>
-</ol>
-
-<h2>Bake to DEF</h2>
-<p>When using a wrap rig (CTRL &rarr; MCH &rarr; DEF), animations are driven through constraints. Before exporting, use <strong>"Bake to DEF"</strong> to bake the constraint-driven motion onto the DEF bones as keyframes. This ensures clean FBX export since only DEF bones (<code>use_deform=True</code>) are included in the exported file.</p>
-<pre><code>python blender_api.py rig-bake-to-def --armature Armature</code></pre>
-
-<h2>Export to UE</h2>
-<p>One-click export that duplicates the hierarchy, scales 100&times;, exports FBX at 0.01, and cleans up.</p>
-
-<h3>FBX Settings</h3>
-<table>
-  <tr><th>Setting</th><th>Value</th></tr>
-  <tr><td>Global Scale</td><td><code>0.01</code></td></tr>
-  <tr><td>Apply Unit Scale</td><td><code>False</code></td></tr>
-  <tr><td>Forward Axis</td><td><code>-Y</code></td></tr>
-  <tr><td>Up Axis</td><td><code>Z</code></td></tr>
-  <tr><td>Deform Bones Only</td><td><code>True</code></td></tr>
-  <tr><td>Leaf Bones</td><td><code>False</code></td></tr>
-</table>
-
-<h3>Options</h3>
-<table>
-  <tr><th>Option</th><th>Default</th><th>Description</th></tr>
-  <tr><td>Export Mesh</td><td>On</td><td>Export skeletal mesh FBX</td></tr>
-  <tr><td>Export Animation</td><td>On</td><td>Export animation FBX</td></tr>
-  <tr><td>Separate Animations</td><td>Off</td><td>Each action as its own FBX file</td></tr>
-  <tr><td>UE Naming</td><td>On</td><td><code>SK_</code> prefix for mesh, <code>A_</code> for animations</td></tr>
-</table>
-
-<h3>Output Files</h3>
-<pre><code>export/
-  SK_Armature.fbx        <span class="cm"># Skeletal mesh</span>
-  A_Armature.fbx         <span class="cm"># All animations (or...)</span>
-  A_Armature_Walk.fbx    <span class="cm"># Per-action if "Separate" enabled</span>
-  A_Armature_Run.fbx</code></pre>
-
-<h2>CLI &amp; Bridge</h2>
-<pre><code><span class="cm"># Scale rig 100x</span>
-python blender_api.py scale-rig --armature Armature --factor 100.0
-
-<span class="cm"># Export to UE</span>
-python blender_api.py export-ue --armature Armature --output ./export
-
-<span class="cm"># Export only animations, each as separate file</span>
-python blender_api.py export-ue --armature Armature --no-mesh --separate-anim</code></pre>
-
-</div>
-
-<!-- ═══════════════════════ RIG CONFIG ═══════════════════════ -->
+<!-- ================================================================ -->
+<!-- RIG CONFIG -->
+<!-- ================================================================ -->
 <div class="page" id="page-rig-config">
-
-<h1><span class="page-icon">&#123;</span> Rig Config Format</h1>
-<p>JSON schema reference for rig configuration files.</p>
+<div class="page-title"><span>//</span> Rig Config Format</div>
 
 <h2>Schema</h2>
 <pre><code>{
-  <span class="str">"name"</span>: <span class="str">"Display name for the rig"</span>,
-  <span class="str">"modules"</span>: [
+  "name": "Display name",
+  "modules": [
     {
-      <span class="str">"type"</span>: <span class="str">"spine"</span>,
-      <span class="str">"name"</span>: <span class="str">"Spine"</span>,
-      <span class="str">"side"</span>: <span class="str">"C"</span>,
-      <span class="str">"parent_bone"</span>: <span class="str">""</span>,
-      <span class="str">"position"</span>: [<span class="num">0</span>, <span class="num">0</span>, <span class="num">1.0</span>],
-      <span class="str">"options"</span>: { <span class="str">"bone_count"</span>: <span class="num">4</span> }
+      "type": "spine",
+      "name": "Spine",
+      "side": "C",
+      "parent_bone": "",
+      "position": [0, 0, 1.0],
+      "options": { "bone_count": 4 }
     }
   ],
-  <span class="str">"global_options"</span>: {
-    <span class="str">"deform_prefix"</span>: <span class="str">"DEF-"</span>,
-    <span class="str">"control_prefix"</span>: <span class="str">"CTRL-"</span>,
-    <span class="str">"mechanism_prefix"</span>: <span class="str">"MCH-"</span>
+  "global_options": {
+    "deform_prefix": "DEF-",
+    "control_prefix": "CTRL-",
+    "mechanism_prefix": "MCH-"
   }
 }</code></pre>
 
-<h2>Module Options Reference</h2>
+<h2>Module Options</h2>
 
-<h3>spine</h3>
-<table>
-  <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>bone_count</code></td><td>int</td><td>4</td><td>Number of spine segments</td></tr>
-  <tr><td><code>ik_spline</code></td><td>bool</td><td>false</td><td>Add IK spline controls</td></tr>
-</table>
+<details>
+  <summary>All Module Options</summary>
+  <div class="details-body">
+    <h4>spine</h4>
+    <table><tr><th>Option</th><th>Type</th><th>Default</th><th>Desc</th></tr>
+    <tr><td><code>bone_count</code></td><td>int</td><td>4</td><td>Spine segments</td></tr>
+    <tr><td><code>ik_spline</code></td><td>bool</td><td>false</td><td>Add IK spline controls</td></tr></table>
 
-<h3>arm</h3>
-<table>
-  <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>twist_bones</code></td><td>int</td><td>1</td><td>Upper arm twist bone count</td></tr>
-  <tr><td><code>clavicle</code></td><td>bool</td><td>true</td><td>Include clavicle bone</td></tr>
-</table>
+    <h4>arm</h4>
+    <table><tr><th>Option</th><th>Type</th><th>Default</th><th>Desc</th></tr>
+    <tr><td><code>twist_bones</code></td><td>int</td><td>1</td><td>Upper arm twist count</td></tr>
+    <tr><td><code>clavicle</code></td><td>bool</td><td>true</td><td>Include clavicle</td></tr></table>
 
-<h3>leg</h3>
-<table>
-  <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>twist_bones</code></td><td>int</td><td>1</td><td>Thigh twist bone count</td></tr>
-  <tr><td><code>foot_roll</code></td><td>bool</td><td>true</td><td>Add foot roll mechanism</td></tr>
-</table>
+    <h4>leg</h4>
+    <table><tr><th>Option</th><th>Type</th><th>Default</th><th>Desc</th></tr>
+    <tr><td><code>twist_bones</code></td><td>int</td><td>1</td><td>Thigh twist count</td></tr>
+    <tr><td><code>foot_roll</code></td><td>bool</td><td>true</td><td>Add foot roll</td></tr></table>
 
-<h3>neck_head</h3>
-<table>
-  <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>neck_bones</code></td><td>int</td><td>2</td><td>Number of neck segments</td></tr>
-</table>
+    <h4>neck_head</h4>
+    <table><tr><th>Option</th><th>Type</th><th>Default</th><th>Desc</th></tr>
+    <tr><td><code>neck_bones</code></td><td>int</td><td>2</td><td>Neck segments</td></tr></table>
 
-<h3>tail</h3>
-<table>
-  <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>bone_count</code></td><td>int</td><td>6</td><td>Tail segments</td></tr>
-  <tr><td><code>ik_tip</code></td><td>bool</td><td>false</td><td>IK control at tip</td></tr>
-  <tr><td><code>direction</code></td><td>[x,y,z]</td><td>[0,1,-0.2]</td><td>Growth direction</td></tr>
-  <tr><td><code>segment_length</code></td><td>float</td><td>0.1</td><td>Bone length</td></tr>
-</table>
+    <h4>tail</h4>
+    <table><tr><th>Option</th><th>Type</th><th>Default</th><th>Desc</th></tr>
+    <tr><td><code>bone_count</code></td><td>int</td><td>6</td><td>Segments</td></tr>
+    <tr><td><code>ik_tip</code></td><td>bool</td><td>false</td><td>IK at tip</td></tr>
+    <tr><td><code>direction</code></td><td>[x,y,z]</td><td>[0,1,-0.2]</td><td>Growth dir</td></tr></table>
 
-<h3>wing</h3>
-<table>
-  <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>segments</code></td><td>int</td><td>3</td><td>Wing bone segments</td></tr>
-  <tr><td><code>feather_bones</code></td><td>int</td><td>3</td><td>Feathers per segment</td></tr>
-</table>
+    <h4>wing</h4>
+    <table><tr><th>Option</th><th>Type</th><th>Default</th><th>Desc</th></tr>
+    <tr><td><code>segments</code></td><td>int</td><td>3</td><td>Wing segments</td></tr>
+    <tr><td><code>feather_bones</code></td><td>int</td><td>3</td><td>Feathers per segment</td></tr></table>
 
-<h3>tentacle</h3>
-<table>
-  <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>bone_count</code></td><td>int</td><td>8</td><td>Tentacle segments</td></tr>
-  <tr><td><code>taper</code></td><td>bool</td><td>true</td><td>Taper segment lengths</td></tr>
-  <tr><td><code>direction</code></td><td>[x,y,z]</td><td>[0,0,-1]</td><td>Growth direction</td></tr>
-  <tr><td><code>segment_length</code></td><td>float</td><td>0.08</td><td>Base segment length</td></tr>
-</table>
+    <h4>tentacle</h4>
+    <table><tr><th>Option</th><th>Type</th><th>Default</th><th>Desc</th></tr>
+    <tr><td><code>bone_count</code></td><td>int</td><td>8</td><td>Segments</td></tr>
+    <tr><td><code>taper</code></td><td>bool</td><td>true</td><td>Taper lengths</td></tr></table>
 
-<h3>finger_chain</h3>
-<table>
-  <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>bone_count</code></td><td>int</td><td>3</td><td>Phalanx count</td></tr>
-  <tr><td><code>finger_name</code></td><td>string</td><td>"Index"</td><td>Finger identifier</td></tr>
-  <tr><td><code>direction</code></td><td>[x,y,z]</td><td>[0,-0.03,0]</td><td>Growth direction</td></tr>
-  <tr><td><code>segment_length</code></td><td>float</td><td>0.03</td><td>Phalanx length</td></tr>
-</table>
+    <h4>finger_chain</h4>
+    <table><tr><th>Option</th><th>Type</th><th>Default</th><th>Desc</th></tr>
+    <tr><td><code>bone_count</code></td><td>int</td><td>3</td><td>Phalanx count</td></tr>
+    <tr><td><code>finger_name</code></td><td>string</td><td>"Index"</td><td>Identifier</td></tr></table>
 
-<h3>piston</h3>
-<table>
-  <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>stroke_length</code></td><td>float</td><td>0.3</td><td>Piston stroke distance</td></tr>
-  <tr><td><code>direction</code></td><td>[x,y,z]</td><td>[0,0,1]</td><td>Stroke axis</td></tr>
-  <tr><td><code>stretch_mode</code></td><td>string</td><td>"none"</td><td>Stretch behavior: <code>"none"</code> (DAMPED_TRACK), <code>"cylinder"</code>, <code>"rod"</code>, <code>"both"</code> (STRETCH_TO)</td></tr>
-  <tr><td><code>bone_mapping</code></td><td>object</td><td>{}</td><td>Map existing bones: <code>{"Cylinder":"...", "Rod":"...", "Rod_Parent":"..."}</code></td></tr>
-</table>
+    <h4>piston</h4>
+    <table><tr><th>Option</th><th>Type</th><th>Default</th><th>Desc</th></tr>
+    <tr><td><code>stroke_length</code></td><td>float</td><td>0.3</td><td>Stroke distance</td></tr>
+    <tr><td><code>stretch_mode</code></td><td>string</td><td>"none"</td><td>none / cylinder / rod / both</td></tr>
+    <tr><td><code>bone_mapping</code></td><td>object</td><td>{}</td><td>{"Cylinder":"...", "Rod":"...", "Rod_Parent":"..."}</td></tr></table>
 
-<h3>wheel</h3>
-<table>
-  <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>radius</code></td><td>float</td><td>0.3</td><td>Wheel radius</td></tr>
-  <tr><td><code>bone_mapping</code></td><td>object</td><td>{}</td><td>Map existing bones: <code>{"Axle":"...", "Wheel":"..."}</code></td></tr>
-</table>
+    <h4>wheel</h4>
+    <table><tr><th>Option</th><th>Type</th><th>Default</th><th>Desc</th></tr>
+    <tr><td><code>radius</code></td><td>float</td><td>0.3</td><td>Wheel radius</td></tr>
+    <tr><td><code>bone_mapping</code></td><td>object</td><td>{}</td><td>{"Axle":"...", "Wheel":"..."}</td></tr></table>
 
-<h3>jaw</h3>
-<table>
-  <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>upper_jaw</code></td><td>bool</td><td>false</td><td>Include upper jaw bone</td></tr>
-</table>
+    <h4>jaw</h4>
+    <table><tr><th>Option</th><th>Type</th><th>Default</th><th>Desc</th></tr>
+    <tr><td><code>upper_jaw</code></td><td>bool</td><td>false</td><td>Include upper jaw</td></tr></table>
 
-<h3>eye</h3>
-<table>
-  <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>eyelids</code></td><td>bool</td><td>true</td><td>Include eyelid bones</td></tr>
-  <tr><td><code>target_distance</code></td><td>float</td><td>1.0</td><td>Aim target distance</td></tr>
-</table>
+    <h4>eye</h4>
+    <table><tr><th>Option</th><th>Type</th><th>Default</th><th>Desc</th></tr>
+    <tr><td><code>eyelids</code></td><td>bool</td><td>true</td><td>Include eyelid bones</td></tr>
+    <tr><td><code>target_distance</code></td><td>float</td><td>1.0</td><td>Aim target distance</td></tr></table>
 
-<h3>custom_chain</h3>
-<table>
-  <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>bone_count</code></td><td>int</td><td>4</td><td>Chain length</td></tr>
-  <tr><td><code>ik</code></td><td>bool</td><td>false</td><td>Add IK target</td></tr>
-  <tr><td><code>direction</code></td><td>[x,y,z]</td><td>[0,0,1]</td><td>Chain direction</td></tr>
-  <tr><td><code>segment_length</code></td><td>float</td><td>0.1</td><td>Segment length</td></tr>
-</table>
+    <h4>custom_chain</h4>
+    <table><tr><th>Option</th><th>Type</th><th>Default</th><th>Desc</th></tr>
+    <tr><td><code>bone_count</code></td><td>int</td><td>4</td><td>Chain length</td></tr>
+    <tr><td><code>ik</code></td><td>bool</td><td>false</td><td>Add IK target</td></tr>
+    <tr><td><code>direction</code></td><td>[x,y,z]</td><td>[0,0,1]</td><td>Chain direction</td></tr></table>
+  </div>
+</details>
 
-<h2>Parent Bone References</h2>
-<p>Use dot notation to reference module connection points:</p>
-<table>
-  <tr><th>Reference</th><th>Meaning</th></tr>
-  <tr><td><code>""</code> (empty)</td><td>No parent (root module)</td></tr>
-  <tr><td><code>Spine.hip</code></td><td>Root/hip of spine</td></tr>
-  <tr><td><code>Spine.chest</code></td><td>Top of spine</td></tr>
-  <tr><td><code>Spine.mid</code></td><td>Middle of spine</td></tr>
-  <tr><td><code>Arm.hand</code></td><td>Hand bone</td></tr>
-  <tr><td><code>NeckHead.head</code></td><td>Head bone</td></tr>
-</table>
+<h2>Examples</h2>
 
-<h2>Example: Biped Human</h2>
+<details>
+  <summary>Biped Human</summary>
+  <div class="details-body">
 <pre><code>{
-  <span class="str">"name"</span>: <span class="str">"Biped Human"</span>,
-  <span class="str">"modules"</span>: [
-    {<span class="str">"type"</span>: <span class="str">"spine"</span>, <span class="str">"name"</span>: <span class="str">"Spine"</span>, <span class="str">"side"</span>: <span class="str">"C"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">""</span>, <span class="str">"position"</span>: [<span class="num">0</span>,<span class="num">0</span>,<span class="num">1.0</span>],
-     <span class="str">"options"</span>: {<span class="str">"bone_count"</span>: <span class="num">4</span>}},
-
-    {<span class="str">"type"</span>: <span class="str">"neck_head"</span>, <span class="str">"name"</span>: <span class="str">"NeckHead"</span>, <span class="str">"side"</span>: <span class="str">"C"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">"Spine.chest"</span>, <span class="str">"position"</span>: [<span class="num">0</span>,<span class="num">0</span>,<span class="num">1.6</span>]},
-
-    {<span class="str">"type"</span>: <span class="str">"arm"</span>, <span class="str">"name"</span>: <span class="str">"Arm"</span>, <span class="str">"side"</span>: <span class="str">"L"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">"Spine.chest"</span>, <span class="str">"position"</span>: [<span class="num">0</span>,<span class="num">0</span>,<span class="num">1.55</span>],
-     <span class="str">"options"</span>: {<span class="str">"clavicle"</span>: <span class="kw">true</span>}},
-
-    {<span class="str">"type"</span>: <span class="str">"arm"</span>, <span class="str">"name"</span>: <span class="str">"Arm"</span>, <span class="str">"side"</span>: <span class="str">"R"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">"Spine.chest"</span>, <span class="str">"position"</span>: [<span class="num">0</span>,<span class="num">0</span>,<span class="num">1.55</span>],
-     <span class="str">"options"</span>: {<span class="str">"clavicle"</span>: <span class="kw">true</span>}},
-
-    {<span class="str">"type"</span>: <span class="str">"leg"</span>, <span class="str">"name"</span>: <span class="str">"Leg"</span>, <span class="str">"side"</span>: <span class="str">"L"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">"Spine.hip"</span>, <span class="str">"position"</span>: [<span class="num">0</span>,<span class="num">0</span>,<span class="num">1.0</span>]},
-
-    {<span class="str">"type"</span>: <span class="str">"leg"</span>, <span class="str">"name"</span>: <span class="str">"Leg"</span>, <span class="str">"side"</span>: <span class="str">"R"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">"Spine.hip"</span>, <span class="str">"position"</span>: [<span class="num">0</span>,<span class="num">0</span>,<span class="num">1.0</span>]}
+  "name": "Biped Human",
+  "modules": [
+    {"type": "spine", "name": "Spine", "side": "C",
+     "parent_bone": "", "position": [0,0,1.0],
+     "options": {"bone_count": 4}},
+    {"type": "neck_head", "name": "NeckHead", "side": "C",
+     "parent_bone": "Spine.chest", "position": [0,0,1.6]},
+    {"type": "arm", "name": "Arm", "side": "L",
+     "parent_bone": "Spine.chest", "options": {"clavicle": true}},
+    {"type": "arm", "name": "Arm", "side": "R",
+     "parent_bone": "Spine.chest", "options": {"clavicle": true}},
+    {"type": "leg", "name": "Leg", "side": "L",
+     "parent_bone": "Spine.hip"},
+    {"type": "leg", "name": "Leg", "side": "R",
+     "parent_bone": "Spine.hip"}
   ]
 }</code></pre>
+  </div>
+</details>
 
-<h2>Example: Quadruped</h2>
+<details>
+  <summary>Quadruped</summary>
+  <div class="details-body">
 <pre><code>{
-  <span class="str">"name"</span>: <span class="str">"Quadruped"</span>,
-  <span class="str">"modules"</span>: [
-    {<span class="str">"type"</span>: <span class="str">"spine"</span>, <span class="str">"name"</span>: <span class="str">"Spine"</span>, <span class="str">"side"</span>: <span class="str">"C"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">""</span>, <span class="str">"position"</span>: [<span class="num">0</span>,<span class="num">0</span>,<span class="num">0.8</span>],
-     <span class="str">"options"</span>: {<span class="str">"bone_count"</span>: <span class="num">5</span>, <span class="str">"ik_spline"</span>: <span class="kw">true</span>}},
-
-    {<span class="str">"type"</span>: <span class="str">"neck_head"</span>, <span class="str">"name"</span>: <span class="str">"NeckHead"</span>, <span class="str">"side"</span>: <span class="str">"C"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">"Spine.chest"</span>,
-     <span class="str">"options"</span>: {<span class="str">"neck_bones"</span>: <span class="num">3</span>}},
-
-    {<span class="str">"type"</span>: <span class="str">"leg"</span>, <span class="str">"name"</span>: <span class="str">"FrontLeg"</span>, <span class="str">"side"</span>: <span class="str">"L"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">"Spine.chest"</span>},
-    {<span class="str">"type"</span>: <span class="str">"leg"</span>, <span class="str">"name"</span>: <span class="str">"FrontLeg"</span>, <span class="str">"side"</span>: <span class="str">"R"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">"Spine.chest"</span>},
-    {<span class="str">"type"</span>: <span class="str">"leg"</span>, <span class="str">"name"</span>: <span class="str">"HindLeg"</span>, <span class="str">"side"</span>: <span class="str">"L"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">"Spine.hip"</span>},
-    {<span class="str">"type"</span>: <span class="str">"leg"</span>, <span class="str">"name"</span>: <span class="str">"HindLeg"</span>, <span class="str">"side"</span>: <span class="str">"R"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">"Spine.hip"</span>},
-
-    {<span class="str">"type"</span>: <span class="str">"tail"</span>, <span class="str">"name"</span>: <span class="str">"Tail"</span>, <span class="str">"side"</span>: <span class="str">"C"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">"Spine.hip"</span>,
-     <span class="str">"options"</span>: {<span class="str">"bone_count"</span>: <span class="num">6</span>}}
+  "name": "Quadruped",
+  "modules": [
+    {"type": "spine", "name": "Spine", "side": "C",
+     "parent_bone": "", "options": {"bone_count": 5, "ik_spline": true}},
+    {"type": "neck_head", "name": "NeckHead", "side": "C",
+     "parent_bone": "Spine.chest", "options": {"neck_bones": 3}},
+    {"type": "leg", "name": "FrontLeg", "side": "L", "parent_bone": "Spine.chest"},
+    {"type": "leg", "name": "FrontLeg", "side": "R", "parent_bone": "Spine.chest"},
+    {"type": "leg", "name": "HindLeg", "side": "L", "parent_bone": "Spine.hip"},
+    {"type": "leg", "name": "HindLeg", "side": "R", "parent_bone": "Spine.hip"},
+    {"type": "tail", "name": "Tail", "side": "C",
+     "parent_bone": "Spine.hip", "options": {"bone_count": 6}}
   ]
 }</code></pre>
+  </div>
+</details>
 
-<h2>Example: Mech Walker with Pistons</h2>
+<details>
+  <summary>Mech Walker with Pistons</summary>
+  <div class="details-body">
 <pre><code>{
-  <span class="str">"name"</span>: <span class="str">"Mech Walker"</span>,
-  <span class="str">"modules"</span>: [
-    {<span class="str">"type"</span>: <span class="str">"spine"</span>, <span class="str">"name"</span>: <span class="str">"Body"</span>, <span class="str">"side"</span>: <span class="str">"C"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">""</span>, <span class="str">"position"</span>: [<span class="num">0</span>,<span class="num">0</span>,<span class="num">1.5</span>],
-     <span class="str">"options"</span>: {<span class="str">"bone_count"</span>: <span class="num">2</span>}},
-
-    {<span class="str">"type"</span>: <span class="str">"leg"</span>, <span class="str">"name"</span>: <span class="str">"Leg"</span>, <span class="str">"side"</span>: <span class="str">"L"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">"Body.hip"</span>, <span class="str">"position"</span>: [<span class="num">0.4</span>,<span class="num">0</span>,<span class="num">1.5</span>]},
-    {<span class="str">"type"</span>: <span class="str">"leg"</span>, <span class="str">"name"</span>: <span class="str">"Leg"</span>, <span class="str">"side"</span>: <span class="str">"R"</span>,
-     <span class="str">"parent_bone"</span>: <span class="str">"Body.hip"</span>, <span class="str">"position"</span>: [<span class="num">-0.4</span>,<span class="num">0</span>,<span class="num">1.5</span>]},
-
-    <span class="cm">// Piston shock absorbers spanning leg joints</span>
-    {<span class="str">"type"</span>: <span class="str">"piston"</span>, <span class="str">"name"</span>: <span class="str">"ShockAbsorber"</span>, <span class="str">"side"</span>: <span class="str">"L"</span>,
-     <span class="str">"position"</span>: [<span class="num">0.4</span>,<span class="num">0</span>,<span class="num">1.2</span>],
-     <span class="str">"options"</span>: {
-       <span class="str">"stroke_length"</span>: <span class="num">0.4</span>,
-       <span class="str">"bone_mapping"</span>: {
-         <span class="str">"Cylinder"</span>: <span class="str">"ShockOuter_L"</span>,
-         <span class="str">"Rod"</span>: <span class="str">"ShockInner_L"</span>
-       }
-     }},
-
-    {<span class="str">"type"</span>: <span class="str">"wheel"</span>, <span class="str">"name"</span>: <span class="str">"Wheel"</span>, <span class="str">"side"</span>: <span class="str">"L"</span>,
-     <span class="str">"position"</span>: [<span class="num">0.5</span>,<span class="num">0</span>,<span class="num">0.3</span>],
-     <span class="str">"options"</span>: {<span class="str">"radius"</span>: <span class="num">0.3</span>}}
+  "name": "Mech Walker",
+  "modules": [
+    {"type": "spine", "name": "Body", "side": "C",
+     "parent_bone": "", "options": {"bone_count": 2}},
+    {"type": "leg", "name": "Leg", "side": "L", "parent_bone": "Body.hip"},
+    {"type": "leg", "name": "Leg", "side": "R", "parent_bone": "Body.hip"},
+    {"type": "piston", "name": "ShockAbsorber", "side": "L",
+     "options": {"stroke_length": 0.4,
+       "bone_mapping": {"Cylinder": "ShockOuter_L", "Rod": "ShockInner_L"}}},
+    {"type": "wheel", "name": "Wheel", "side": "L",
+     "options": {"radius": 0.3}}
   ]
 }</code></pre>
-<div class="callout tip">
-  <div class="callout-title">Bone mapping in configs</div>
-  The <code>bone_mapping</code> option maps module slots to existing skeleton bones. When set, the module skips creating DEF bones and wraps the existing ones with MCH/CTRL controls instead. Use the viewport overlay&rsquo;s <strong>"Map Existing Bones"</strong> for interactive assignment.
+  </div>
+</details>
 </div>
 
-</div>
-
-</main>
+</div><!-- .main -->
 
 <script>
-// Navigation
-const links = document.querySelectorAll('.nav-link');
-const pages = document.querySelectorAll('.page');
-
-function navigateTo(pageId) {
-  links.forEach(l => l.classList.remove('active'));
-  pages.forEach(p => p.classList.remove('active'));
-
-  const link = document.querySelector(`.nav-link[data-page="${pageId}"]`);
-  const page = document.getElementById('page-' + pageId);
-
-  if (link) link.classList.add('active');
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  const page = document.getElementById('page-' + id);
   if (page) page.classList.add('active');
-
-  // Close mobile sidebar
+  const link = document.querySelector('[data-page="' + id + '"]');
+  if (link) link.classList.add('active');
   document.querySelector('.sidebar').classList.remove('open');
-
-  // Scroll to top
   window.scrollTo(0, 0);
-
-  // Update URL hash
-  history.replaceState(null, '', '#' + pageId);
 }
-
-links.forEach(link => {
-  link.addEventListener('click', () => {
-    navigateTo(link.dataset.page);
-  });
+document.querySelectorAll('.nav-link').forEach(link => {
+  link.addEventListener('click', () => showPage(link.dataset.page));
 });
-
-// Handle hash on load
-if (window.location.hash) {
-  const pageId = window.location.hash.slice(1);
-  navigateTo(pageId);
-}
 </script>
-
 </body>
 </html>

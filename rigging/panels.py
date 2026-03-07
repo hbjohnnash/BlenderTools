@@ -39,23 +39,14 @@ class BT_PT_RiggingMain(bpy.types.Panel):
         row = box.row()
         row.label(text="Modules", icon='GROUP_BONE')
         row.label(text=str(len(modules)))
-
-        # Viewport overlay toggle
-        from .viewport_overlay import _active as overlay_active
-        row = box.row(align=True)
-        if overlay_active:
-            row.operator("bt.module_overlay", text="Disable Overlay", icon='HIDE_ON', depress=True)
-        else:
-            row.operator("bt.module_overlay", text="Module Overlay", icon='OVERLAY')
-        if obj.mode == 'POSE':
-            row.enabled = False
+        box.separator(factor=0.3)
 
         col = box.column(align=True)
         col.operator("bt.add_rig_module", icon='ADD')
         col.operator("bt.remove_rig_module", icon='REMOVE')
 
-        # Module list
         if modules:
+            box.separator(factor=0.3)
             col = box.column(align=True)
             for i, mod in enumerate(modules):
                 col.label(text=f"{i+1}. {mod.get('name', mod['type'])} ({mod.get('side', 'C')})")
@@ -63,6 +54,7 @@ class BT_PT_RiggingMain(bpy.types.Panel):
         # ── Generation ──
         box = layout.box()
         box.label(text="Generation", icon='SYSTEM')
+        box.separator(factor=0.3)
 
         col = box.column(align=True)
         col.scale_y = 1.3
@@ -73,6 +65,18 @@ class BT_PT_RiggingMain(bpy.types.Panel):
         row.operator("bt.save_rig_config", icon='EXPORT')
 
         box.operator("bt.clear_rig", icon='TRASH')
+
+        # ── Control Shapes ──
+        if obj.mode == 'POSE':
+            box = layout.box()
+            box.label(text="Control Shapes", icon='MESH_CIRCLE')
+            box.separator(factor=0.3)
+            col = box.column(align=True)
+            col.operator("bt.assign_bone_shape", icon='MESH_CIRCLE')
+            col.operator("bt.resize_ctrl_bones", icon='FULLSCREEN_ENTER')
+            row = box.row(align=True)
+            row.operator("bt.clear_bone_shapes", icon='X')
+            row.operator("bt.add_custom_shape", text="Add to Library", icon='ADD')
 
 
 classes = (

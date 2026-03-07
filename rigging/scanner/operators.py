@@ -156,9 +156,28 @@ class BT_OT_ApplyWrapRig(bpy.types.Operator):
         created = assemble_wrap_rig(armature, scan_data)
         armature.bt_scan.has_wrap_rig = True
 
+        # Assign custom shapes to control bones
+        from ..shapes import assign_shapes_for_wrap_rig
+        assign_shapes_for_wrap_rig(armature)
+
         # Reset runtime FK/IK state (all chains start in FK mode)
         for chain_item in armature.bt_scan.chains:
             chain_item.ik_active = False
+
+        # Auto-enable overlays: switch to pose mode, start FK/IK + CoM
+        bpy.ops.object.mode_set(mode='POSE')
+        try:
+            from .ik_overlay import _active as ik_active
+            if not ik_active:
+                bpy.ops.bt.ik_overlay('INVOKE_DEFAULT')
+        except Exception:
+            pass
+        try:
+            from ..center_of_mass import _active as com_active
+            if not com_active:
+                bpy.ops.bt.toggle_com()
+        except Exception:
+            pass
 
         self.report({'INFO'}, f"Created {len(created)} control bones")
         return {'FINISHED'}

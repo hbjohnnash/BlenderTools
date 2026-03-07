@@ -33,6 +33,7 @@ class BT_PT_SeamsMain(bpy.types.Panel):
         # Methods
         box = layout.box()
         box.label(text="Methods", icon='TOOL_SETTINGS')
+        box.separator(factor=0.3)
         col = box.column(align=True)
         col.operator("bt.seam_by_angle", icon='DRIVER_ROTATIONAL_DIFFERENCE')
         col.operator("bt.seam_by_material", icon='MATERIAL')
@@ -43,6 +44,7 @@ class BT_PT_SeamsMain(bpy.types.Panel):
         # Presets
         box = layout.box()
         box.label(text="Presets", icon='PRESET')
+        box.separator(factor=0.3)
         col = box.column(align=True)
         col.operator("bt.seam_preset")
         col.operator("bt.clear_seams", icon='X')

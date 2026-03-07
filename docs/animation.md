@@ -1,33 +1,10 @@
 # Animation
 
-## Procedural Generators
+## Mechanical Animation
 
-### Walk Cycle
-Generates sine-wave based locomotion with hip bounce, leg stride, and arm swing.
-
-**Parameters:**
-- `Speed` (0.1-5.0) — Animation speed multiplier
-- `Stride` (0.1-2.0) — Step length
-- `Arm Swing` (0.0-1.0) — Arm rotation amplitude
-- `Frame Count` (8-120) — Cycle duration
-
-### Run Cycle
-Faster walk with aerial phase. Same parameters, higher defaults.
-
-### Idle
-Subtle body sway animation for standing poses.
-
-### Breathing
-Chest scale + shoulder rise animation.
-
-**Parameters:**
-- `Breaths/Min` (5-40) — Breathing rate
-- `Depth` (0.005-0.1) — Breath intensity
-
-### Mechanical
-Three types of mechanical animation:
-- **Piston** — Linear stroke cycle
-- **Gear** — Continuous rotation with ratio
+Three types of mechanical animation for rigged mechanical parts:
+- **Piston** — Linear stroke cycle along the bone's axis
+- **Gear** — Continuous rotation with configurable ratio
 - **Conveyor** — Repeating linear offset
 
 ## Path & Camera
@@ -90,12 +67,49 @@ One-click workflow for extracting root motion from animations, based on the refe
 - `extract_xy` — Extract XY translation to root (default: true)
 - `extract_z_rot` — Extract Z rotation (yaw) to root (default: true)
 
+## Bone Trajectory
+
+Interactive 3D visualization and editing of bone location keyframes. Inspired by Cascadeur's trajectory system.
+
+**How it works:**
+- Evaluates selected bone's world-space position at each keyframe and intermediate frames
+- Draws a smooth curve through the positions (past=blue, future=green)
+- Keyframe positions shown as yellow draggable dots, current frame as white
+- Non-keyframe positions shown as small gray dots
+
+**Editing:**
+- Click a keyframe dot to grab it, drag to move
+- World-space delta is inverse-transformed to bone-local location using the bone's location-space matrix (accounts for parent chain + rest pose)
+- FCurve values update in real-time during drag
+- Location channels only — no rotation editing, no new keyframes created
+
+**Operators:** `bt.trajectory` (modal toggle, ESC to exit)
+
+## Onion Skinning
+
+Camera-independent ghost frame display for armatures with child meshes.
+
+**How it works:**
+- Evaluates child meshes at past/future frames via depsgraph
+- Caches GPU batches in world space — drawing is just `batch.draw()` (very fast)
+- Past ghosts: blue tint with decreasing opacity
+- Future ghosts: orange tint with decreasing opacity
+- Cache rebuilds only on frame change (survives viewport rotation)
+
+**Settings (Scene properties):**
+- `bt_onion_before` — Ghost count before current frame (default 3)
+- `bt_onion_after` — Ghost count after current frame (default 3)
+- `bt_onion_step` — Frame interval between ghosts (default 1)
+- `bt_onion_opacity` — Base opacity (default 0.25)
+
+**Operators:** `bt.onion_skin` (toggle), `bt.onion_skin_refresh` (force recache)
+
 ## Animation Data Flow
 
-All procedural generators output pure math data (bone name -> keyframe list). The `create_fcurve` helper in `core/utils.py` handles Blender 5.0's channelbag API:
+All animation output uses the `create_fcurve` helper in `core/utils.py` which handles Blender 5.0's channelbag API:
 
 1. Get/create Action
-2. Get/create Slot for the object
+2. Get/create Slot for the object (`slots.new(name=obj.name, id_type='OBJECT')`)
 3. Ensure Channelbag for the slot
 4. Create FCurve in the channelbag
 5. Insert keyframe points
@@ -103,7 +117,6 @@ All procedural generators output pure math data (bone name -> keyframe list). Th
 ## Bridge API
 
 ```bash
-python blender_api.py animate --armature Rig --type walk --params '{"speed":1.5}'
 python blender_api.py mechanical --object Piston --type piston_cycle
 
 # Root motion extraction

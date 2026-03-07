@@ -192,6 +192,9 @@ def setup_root_motion(armature_obj):
             con.use_z = True
 
     # ── 5. Bake root bone ──
+    if not root_pbone:
+        bpy.ops.object.mode_set(mode='OBJECT')
+        return
     bpy.ops.pose.select_all(action='DESELECT')
     root_pbone.bone.select = True
     armature_obj.data.bones.active = root_pbone.bone

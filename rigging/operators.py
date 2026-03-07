@@ -121,6 +121,10 @@ class BT_OT_GenerateRig(bpy.types.Operator):
             self.report({'ERROR'}, f"Rig generation failed: {e}")
             return {'CANCELLED'}
 
+        # Assign custom shapes to control bones
+        from .shapes import assign_shapes_for_modular_rig
+        assign_shapes_for_modular_rig(arm_obj)
+
         self.report({'INFO'}, f"Generated rig: {len(bone_names)} bones from {len(modules)} modules")
         return {'FINISHED'}
 

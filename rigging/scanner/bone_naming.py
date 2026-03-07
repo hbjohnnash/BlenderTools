@@ -14,7 +14,7 @@ import time
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector
 from math import cos, sin, pi
-from bpy.props import StringProperty, EnumProperty
+from bpy.props import StringProperty, EnumProperty, IntProperty
 from ...core.constants import (
     DEFORM_PREFIX, CONTROL_PREFIX, MECHANISM_PREFIX,
     WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX,
@@ -168,6 +168,20 @@ class BT_OT_SetBoneLabel(bpy.types.Operator):
     bt_type: EnumProperty(name="Type", items=MODULE_TYPE_ITEMS, default='generic')
     bt_side: EnumProperty(name="Side", items=SIDE_ITEMS, default='C')
     bt_role: EnumProperty(name="Role", items=_role_items)
+    bt_chain_num: IntProperty(name="Chain", min=1, max=10, default=1)
+
+    def _effective_role(self):
+        """Compose the full role string, prepending chain number when needed.
+
+        Indexed types (finger, tail, etc.): always compound — ``{chain}_{bone}``
+        Named-role types (arm, leg, etc.): only prepend when chain > 1 to
+        keep biped names clean (``upper_arm`` vs ``2_upper_arm``).
+        """
+        if self.bt_type in INDEXED_TYPES:
+            return f"{self.bt_chain_num}_{self.bt_role}"
+        if self.bt_chain_num > 1:
+            return f"{self.bt_chain_num}_{self.bt_role}"
+        return self.bt_role
 
     def invoke(self, context, event):
         # Pre-fill from existing BT name
@@ -175,10 +189,25 @@ class BT_OT_SetBoneLabel(bpy.types.Operator):
         if parsed:
             self.bt_type = parsed['type']
             self.bt_side = parsed['side']
-            # Role will be set after type updates the enum items
-            self._prefill_role = parsed['role']
+            role = parsed['role']
+            # Extract chain number from compound role (e.g. "2_01", "2_upper_arm")
+            parts = role.split('_', 1)
+            if len(parts) == 2 and parts[0].isdigit():
+                chain = int(parts[0])
+                remainder = parts[1]
+                if parsed['type'] in INDEXED_TYPES:
+                    # Indexed: always compound
+                    self.bt_chain_num = chain
+                    role = remainder
+                else:
+                    # Named-role: compound only when chain > 1
+                    self.bt_chain_num = chain
+                    role = remainder
+            try:
+                self.bt_role = role
+            except TypeError:
+                pass
         else:
-            self._prefill_role = None
             # Auto-detect side from bone X position
             arm = context.active_object
             if arm and arm.type == 'ARMATURE':
@@ -201,9 +230,13 @@ class BT_OT_SetBoneLabel(bpy.types.Operator):
         layout.separator()
         layout.prop(self, "bt_type")
         layout.prop(self, "bt_side")
-        layout.prop(self, "bt_role")
+        layout.prop(self, "bt_chain_num")
+        if self.bt_type in INDEXED_TYPES:
+            layout.prop(self, "bt_role", text="Bone")
+        else:
+            layout.prop(self, "bt_role")
         # Preview
-        new_name = build_bt_name(self.bt_type, self.bt_side, self.bt_role)
+        new_name = build_bt_name(self.bt_type, self.bt_side, self._effective_role())
         layout.separator()
         box = layout.box()
         box.label(text=new_name, icon='FORWARD')
@@ -214,7 +247,7 @@ class BT_OT_SetBoneLabel(bpy.types.Operator):
             self.report({'ERROR'}, "No armature selected")
             return {'CANCELLED'}
 
-        new_name = build_bt_name(self.bt_type, self.bt_side, self.bt_role)
+        new_name = build_bt_name(self.bt_type, self.bt_side, self._effective_role())
 
         # Check collision
         if arm.data.bones.get(new_name) and new_name != self.bone_name:
@@ -235,6 +268,124 @@ class BT_OT_SetBoneLabel(bpy.types.Operator):
             bpy.ops.object.mode_set(mode=was_mode)
 
         return {'FINISHED'}
+
+
+# ---------------------------------------------------------------------------
+# Auto-name chain operator
+# ---------------------------------------------------------------------------
+
+class BT_OT_AutoNameChain(bpy.types.Operator):
+    """Auto-name selected child bones based on the BT-named bone in the selection"""
+    bl_idname = "bt.auto_name_chain"
+    bl_label = "Auto-Name Chain"
+    bl_description = "Name children of a BT-named bone, incrementing role index automatically"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return (obj and obj.type == 'ARMATURE' and obj.mode == 'EDIT'
+                and sum(1 for b in obj.data.edit_bones if b.select) >= 2)
+
+    def execute(self, context):
+        arm = context.active_object
+        edit_bones = arm.data.edit_bones
+        selected = [b for b in edit_bones if b.select]
+
+        # Find source: prefer active bone if BT-named, else first BT-named
+        active = edit_bones.active
+        if active and active.select and parse_bt_name(active.name):
+            source = active
+            source_parsed = parse_bt_name(active.name)
+        else:
+            source = None
+            source_parsed = None
+            for bone in selected:
+                parsed = parse_bt_name(bone.name)
+                if parsed:
+                    source = bone
+                    source_parsed = parsed
+                    break
+
+        if not source:
+            self.report({'WARNING'}, "No BT-named bone in selection")
+            return {'CANCELLED'}
+
+        # Walk selected descendants depth-first
+        selected_names = {b.name for b in selected}
+        children = []
+        self._walk_children(source, selected_names, children)
+
+        if not children:
+            self.report({'WARNING'}, "No selected descendants of the named bone")
+            return {'CANCELLED'}
+
+        bt_type = source_parsed['type']
+        side = source_parsed['side']
+        role = source_parsed['role']
+
+        # Extract chain number from compound role
+        chain_num = 1
+        role_parts = role.split('_', 1)
+        if len(role_parts) == 2 and role_parts[0].isdigit():
+            chain_num = int(role_parts[0])
+            role = role_parts[1]
+
+        renamed = 0
+        if bt_type in INDEXED_TYPES:
+            # Increment bone index: 01 → 02, 03, ...
+            try:
+                start_idx = int(role)
+            except ValueError:
+                start_idx = 1
+            for i, child in enumerate(children):
+                new_role = f"{chain_num}_{start_idx + i + 1:02d}"
+                new_name = build_bt_name(bt_type, side, new_role)
+                if edit_bones.get(new_name) and new_name != child.name:
+                    self.report({'WARNING'}, f"Skipped: '{new_name}' already exists")
+                    continue
+                child.name = new_name
+                renamed += 1
+        else:
+            # Walk role list: upper_arm → lower_arm → hand → ...
+            roles_list = ROLES_BY_TYPE.get(bt_type, [])
+            role_names = [r[0] for r in roles_list]
+            try:
+                start_pos = role_names.index(role)
+            except ValueError:
+                self.report({'WARNING'}, f"Role '{role}' not found in {bt_type} roles")
+                return {'CANCELLED'}
+            for i, child in enumerate(children):
+                pos = start_pos + i + 1
+                if pos >= len(role_names):
+                    break
+                child_role = role_names[pos]
+                if chain_num > 1:
+                    child_role = f"{chain_num}_{child_role}"
+                new_name = build_bt_name(bt_type, side, child_role)
+                if edit_bones.get(new_name) and new_name != child.name:
+                    self.report({'WARNING'}, f"Skipped: '{new_name}' already exists")
+                    continue
+                child.name = new_name
+                renamed += 1
+
+        # Deselect unrelated bones
+        chain_set = {source.name} | {c.name for c in children}
+        for bone in selected:
+            if bone.name not in chain_set:
+                bone.select = False
+                bone.select_head = False
+                bone.select_tail = False
+
+        self.report({'INFO'}, f"Auto-named {renamed} bones in chain")
+        return {'FINISHED'}
+
+    def _walk_children(self, parent, selected_names, result):
+        """Depth-first walk of selected children."""
+        for child in parent.children:
+            if child.name in selected_names:
+                result.append(child)
+                self._walk_children(child, selected_names, result)
 
 
 # ---------------------------------------------------------------------------
@@ -612,6 +763,7 @@ class BT_OT_BoneNamingOverlay(bpy.types.Operator):
 
 classes = (
     BT_OT_SetBoneLabel,
+    BT_OT_AutoNameChain,
     BT_OT_BoneNamingOverlay,
 )
 

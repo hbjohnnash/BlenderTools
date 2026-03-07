@@ -46,10 +46,11 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
 
         sd = obj.bt_scan
 
-        # Name Bones + Scan buttons
+        # Name Bones + Auto-Name Chain + Scan buttons
         row = layout.row(align=True)
         row.scale_y = 1.3
         row.operator("bt.bone_naming_overlay", icon='SORTALPHA')
+        row.operator("bt.auto_name_chain", text="", icon='LINKED')
         row.operator("bt.scan_skeleton", icon='VIEWZOOM')
 
         if not sd.is_scanned:
@@ -58,6 +59,7 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
         # ── Results ──
         box = layout.box()
         box.label(text=f"Type: {sd.skeleton_type}", icon='ARMATURE_DATA')
+        box.separator(factor=0.3)
         box.label(text=f"Confidence: {sd.confidence:.0%}")
         box.label(text=f"Chains: {len(sd.chains)}  |  Bones: {len(sd.bones)}")
 
@@ -108,6 +110,7 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
             # ── Chain Config ──
             box = layout.box()
             box.label(text="Chains", icon='LINKED')
+            box.separator(factor=0.3)
             for chain in sd.chains:
                 sub = box.box()
                 row = sub.row()
@@ -128,6 +131,7 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
             # ── Batch Skip ──
             box = layout.box()
             box.label(text="Batch Skip", icon='FILTER')
+            box.separator(factor=0.3)
 
             row = box.row(align=True)
             row.prop(sd, "skip_pattern", text="", icon='SORTALPHA')
@@ -153,6 +157,7 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
             row = box.row()
             row.label(text="Bone Assignments", icon='BONE_DATA')
             row.label(text=f"{len(sd.bones)}")
+            box.separator(factor=0.3)
 
             col = box.column(align=True)
             for bone_item in sd.bones:

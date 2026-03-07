@@ -76,6 +76,65 @@ class BT_PT_Header(bpy.types.Panel):
         op = row.operator("bt.set_all_panels", text="Hide All", icon='HIDE_ON')
         op.show = False
 
+        # ── Overlays ──
+        obj = context.active_object
+        is_armature = obj and obj.type == 'ARMATURE'
+
+        if is_armature:
+            box = layout.box()
+            row = box.row()
+            row.label(text="Overlays", icon='OVERLAY')
+            col = box.column(align=True)
+
+            # Module overlay (Object/Edit mode only)
+            if obj.mode != 'POSE':
+                from .rigging.viewport_overlay import _active as mod_active
+                col.operator(
+                    "bt.module_overlay",
+                    text="Module Overlay",
+                    icon='OVERLAY',
+                    depress=mod_active,
+                )
+
+            # FK/IK overlay (pose mode, wrap rig only)
+            sd = getattr(obj, 'bt_scan', None)
+            if sd and sd.has_wrap_rig:
+                from .rigging.scanner.ik_overlay import _active as ik_active
+                col.operator(
+                    "bt.ik_overlay",
+                    text="FK/IK Overlay",
+                    icon='NLA',
+                    depress=ik_active,
+                )
+
+            # Center of Mass
+            from .rigging.center_of_mass import _active as com_active
+            col.operator(
+                "bt.toggle_com",
+                text="Center of Mass",
+                icon='ORIENTATION_CURSOR',
+                depress=com_active,
+            )
+
+            # Trajectory (pose mode)
+            if obj.mode == 'POSE':
+                from .animation.trajectory import _active as traj_active
+                col.operator(
+                    "bt.trajectory",
+                    text="Trajectory",
+                    icon='ANIM_DATA',
+                    depress=traj_active,
+                )
+
+                # Onion Skin
+                from .animation.onion_skin import _active as onion_active
+                col.operator(
+                    "bt.onion_skin",
+                    text="Onion Skin",
+                    icon='ONIONSKIN_ON' if onion_active else 'ONIONSKIN_OFF',
+                    depress=onion_active,
+                )
+
 
 def _import_subsystems():
     global _subsystems

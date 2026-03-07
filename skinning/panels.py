@@ -33,6 +33,7 @@ class BT_PT_SkinningMain(bpy.types.Panel):
         # Weighting
         box = layout.box()
         box.label(text="Weighting", icon='MOD_VERTEX_WEIGHT')
+        box.separator(factor=0.3)
         col = box.column(align=True)
         col.operator("bt.auto_weight", icon='BONE_DATA')
         col.operator("bt.rigid_bind", icon='RIGID_BODY')
@@ -40,6 +41,7 @@ class BT_PT_SkinningMain(bpy.types.Panel):
         # Cleanup
         box = layout.box()
         box.label(text="Cleanup", icon='BRUSH_DATA')
+        box.separator(factor=0.3)
         col = box.column(align=True)
         col.operator("bt.weight_cleanup", icon='BRUSH_DATA')
         col.operator("bt.merge_vertex_groups", icon='AUTOMERGE_ON')

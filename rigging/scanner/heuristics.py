@@ -465,7 +465,7 @@ def _detect_fingers(hand_bone, bones, bone_heads, bone_tails,
         for i, b in enumerate(finger_chain):
             if b.name not in mapped_set:
                 result[b.name] = {
-                    "role": f"finger_{finger_idx:02d}_bone_{i:02d}",
+                    "role": f"{finger_idx}_{i + 1:02d}",
                     "side": side,
                     "module_type": "finger",
                     "chain_id": chain_id,

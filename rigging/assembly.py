@@ -105,6 +105,27 @@ def _topological_sort(modules):
     return sorted_modules
 
 
+def _deduplicate_module_names(modules):
+    """Ensure unique (name, side) combinations to prevent bone name clashes.
+
+    When multiple modules share the same name and side, Blender silently
+    renames duplicate bones with .001 suffixes, breaking constraint
+    subtarget references.  This appends a numeric suffix to disambiguate.
+    """
+    counts = {}
+    for mod in modules:
+        key = (mod.name, mod.side)
+        counts[key] = counts.get(key, 0) + 1
+
+    used = {}
+    for mod in modules:
+        key = (mod.name, mod.side)
+        if counts[key] > 1:
+            idx = used.get(key, 0) + 1
+            used[key] = idx
+            mod.name = f"{mod.name}{idx}"
+
+
 def assemble_rig(armature_obj, modules):
     """Assemble a complete rig from module instances.
 
@@ -117,6 +138,9 @@ def assemble_rig(armature_obj, modules):
     """
     armature = armature_obj.data
     all_bone_names = set()
+
+    # Deduplicate modules that share (name, side) to prevent bone name clashes
+    _deduplicate_module_names(modules)
 
     # Sort modules by dependency
     sorted_modules = _topological_sort(modules)

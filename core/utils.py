@@ -110,7 +110,7 @@ def create_fcurve(obj, action_name, data_path, index, keyframes):
     if obj.animation_data and obj.animation_data.action_slot:
         slot = obj.animation_data.action_slot
     if slot is None:
-        slot = action.slots.new(for_id=obj)
+        slot = action.slots.new(name=obj.name, id_type='OBJECT')
 
     obj.animation_data.action_slot = slot
 
