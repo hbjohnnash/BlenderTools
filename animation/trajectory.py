@@ -65,12 +65,13 @@ def _get_location_keyframes(armature_obj, bone_name):
     data_path = f'pose.bones["{bone_name}"].location'
 
     frames = set()
-    for slot in action.slots:
-        for channelbag in slot.channelbags:
-            for fcurve in channelbag.fcurves:
-                if fcurve.data_path == data_path:
-                    for kp in fcurve.keyframe_points:
-                        frames.add(int(kp.co.x))
+    for layer in action.layers:
+        for strip in layer.strips:
+            for channelbag in strip.channelbags:
+                for fcurve in channelbag.fcurves:
+                    if fcurve.data_path == data_path:
+                        for kp in fcurve.keyframe_points:
+                            frames.add(int(kp.co.x))
     return sorted(frames)
 
 
@@ -168,16 +169,17 @@ def _update_location_fcurves(armature_obj, bone_name, frame, new_location):
     action = armature_obj.animation_data.action
     data_path = f'pose.bones["{bone_name}"].location'
 
-    for slot in action.slots:
-        for channelbag in slot.channelbags:
-            for fcurve in channelbag.fcurves:
-                if fcurve.data_path == data_path:
-                    idx = fcurve.array_index
-                    for kp in fcurve.keyframe_points:
-                        if abs(kp.co.x - frame) < 0.5:
-                            kp.co.y = new_location[idx]
-                            fcurve.update()
-                            break
+    for layer in action.layers:
+        for strip in layer.strips:
+            for channelbag in strip.channelbags:
+                for fcurve in channelbag.fcurves:
+                    if fcurve.data_path == data_path:
+                        idx = fcurve.array_index
+                        for kp in fcurve.keyframe_points:
+                            if abs(kp.co.x - frame) < 0.5:
+                                kp.co.y = new_location[idx]
+                                fcurve.update()
+                                break
 
 
 # ---------------------------------------------------------------------------

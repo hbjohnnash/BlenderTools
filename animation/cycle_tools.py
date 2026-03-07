@@ -9,16 +9,17 @@ def match_first_last_keyframe(action):
     Args:
         action: bpy.types.Action.
     """
-    for slot in action.slots:
-        for channelbag in slot.channelbags:
-            for fcurve in channelbag.fcurves:
-                points = fcurve.keyframe_points
-                if len(points) >= 2:
-                    # Set last keyframe value = first keyframe value
-                    points[-1].co.y = points[0].co.y
-                    points[-1].handle_left_type = points[0].handle_left_type
-                    points[-1].handle_right_type = points[0].handle_right_type
-                fcurve.update()
+    for layer in action.layers:
+        for strip in layer.strips:
+            for channelbag in strip.channelbags:
+                for fcurve in channelbag.fcurves:
+                    points = fcurve.keyframe_points
+                    if len(points) >= 2:
+                        # Set last keyframe value = first keyframe value
+                        points[-1].co.y = points[0].co.y
+                        points[-1].handle_left_type = points[0].handle_left_type
+                        points[-1].handle_right_type = points[0].handle_right_type
+                    fcurve.update()
 
 
 def push_to_nla(armature_obj, action_name=None, strip_name=None, repeat=1):

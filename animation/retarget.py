@@ -65,39 +65,40 @@ def retarget_action(source_action, target_armature, mapping, new_action_name=Non
     channelbag = action_ensure_channelbag_for_slot(new_action, slot)
 
     # Iterate source fcurves
-    for src_slot in source_action.slots:
-        for src_cb in src_slot.channelbags:
-            for src_fc in src_cb.fcurves:
-                # Parse bone name from data path
-                dp = src_fc.data_path
-                if 'pose.bones["' not in dp:
-                    continue
+    for src_layer in source_action.layers:
+        for src_strip in src_layer.strips:
+            for src_cb in src_strip.channelbags:
+                for src_fc in src_cb.fcurves:
+                    # Parse bone name from data path
+                    dp = src_fc.data_path
+                    if 'pose.bones["' not in dp:
+                        continue
 
-                # Extract bone name
-                start = dp.index('pose.bones["') + len('pose.bones["')
-                end = dp.index('"]', start)
-                src_bone = dp[start:end]
+                    # Extract bone name
+                    start = dp.index('pose.bones["') + len('pose.bones["')
+                    end = dp.index('"]', start)
+                    src_bone = dp[start:end]
 
-                # Map to target bone
-                tgt_bone = mapping.get(src_bone)
-                if not tgt_bone:
-                    continue
+                    # Map to target bone
+                    tgt_bone = mapping.get(src_bone)
+                    if not tgt_bone:
+                        continue
 
-                # Build new data path
-                new_dp = dp[:start] + tgt_bone + dp[end:]
+                    # Build new data path
+                    new_dp = dp[:start] + tgt_bone + dp[end:]
 
-                # Create target fcurve
-                new_fc = channelbag.fcurves.new(new_dp, index=src_fc.array_index)
+                    # Create target fcurve
+                    new_fc = channelbag.fcurves.new(new_dp, index=src_fc.array_index)
 
-                # Copy keyframes
-                new_fc.keyframe_points.add(len(src_fc.keyframe_points))
-                for i, kf in enumerate(src_fc.keyframe_points):
-                    new_kf = new_fc.keyframe_points[i]
-                    new_kf.co = kf.co
-                    new_kf.interpolation = kf.interpolation
-                    new_kf.handle_left = kf.handle_left
-                    new_kf.handle_right = kf.handle_right
+                    # Copy keyframes
+                    new_fc.keyframe_points.add(len(src_fc.keyframe_points))
+                    for i, kf in enumerate(src_fc.keyframe_points):
+                        new_kf = new_fc.keyframe_points[i]
+                        new_kf.co = kf.co
+                        new_kf.interpolation = kf.interpolation
+                        new_kf.handle_left = kf.handle_left
+                        new_kf.handle_right = kf.handle_right
 
-                new_fc.update()
+                    new_fc.update()
 
     return new_action

@@ -44,7 +44,24 @@ def _get_settings(context):
         'count_after': getattr(scene, 'bt_onion_after', DEFAULT_COUNT_AFTER),
         'frame_step': getattr(scene, 'bt_onion_step', DEFAULT_FRAME_STEP),
         'opacity': getattr(scene, 'bt_onion_opacity', DEFAULT_OPACITY),
+        'use_keyframes': getattr(scene, 'bt_onion_use_keyframes', False),
     }
+
+
+def _get_action_keyframes(armature_obj):
+    """Collect all unique keyframe times from the armature's action."""
+    if not armature_obj.animation_data or not armature_obj.animation_data.action:
+        return []
+
+    action = armature_obj.animation_data.action
+    frames = set()
+    for layer in action.layers:
+        for strip in layer.strips:
+            for channelbag in strip.channelbags:
+                for fcurve in channelbag.fcurves:
+                    for kp in fcurve.keyframe_points:
+                        frames.add(int(kp.co.x))
+    return sorted(frames)
 
 
 # ---------------------------------------------------------------------------
@@ -68,18 +85,27 @@ def _build_ghost_cache(context, armature_obj):
     step = settings['frame_step']
     opacity = settings['opacity']
 
-    # Collect ghost frames
-    frames_before = []
-    for i in range(1, count_before + 1):
-        f = current - i * step
-        if f >= scene.frame_start:
-            frames_before.append(f)
+    use_keyframes = settings['use_keyframes']
 
-    frames_after = []
-    for i in range(1, count_after + 1):
-        f = current + i * step
-        if f <= scene.frame_end:
-            frames_after.append(f)
+    # Collect ghost frames
+    if use_keyframes:
+        all_keys = _get_action_keyframes(armature_obj)
+        keys_before = [f for f in all_keys if f < current]
+        keys_after = [f for f in all_keys if f > current]
+        frames_before = keys_before[-count_before:]  # nearest N before
+        frames_after = keys_after[:count_after]       # nearest N after
+    else:
+        frames_before = []
+        for i in range(1, count_before + 1):
+            f = current - i * step
+            if f >= scene.frame_start:
+                frames_before.append(f)
+
+        frames_after = []
+        for i in range(1, count_after + 1):
+            f = current + i * step
+            if f <= scene.frame_end:
+                frames_after.append(f)
 
     if not frames_before and not frames_after:
         return
@@ -128,11 +154,13 @@ def _build_ghost_cache(context, armature_obj):
 
             # Compute color with distance-based fade
             if frame < current:
-                dist = (current - frame) / max(1, count_before * step)
+                idx = frames_before.index(frame)
+                dist = (len(frames_before) - idx) / max(1, len(frames_before))
                 alpha = opacity * (1.0 - dist * 0.6)
                 _ghost_colors[frame] = (*COLOR_PAST, alpha)
             else:
-                dist = (frame - current) / max(1, count_after * step)
+                idx = frames_after.index(frame)
+                dist = (idx + 1) / max(1, len(frames_after))
                 alpha = opacity * (1.0 - dist * 0.6)
                 _ghost_colors[frame] = (*COLOR_FUTURE, alpha)
 
@@ -221,7 +249,7 @@ class BT_OT_OnionSkin(bpy.types.Operator):
         _build_ghost_cache(context, obj)
 
         _draw_handle = bpy.types.SpaceView3D.draw_handler_add(
-            _draw_callback, (context,), 'WINDOW', 'POST_PIXEL')
+            _draw_callback, (context,), 'WINDOW', 'POST_VIEW')
 
         if context.area:
             context.area.tag_redraw()
@@ -272,6 +300,10 @@ def register():
         name="Opacity", default=0.25, min=0.05, max=1.0,
         description="Ghost frame opacity",
     )
+    bpy.types.Scene.bt_onion_use_keyframes = bpy.props.BoolProperty(
+        name="Keyframes Only", default=False,
+        description="Show ghosts at keyframes instead of fixed intervals",
+    )
 
 
 def unregister():
@@ -282,7 +314,7 @@ def unregister():
     _active = False
     _clear_cache()
 
-    for attr in ('bt_onion_before', 'bt_onion_after', 'bt_onion_step', 'bt_onion_opacity'):
+    for attr in ('bt_onion_before', 'bt_onion_after', 'bt_onion_step', 'bt_onion_opacity', 'bt_onion_use_keyframes'):
         if hasattr(bpy.types.Scene, attr):
             delattr(bpy.types.Scene, attr)
 

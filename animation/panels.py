@@ -126,9 +126,11 @@ class BT_PT_OnionSkinSettings(bpy.types.Panel):
             box.label(text="Settings", icon='PREFERENCES')
             box.separator(factor=0.3)
             col = box.column(align=True)
+            col.prop(scene, "bt_onion_use_keyframes", text="Keyframes Only")
             col.prop(scene, "bt_onion_before", text="Before")
             col.prop(scene, "bt_onion_after", text="After")
-            col.prop(scene, "bt_onion_step", text="Step")
+            if not scene.bt_onion_use_keyframes:
+                col.prop(scene, "bt_onion_step", text="Step")
             col.prop(scene, "bt_onion_opacity", text="Opacity", slider=True)
             layout.separator(factor=0.3)
             layout.operator("bt.onion_skin_refresh", icon='FILE_REFRESH')
