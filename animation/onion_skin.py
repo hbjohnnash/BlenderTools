@@ -3,6 +3,9 @@
 Evaluates meshes at past/future frames and draws them as
 semi-transparent GPU batches. Camera-independent (world-space cached).
 Cache rebuilds only on frame change for efficiency.
+
+Proxy meshes (decimated LODs) are created once on activation to speed up
+per-frame ghost evaluation.
 """
 
 import bpy
@@ -21,11 +24,16 @@ _ghost_colors = {}    # {frame: (r, g, b, a)}
 _last_frame = -1
 _last_armature = ""
 
+# Proxy LOD state
+_proxy_objects = []
+_PROXY_COL_NAME = "BT_OnionSkin_Proxy"
+
 # Default settings (overridden by scene properties when available)
 DEFAULT_COUNT_BEFORE = 3
 DEFAULT_COUNT_AFTER = 3
 DEFAULT_FRAME_STEP = 1
 DEFAULT_OPACITY = 0.25
+DEFAULT_PROXY_RATIO = 0.25
 
 # Colors
 COLOR_PAST = (0.3, 0.5, 1.0)    # blue
@@ -45,6 +53,7 @@ def _get_settings(context):
         'frame_step': getattr(scene, 'bt_onion_step', DEFAULT_FRAME_STEP),
         'opacity': getattr(scene, 'bt_onion_opacity', DEFAULT_OPACITY),
         'use_keyframes': getattr(scene, 'bt_onion_use_keyframes', False),
+        'proxy_ratio': getattr(scene, 'bt_onion_proxy_ratio', DEFAULT_PROXY_RATIO),
     }
 
 
@@ -62,6 +71,112 @@ def _get_action_keyframes(armature_obj):
                     for kp in fcurve.keyframe_points:
                         frames.add(int(kp.co.x))
     return sorted(frames)
+
+
+# ---------------------------------------------------------------------------
+# Proxy mesh management
+# ---------------------------------------------------------------------------
+
+def _create_proxy_meshes(context, armature_obj, ratio):
+    """Create decimated proxy meshes for fast ghost evaluation.
+
+    Duplicates each child mesh, applies a Decimate modifier to bake
+    the low-poly geometry, then adds an Armature modifier so the proxy
+    deforms with the rig.  Called once when onion skin is enabled.
+    """
+    global _proxy_objects
+    _destroy_proxy_meshes()
+
+    if ratio >= 1.0:
+        return  # full quality, use originals
+
+    mesh_children = [c for c in armature_obj.children if c.type == 'MESH']
+    if not mesh_children:
+        return
+
+    # Create hidden collection
+    proxy_col = bpy.data.collections.new(_PROXY_COL_NAME)
+    context.scene.collection.children.link(proxy_col)
+
+    wm = context.window_manager
+    total = len(mesh_children)
+    wm.progress_begin(0, total)
+    context.window.cursor_set('WAIT')
+
+    # Phase 1: create all proxy objects with Decimate modifier
+    pending = []
+    for i, child in enumerate(mesh_children):
+        wm.progress_update(i)
+
+        new_obj = child.copy()
+        new_obj.data = child.data.copy()
+        new_obj.name = f"BT_Proxy_{child.name}"
+        proxy_col.objects.link(new_obj)
+
+        # Strip all modifiers
+        for mod in list(new_obj.modifiers):
+            new_obj.modifiers.remove(mod)
+
+        # Remove shape keys (required for Decimate to evaluate)
+        if new_obj.data.shape_keys:
+            new_obj.shape_key_clear()
+
+        # Add Decimate only
+        decimate = new_obj.modifiers.new("BT_Decimate", 'DECIMATE')
+        decimate.ratio = ratio
+        decimate.use_collapse_triangulate = True
+        pending.append(new_obj)
+
+    # Phase 2: single depsgraph update to evaluate all Decimate modifiers
+    context.view_layer.update()
+    depsgraph = context.evaluated_depsgraph_get()
+
+    # Phase 3: bake decimated geometry and swap in Armature modifier
+    for new_obj in pending:
+        eval_obj = new_obj.evaluated_get(depsgraph)
+        temp_mesh = eval_obj.to_mesh()
+
+        if temp_mesh and len(temp_mesh.vertices) > 0:
+            final_mesh = temp_mesh.copy()
+            final_mesh.name = f"BT_Proxy_{new_obj.data.name}"
+            eval_obj.to_mesh_clear()
+
+            old_mesh = new_obj.data
+            new_obj.data = final_mesh
+            bpy.data.meshes.remove(old_mesh)
+        else:
+            if temp_mesh:
+                eval_obj.to_mesh_clear()
+
+        # Replace Decimate with Armature
+        new_obj.modifiers.clear()
+        arm_mod = new_obj.modifiers.new("BT_Armature", 'ARMATURE')
+        arm_mod.object = armature_obj
+
+        # Hidden but still evaluated by depsgraph
+        new_obj.hide_set(True)
+        new_obj.hide_render = True
+
+        _proxy_objects.append(new_obj)
+
+    wm.progress_end()
+    context.window.cursor_set('DEFAULT')
+
+
+def _destroy_proxy_meshes():
+    """Remove all proxy objects and their mesh data."""
+    global _proxy_objects
+
+    for obj in _proxy_objects:
+        mesh = obj.data
+        bpy.data.objects.remove(obj)
+        if mesh and mesh.users == 0:
+            bpy.data.meshes.remove(mesh)
+    _proxy_objects = []
+
+    col = bpy.data.collections.get(_PROXY_COL_NAME)
+    if col:
+        bpy.data.collections.remove(col)
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +228,10 @@ def _build_ghost_cache(context, armature_obj):
     original_frame = scene.frame_current
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
 
+    # Use proxy meshes if available, otherwise originals
+    ghost_meshes = (_proxy_objects if _proxy_objects
+                    else [c for c in armature_obj.children if c.type == 'MESH'])
+
     all_ghost_frames = frames_before + frames_after
 
     for frame in all_ghost_frames:
@@ -120,10 +239,7 @@ def _build_ghost_cache(context, armature_obj):
         depsgraph = context.evaluated_depsgraph_get()
 
         batches = []
-        for child in armature_obj.children:
-            if child.type != 'MESH':
-                continue
-
+        for child in ghost_meshes:
             eval_obj = child.evaluated_get(depsgraph)
             mesh = eval_obj.to_mesh()
             if mesh is None or len(mesh.vertices) == 0:
@@ -227,6 +343,7 @@ class BT_OT_OnionSkin(bpy.types.Operator):
         if _active:
             _active = False
             _clear_cache()
+            _destroy_proxy_meshes()
             if _draw_handle:
                 bpy.types.SpaceView3D.draw_handler_remove(_draw_handle, 'WINDOW')
                 _draw_handle = None
@@ -246,6 +363,11 @@ class BT_OT_OnionSkin(bpy.types.Operator):
             return {'CANCELLED'}
 
         _active = True
+
+        # Create proxy LODs (shows progress bar + wait cursor)
+        settings = _get_settings(context)
+        _create_proxy_meshes(context, obj, settings['proxy_ratio'])
+
         _build_ghost_cache(context, obj)
 
         _draw_handle = bpy.types.SpaceView3D.draw_handler_add(
@@ -253,18 +375,26 @@ class BT_OT_OnionSkin(bpy.types.Operator):
 
         if context.area:
             context.area.tag_redraw()
-        self.report({'INFO'}, "Onion skin enabled")
+
+        n_proxies = len(_proxy_objects)
+        if n_proxies:
+            self.report({'INFO'}, f"Onion skin enabled ({n_proxies} proxy meshes)")
+        else:
+            self.report({'INFO'}, "Onion skin enabled (full quality)")
         return {'FINISHED'}
 
 
 class BT_OT_OnionSkinRefresh(bpy.types.Operator):
-    """Force refresh onion skin cache."""
+    """Force refresh onion skin cache and rebuild proxy meshes."""
     bl_idname = "bt.onion_skin_refresh"
     bl_label = "Refresh Onion Skin"
 
     def execute(self, context):
         if _active and context.active_object:
-            _build_ghost_cache(context, context.active_object)
+            obj = context.active_object
+            settings = _get_settings(context)
+            _create_proxy_meshes(context, obj, settings['proxy_ratio'])
+            _build_ghost_cache(context, obj)
             if context.area:
                 context.area.tag_redraw()
         return {'FINISHED'}
@@ -304,6 +434,11 @@ def register():
         name="Keyframes Only", default=False,
         description="Show ghosts at keyframes instead of fixed intervals",
     )
+    bpy.types.Scene.bt_onion_proxy_ratio = bpy.props.FloatProperty(
+        name="Ghost Detail", default=0.25, min=0.05, max=1.0,
+        description="Proxy mesh detail (lower = faster, 1.0 = full quality)",
+        subtype='FACTOR',
+    )
 
 
 def unregister():
@@ -314,7 +449,10 @@ def unregister():
     _active = False
     _clear_cache()
 
-    for attr in ('bt_onion_before', 'bt_onion_after', 'bt_onion_step', 'bt_onion_opacity', 'bt_onion_use_keyframes'):
+    _destroy_proxy_meshes()
+
+    for attr in ('bt_onion_before', 'bt_onion_after', 'bt_onion_step', 'bt_onion_opacity',
+                 'bt_onion_use_keyframes', 'bt_onion_proxy_ratio'):
         if hasattr(bpy.types.Scene, attr):
             delattr(bpy.types.Scene, attr)
 

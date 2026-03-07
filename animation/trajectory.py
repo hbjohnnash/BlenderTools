@@ -47,6 +47,7 @@ HIT_RADIUS = 12
 COLOR_PAST_LINE = (0.3, 0.5, 1.0, 0.6)
 COLOR_FUTURE_LINE = (0.3, 1.0, 0.5, 0.6)
 COLOR_KEY_DOT = (1.0, 0.8, 0.2, 0.9)
+COLOR_KEY_READONLY = (0.7, 0.7, 0.9, 0.7)  # dimmer dot for non-editable keys
 COLOR_KEY_HOVER = (1.0, 1.0, 0.5, 1.0)
 COLOR_CURRENT = (1.0, 1.0, 1.0, 1.0)
 COLOR_DRAG = (1.0, 0.4, 0.2, 1.0)
@@ -70,6 +71,25 @@ def _get_location_keyframes(armature_obj, bone_name):
             for channelbag in strip.channelbags:
                 for fcurve in channelbag.fcurves:
                     if fcurve.data_path == data_path:
+                        for kp in fcurve.keyframe_points:
+                            frames.add(int(kp.co.x))
+    return sorted(frames)
+
+
+def _get_bone_keyframes(armature_obj, bone_name):
+    """Get frames that have ANY keyframe for this bone (location, rotation, scale)."""
+    if not armature_obj.animation_data or not armature_obj.animation_data.action:
+        return []
+
+    action = armature_obj.animation_data.action
+    prefix = f'pose.bones["{bone_name}"].'
+
+    frames = set()
+    for layer in action.layers:
+        for strip in layer.strips:
+            for channelbag in strip.channelbags:
+                for fcurve in channelbag.fcurves:
+                    if fcurve.data_path.startswith(prefix):
                         for kp in fcurve.keyframe_points:
                             frames.add(int(kp.co.x))
     return sorted(frames)
@@ -102,9 +122,13 @@ def _build_cache(context, armature_obj, bone_names):
     _cache = {}
 
     for bone_name in bone_names:
-        key_frames = _get_location_keyframes(armature_obj, bone_name)
+        # Use any keyframe (rotation, location, scale) for visualization
+        key_frames = _get_bone_keyframes(armature_obj, bone_name)
         if not key_frames:
             continue
+
+        # Check if this bone has editable location keys
+        has_loc_keys = bool(_get_location_keyframes(armature_obj, bone_name))
 
         # Sample at keyframes
         key_positions = _sample_bone_positions(armature_obj, bone_name, key_frames)
@@ -121,6 +145,7 @@ def _build_cache(context, armature_obj, bone_names):
         _cache[bone_name] = {
             'all': all_positions,
             'keys': key_positions,
+            'editable': has_loc_keys,
         }
 
 
@@ -212,6 +237,7 @@ def _draw_trajectory(context, shader, bone_name, data):
     current_frame = context.scene.frame_current
     all_pts = data['all']
     key_pts = data['keys']
+    editable = data.get('editable', False)
 
     if len(all_pts) < 2:
         return
@@ -250,9 +276,12 @@ def _draw_trajectory(context, shader, bone_name, data):
         elif frame == current_frame:
             color = COLOR_CURRENT
             radius = KEY_DOT_RADIUS + 1
-        else:
+        elif editable:
             color = COLOR_KEY_DOT
             radius = KEY_DOT_RADIUS
+        else:
+            color = COLOR_KEY_READONLY
+            radius = KEY_DOT_RADIUS - 1
 
         _draw_circle_2d(shader, screen[0], screen[1], radius, color)
 
@@ -288,7 +317,12 @@ def _draw_callback(context):
         _draw_header_hint(context, f"Dragging {_drag_bone} @ frame {_drag_frame}")
     elif _cache:
         names = ", ".join(_cache.keys())
-        _draw_header_hint(context, f"Trajectory: {names}  [ESC to exit, click keyframe dots to drag]")
+        has_editable = any(d.get('editable') for d in _cache.values())
+        hint = f"Trajectory: {names}  [ESC to exit"
+        if has_editable:
+            hint += ", drag dots to edit"
+        hint += "]"
+        _draw_header_hint(context, hint)
 
 
 def _draw_header_hint(context, text):
@@ -410,18 +444,23 @@ class BT_OT_Trajectory(bpy.types.Operator):
 
             return {'RUNNING_MODAL'}
 
-        # --- Click to start drag ---
+        # --- Click to start drag (only for bones with unlocked location) ---
         if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
             hit = _hit_test_keyframe(context, event.mouse_region_x, event.mouse_region_y)
             if hit:
                 bone_name, frame, world_pos = hit
+
+                pbone = obj.pose.bones.get(bone_name)
+                if pbone and all(pbone.lock_location):
+                    # FK bone — location locked, drag not supported
+                    self.report({'INFO'}, f"{bone_name}: location locked (FK bone)")
+                    return {'RUNNING_MODAL'}
 
                 # Evaluate at target frame to get correct parent matrices
                 scene = context.scene
                 original_frame = scene.frame_current
                 scene.frame_set(frame)
 
-                pbone = obj.pose.bones.get(bone_name)
                 if pbone:
                     M_rot_inv, M_trans, arm_inv = _compute_location_space(obj, pbone)
                     _dragging = True

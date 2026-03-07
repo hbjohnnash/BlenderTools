@@ -215,8 +215,33 @@ def assign_shape(pose_bone, shape_type, scale=1.0):
     pose_bone.use_custom_shape_bone_size = True
 
 
+def _get_cog_fk_names(armature_obj):
+    """Find FK CTRL names for COG bones (first bone of spine/root chains).
+
+    These bones need unlocked location for body positioning.
+    """
+    sd = getattr(armature_obj, 'bt_scan', None)
+    if not sd:
+        return set()
+
+    cog_names = set()
+    for chain in sd.chains:
+        if chain.module_type not in ('spine', 'root'):
+            continue
+        # Find first bone in this chain
+        chain_bones = [b for b in sd.bones
+                       if b.chain_id == chain.chain_id and not b.skip]
+        if chain_bones:
+            first = chain_bones[0]
+            ctrl_name = f"{WRAP_CTRL_PREFIX}{chain.chain_id}_FK_{first.role}"
+            cog_names.add(ctrl_name)
+    return cog_names
+
+
 def assign_shapes_for_wrap_rig(armature_obj):
-    """Auto-assign shapes to all wrap rig CTRL bones."""
+    """Auto-assign shapes and lock transforms for all wrap rig CTRL bones."""
+    cog_bones = _get_cog_fk_names(armature_obj)
+
     for pbone in armature_obj.pose.bones:
         name = pbone.name
         if not name.startswith(WRAP_CTRL_PREFIX):
@@ -232,6 +257,9 @@ def assign_shapes_for_wrap_rig(armature_obj):
             assign_shape(pbone, 'SPHERE', scale=0.4)
         elif "_FK_" in suffix:
             assign_shape(pbone, 'CIRCLE', scale=0.8)
+            # Lock location on FK bones, except COG (hips) which needs translation
+            if name not in cog_bones:
+                pbone.lock_location = (True, True, True)
         else:
             assign_shape(pbone, 'CIRCLE', scale=0.6)
 
