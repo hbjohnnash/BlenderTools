@@ -1,21 +1,24 @@
 """Bone trajectory visualization and editing.
 
-Shows bone location keyframes as 3D points connected by a smooth curve.
-Dragging a keyframe dot updates the location fcurve value directly.
-Only operates on location channels — no rotation, no new keyframes.
+Shows bone keyframes as 3D points connected by a smooth curve.
+Dragging a keyframe dot updates location fcurves for IK/root bones,
+or triggers IK-assisted editing for FK bones (temporarily enables IK,
+snaps FK on release, keys FK rotations).
 """
 
 import bpy
 import gpu
 import blf
 from gpu_extras.batch import batch_for_shader
-from mathutils import Vector
+from mathutils import Vector, Matrix
 from math import cos, sin, pi
 from bpy_extras.view3d_utils import (
     location_3d_to_region_2d,
     region_2d_to_location_3d,
 )
-from ..core.constants import PANEL_CATEGORY
+from ..core.constants import (
+    PANEL_CATEGORY, WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX, WRAP_CONSTRAINT_PREFIX,
+)
 
 # ---------------------------------------------------------------------------
 # State
@@ -39,6 +42,13 @@ _drag_M_rot_inv = None  # cached inverse rotation for location space
 _drag_armature_inv = None
 _drag_M_translation = Vector()
 
+# IK-assisted drag state
+_ik_drag = False          # True when doing IK-assisted trajectory edit
+_ik_chain_id = None
+_ik_target_name = None    # IK target bone name
+_ik_saved_frame = -1
+_ik_saved_constraints = {}  # {mch_name: {con_name: influence}}
+
 # Drawing constants
 DOT_RADIUS = 5
 KEY_DOT_RADIUS = 7
@@ -47,7 +57,8 @@ HIT_RADIUS = 12
 COLOR_PAST_LINE = (0.3, 0.5, 1.0, 0.6)
 COLOR_FUTURE_LINE = (0.3, 1.0, 0.5, 0.6)
 COLOR_KEY_DOT = (1.0, 0.8, 0.2, 0.9)
-COLOR_KEY_READONLY = (0.7, 0.7, 0.9, 0.7)  # dimmer dot for non-editable keys
+COLOR_KEY_READONLY = (0.7, 0.7, 0.9, 0.7)  # dimmer dot for view-only keys
+COLOR_KEY_IK_EDIT = (0.4, 0.9, 1.0, 0.9)  # cyan dot for IK-editable FK keys
 COLOR_KEY_HOVER = (1.0, 1.0, 0.5, 1.0)
 COLOR_CURRENT = (1.0, 1.0, 1.0, 1.0)
 COLOR_DRAG = (1.0, 0.4, 0.2, 1.0)
@@ -127,8 +138,18 @@ def _build_cache(context, armature_obj, bone_names):
         if not key_frames:
             continue
 
-        # Check if this bone has editable location keys
+        # Check editability
         has_loc_keys = bool(_get_location_keyframes(armature_obj, bone_name))
+
+        # Check if FK bone has IK-assisted editing available
+        ik_editable = False
+        pbone = armature_obj.pose.bones.get(bone_name)
+        if pbone and all(pbone.lock_location) and not has_loc_keys:
+            chain_id, chain_item = _find_chain_for_fk_bone(armature_obj, bone_name)
+            if chain_id and chain_item and chain_item.ik_enabled:
+                ik_target = _find_ik_target(armature_obj, chain_id)
+                if ik_target:
+                    ik_editable = True
 
         # Sample at keyframes
         key_positions = _sample_bone_positions(armature_obj, bone_name, key_frames)
@@ -146,6 +167,7 @@ def _build_cache(context, armature_obj, bone_names):
             'all': all_positions,
             'keys': key_positions,
             'editable': has_loc_keys,
+            'ik_editable': ik_editable,
         }
 
 
@@ -208,6 +230,97 @@ def _update_location_fcurves(armature_obj, bone_name, frame, new_location):
 
 
 # ---------------------------------------------------------------------------
+# IK-assisted trajectory editing
+# ---------------------------------------------------------------------------
+
+def _find_chain_for_fk_bone(armature_obj, bone_name):
+    """Find the chain_id an FK CTRL bone belongs to, and whether it has IK."""
+    sd = getattr(armature_obj, 'bt_scan', None)
+    if not sd or not sd.has_wrap_rig:
+        return None, None
+
+    if not bone_name.startswith(WRAP_CTRL_PREFIX):
+        return None, None
+
+    suffix = bone_name[len(WRAP_CTRL_PREFIX):]
+    if "_FK_" not in suffix:
+        return None, None
+
+    # Match against known chain IDs (longest first for IDs with underscores)
+    for chain in sorted(sd.chains, key=lambda c: len(c.chain_id), reverse=True):
+        cid = chain.chain_id
+        if suffix.startswith(cid + "_FK_"):
+            return cid, chain
+    return None, None
+
+
+def _temp_enable_ik(armature_obj, chain_id):
+    """Temporarily enable IK constraints on a chain. Returns saved state."""
+    sd = armature_obj.bt_scan
+    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+
+    # Find which MCH bones are inside the IK range
+    ik_bone_set = set()
+    for bone_item in chain_bones:
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        if not mch_pb:
+            continue
+        for con in mch_pb.constraints:
+            if con.type in ('IK', 'SPLINE_IK') and con.name.startswith(WRAP_CONSTRAINT_PREFIX):
+                walk = mch_pb
+                for _ in range(con.chain_count):
+                    if walk:
+                        ik_bone_set.add(walk.name)
+                        walk = walk.parent
+
+    saved = {}
+    for bone_item in chain_bones:
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        if not mch_pb:
+            continue
+
+        in_ik_range = mch_name in ik_bone_set
+        bone_saved = {}
+
+        for con in mch_pb.constraints:
+            if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
+                continue
+            bone_saved[con.name] = con.influence
+
+            if in_ik_range:
+                if con.type == 'COPY_TRANSFORMS':
+                    con.influence = 0.0   # disable FK
+                elif con.type in ('IK', 'SPLINE_IK'):
+                    con.influence = 1.0   # enable IK
+
+        if bone_saved:
+            saved[mch_name] = bone_saved
+
+    return saved
+
+
+def _restore_constraints(armature_obj, saved):
+    """Restore constraint influences from saved state."""
+    for mch_name, cons in saved.items():
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        if not mch_pb:
+            continue
+        for con in mch_pb.constraints:
+            if con.name in cons:
+                con.influence = cons[con.name]
+
+
+def _find_ik_target(armature_obj, chain_id):
+    """Return the IK target pose bone name for a chain, or None."""
+    name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
+    if armature_obj.pose.bones.get(name):
+        return name
+    return None
+
+
+# ---------------------------------------------------------------------------
 # GPU Drawing
 # ---------------------------------------------------------------------------
 
@@ -264,6 +377,7 @@ def _draw_trajectory(context, shader, bone_name, data):
         batch.draw(shader)
 
     # Draw keyframe dots
+    ik_editable = data.get('ik_editable', False)
     key_frames_set = {f for f, _ in key_pts}
     for frame, world_pos in key_pts:
         screen = _world_to_screen(context, world_pos)
@@ -278,6 +392,9 @@ def _draw_trajectory(context, shader, bone_name, data):
             radius = KEY_DOT_RADIUS + 1
         elif editable:
             color = COLOR_KEY_DOT
+            radius = KEY_DOT_RADIUS
+        elif ik_editable:
+            color = COLOR_KEY_IK_EDIT
             radius = KEY_DOT_RADIUS
         else:
             color = COLOR_KEY_READONLY
@@ -318,9 +435,12 @@ def _draw_callback(context):
     elif _cache:
         names = ", ".join(_cache.keys())
         has_editable = any(d.get('editable') for d in _cache.values())
+        has_ik_editable = any(d.get('ik_editable') for d in _cache.values())
         hint = f"Trajectory: {names}  [ESC to exit"
         if has_editable:
             hint += ", drag dots to edit"
+        if has_ik_editable:
+            hint += ", drag cyan dots for IK-assisted edit"
         hint += "]"
         _draw_header_hint(context, hint)
 
@@ -388,6 +508,8 @@ class BT_OT_Trajectory(bpy.types.Operator):
         global _active, _dragging, _drag_bone, _drag_frame
         global _drag_start_mouse, _drag_start_world
         global _drag_M_rot_inv, _drag_armature_inv, _drag_M_translation
+        global _ik_drag, _ik_chain_id, _ik_target_name
+        global _ik_saved_frame, _ik_saved_constraints
 
         if not _active:
             self._cleanup(context)
@@ -399,10 +521,18 @@ class BT_OT_Trajectory(bpy.types.Operator):
             self._cleanup(context)
             return {'CANCELLED'}
 
-        # ESC exits trajectory mode
+        # ESC exits trajectory mode (or cancels drag)
         if event.type == 'ESC' and event.value == 'PRESS':
             if _dragging:
+                if _ik_drag:
+                    # Cancel IK-assisted drag: restore everything
+                    _restore_constraints(obj, _ik_saved_constraints)
+                    context.scene.frame_set(_ik_saved_frame)
+                    context.view_layer.update()
+                    _ik_drag = False
+                    _ik_saved_constraints = {}
                 _dragging = False
+                _build_cache(context, obj, _cache_bones)
                 context.area.tag_redraw()
                 return {'RUNNING_MODAL'}
             _active = False
@@ -420,57 +550,67 @@ class BT_OT_Trajectory(bpy.types.Operator):
         # --- Drag handling ---
         if _dragging:
             if event.type == 'MOUSEMOVE':
-                # Compute new world position from mouse
                 depth_ref = _drag_start_world
                 new_world = region_2d_to_location_3d(
                     context.region, context.space_data.region_3d,
                     (event.mouse_region_x, event.mouse_region_y), depth_ref)
 
-                # Convert to bone-local location
-                new_loc = _world_to_bone_location(
-                    _drag_M_rot_inv, _drag_M_translation,
-                    _drag_armature_inv, new_world)
+                if _ik_drag:
+                    # IK-assisted: move IK target, let solver update in real-time
+                    ik_pb = obj.pose.bones.get(_ik_target_name)
+                    if ik_pb:
+                        ik_pb.matrix = Matrix.Translation(new_world)
+                        context.view_layer.update()
+                else:
+                    # Direct location edit
+                    new_loc = _world_to_bone_location(
+                        _drag_M_rot_inv, _drag_M_translation,
+                        _drag_armature_inv, new_world)
+                    _update_location_fcurves(obj, _drag_bone, _drag_frame, new_loc)
 
-                _update_location_fcurves(obj, _drag_bone, _drag_frame, new_loc)
                 context.area.tag_redraw()
                 return {'RUNNING_MODAL'}
 
             if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
+                if _ik_drag:
+                    # Finalize IK-assisted drag: snap FK, key FK, restore
+                    self._finalize_ik_drag(context, obj)
                 _dragging = False
-                # Rebuild cache with updated positions
+                _ik_drag = False
                 _build_cache(context, obj, _cache_bones)
                 context.area.tag_redraw()
                 return {'RUNNING_MODAL'}
 
             return {'RUNNING_MODAL'}
 
-        # --- Click to start drag (only for bones with unlocked location) ---
+        # --- Click to start drag ---
         if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
             hit = _hit_test_keyframe(context, event.mouse_region_x, event.mouse_region_y)
             if hit:
                 bone_name, frame, world_pos = hit
-
                 pbone = obj.pose.bones.get(bone_name)
-                if pbone and all(pbone.lock_location):
-                    # FK bone — location locked, drag not supported
-                    self.report({'INFO'}, f"{bone_name}: location locked (FK bone)")
+                if not pbone:
                     return {'RUNNING_MODAL'}
 
-                # Evaluate at target frame to get correct parent matrices
+                if all(pbone.lock_location):
+                    # FK bone — try IK-assisted drag
+                    return self._start_ik_drag(
+                        context, obj, pbone, bone_name, frame, world_pos)
+
+                # Direct location drag (IK targets, root, COG)
                 scene = context.scene
                 original_frame = scene.frame_current
                 scene.frame_set(frame)
 
-                if pbone:
-                    M_rot_inv, M_trans, arm_inv = _compute_location_space(obj, pbone)
-                    _dragging = True
-                    _drag_bone = bone_name
-                    _drag_frame = frame
-                    _drag_start_mouse = (event.mouse_region_x, event.mouse_region_y)
-                    _drag_start_world = world_pos.copy()
-                    _drag_M_rot_inv = M_rot_inv
-                    _drag_M_translation = M_trans
-                    _drag_armature_inv = arm_inv
+                M_rot_inv, M_trans, arm_inv = _compute_location_space(obj, pbone)
+                _dragging = True
+                _drag_bone = bone_name
+                _drag_frame = frame
+                _drag_start_mouse = (event.mouse_region_x, event.mouse_region_y)
+                _drag_start_world = world_pos.copy()
+                _drag_M_rot_inv = M_rot_inv
+                _drag_M_translation = M_trans
+                _drag_armature_inv = arm_inv
 
                 scene.frame_set(original_frame)
                 context.area.tag_redraw()
@@ -481,6 +621,78 @@ class BT_OT_Trajectory(bpy.types.Operator):
             context.area.tag_redraw()
 
         return {'PASS_THROUGH'}
+
+    def _start_ik_drag(self, context, obj, pbone, bone_name, frame, world_pos):
+        """Start an IK-assisted trajectory drag for an FK bone."""
+        global _dragging, _drag_bone, _drag_frame, _drag_start_world
+        global _ik_drag, _ik_chain_id, _ik_target_name
+        global _ik_saved_frame, _ik_saved_constraints
+
+        chain_id, chain_item = _find_chain_for_fk_bone(obj, bone_name)
+        if not chain_id or not chain_item or not chain_item.ik_enabled:
+            self.report({'INFO'}, f"{bone_name}: no IK available for this chain")
+            return {'RUNNING_MODAL'}
+
+        ik_target = _find_ik_target(obj, chain_id)
+        if not ik_target:
+            self.report({'INFO'}, f"{bone_name}: no IK target found")
+            return {'RUNNING_MODAL'}
+
+        # Save state and set up
+        scene = context.scene
+        _ik_saved_frame = scene.frame_current
+        scene.frame_set(frame)
+
+        # Snap IK to current FK pose before enabling IK
+        from ..rigging.scanner.wrap_assembly import snap_ik_to_fk
+        snap_ik_to_fk(obj, chain_id)
+
+        # Temporarily enable IK constraints
+        _ik_saved_constraints = _temp_enable_ik(obj, chain_id)
+        context.view_layer.update()
+
+        _dragging = True
+        _ik_drag = True
+        _ik_chain_id = chain_id
+        _ik_target_name = ik_target
+        _drag_bone = bone_name
+        _drag_frame = frame
+        _drag_start_world = world_pos.copy()
+
+        self.report({'INFO'}, f"IK-assisted drag on {bone_name}")
+        context.area.tag_redraw()
+        return {'RUNNING_MODAL'}
+
+    def _finalize_ik_drag(self, context, obj):
+        """Finalize IK-assisted drag: snap FK to IK, key FK, restore."""
+        global _ik_saved_constraints
+
+        from ..rigging.scanner.wrap_assembly import snap_fk_to_ik
+        from .smart_keyframe import _key_rotation, _get_chain_fk_pbones
+
+        sd = obj.bt_scan
+        frame = _drag_frame
+
+        # Snap FK bones to match the IK-solved pose
+        snap_fk_to_ik(obj, _ik_chain_id)
+
+        # Key FK rotations (and location for COG bones)
+        chain_fk = _get_chain_fk_pbones(obj, sd, _ik_chain_id)
+        for fk_pb in chain_fk:
+            _key_rotation(fk_pb, frame)
+            if not all(fk_pb.lock_location):
+                fk_pb.keyframe_insert('location', frame=frame)
+
+        # Restore constraints to original state (back to FK mode)
+        _restore_constraints(obj, _ik_saved_constraints)
+        _ik_saved_constraints = {}
+
+        # Restore original frame
+        context.scene.frame_set(_ik_saved_frame)
+        context.view_layer.update()
+
+        self.report({'INFO'},
+                    f"Keyed FK on {_ik_chain_id} @ frame {frame}")
 
     def invoke(self, context, event):
         global _active, _draw_handle
@@ -519,7 +731,14 @@ class BT_OT_Trajectory(bpy.types.Operator):
 
     def _cleanup(self, context):
         global _draw_handle, _dragging
+        global _ik_drag, _ik_chain_id, _ik_target_name
+        global _ik_saved_frame, _ik_saved_constraints
         _dragging = False
+        _ik_drag = False
+        _ik_chain_id = None
+        _ik_target_name = None
+        _ik_saved_frame = -1
+        _ik_saved_constraints = {}
         _invalidate_cache()
         if _draw_handle:
             bpy.types.SpaceView3D.draw_handler_remove(_draw_handle, 'WINDOW')
