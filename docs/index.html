@@ -124,6 +124,8 @@
   .badge-mechanical { background: rgba(255,107,53,0.1); color: var(--neon-orange); border: 1px solid rgba(255,107,53,0.3); }
   .badge-get { background: rgba(62,139,255,0.1); color: var(--neon-blue); border: 1px solid rgba(62,139,255,0.3); }
   .badge-post { background: rgba(0,255,136,0.1); color: var(--neon-green); border: 1px solid rgba(0,255,136,0.3); }
+  .badge-new { background: rgba(255,62,108,0.15); color: var(--neon-pink); border: 1px solid rgba(255,62,108,0.4); }
+  .badge-updated { background: rgba(255,224,62,0.15); color: var(--neon-yellow); border: 1px solid rgba(255,224,62,0.4); }
 
   /* ── COLOR UTILS ── */
   .c-blue { color: var(--neon-blue); }
@@ -191,7 +193,7 @@
   <div class="card" onclick="showPage('seams')"><h3 class="c-green">Seams</h3><p>6 UV seam algorithms + 3 presets</p></div>
   <div class="card" onclick="showPage('rigging')"><h3 class="c-orange">Rigging</h3><p>13 modules + scanner + wrap rig + custom shapes</p></div>
   <div class="card" onclick="showPage('skinning')"><h3 class="c-pink">Skinning</h3><p>Heat map, envelope, hybrid, rigid bind</p></div>
-  <div class="card" onclick="showPage('animation')"><h3 class="c-purple">Animation</h3><p>Mechanical, path/camera, root motion, trajectory, onion skin, smart keyframe</p></div>
+  <div class="card" onclick="showPage('animation')"><h3 class="c-purple">Animation</h3><p>Smart keyframes, trajectory, onion skin, root motion</p></div>
   <div class="card" onclick="showPage('export')"><h3 class="c-blue">Export</h3><p>Scale rig + UE FBX export pipeline</p></div>
   <div class="card" onclick="showPage('bridge')"><h3 class="c-cyan">Bridge</h3><p>HTTP API on port 19785 for Claude Code</p></div>
 </div>
@@ -211,7 +213,7 @@
   <tr><td>Seams</td><td>UV seam creation tools</td></tr>
   <tr><td>Rigging</td><td>Modular rig builder + skeleton scanner</td></tr>
   <tr><td>Skinning</td><td>Weight painting tools</td></tr>
-  <tr><td>Animation</td><td>Mechanical, path/camera, root motion, trajectory, onion skin, smart keyframe</td></tr>
+  <tr><td>Animation</td><td>Smart keyframes, trajectory, onion skin, mechanical, path/camera, root motion</td></tr>
   <tr><td>Export</td><td>Rig scaling &amp; UE FBX export</td></tr>
   <tr><td>LLM Bridge</td><td>HTTP server for Claude Code</td></tr>
 </table>
@@ -226,7 +228,7 @@
     <div class="wf-arrow">&rarr;</div>
     <div class="wf-step"><div class="wf-num c-pink">3</div><div class="wf-step-text"><strong>Skin</strong>Auto weight (heat map) + cleanup</div></div>
     <div class="wf-arrow">&rarr;</div>
-    <div class="wf-step"><div class="wf-num c-purple">4</div><div class="wf-step-text"><strong>Animate</strong>Mechanical, path/camera, or root motion extract</div></div>
+    <div class="wf-step"><div class="wf-num c-purple">4</div><div class="wf-step-text"><strong>Animate</strong>Smart keyframes, trajectory editing, root motion extract</div></div>
     <div class="wf-arrow">&rarr;</div>
     <div class="wf-step"><div class="wf-num c-blue">5</div><div class="wf-step-text"><strong>Export</strong>Scale 100x + FBX to UE</div></div>
   </div>
@@ -237,7 +239,7 @@
   <div class="details-body">
     <table>
       <tr><th>Feature</th><th>5.0 API Used</th><th>Legacy Avoided</th></tr>
-      <tr><td>Animation</td><td>Channelbag API</td><td><s>action.fcurves</s></td></tr>
+      <tr><td>Animation</td><td>Channelbag API (<code>action.layers[].strips[].channelbags[].fcurves</code>)</td><td><s>action.fcurves</s></td></tr>
       <tr><td>Sharp edges</td><td><code>mesh.attributes["sharp_edge"]</code></td><td><s>dict-like access</s></td></tr>
       <tr><td>Screenshots</td><td><code>gpu</code> module</td><td><s>BGL</s></td></tr>
       <tr><td>Addon format</td><td><code>blender_manifest.toml</code></td><td><s>bl_info only</s></td></tr>
@@ -519,6 +521,22 @@ python blender_api.py rig-toggle-fk-ik --armature Armature --chain arm_R --mode 
   </div>
 </details>
 
+<!-- ── FK LOCATION LOCKS ── -->
+<details>
+  <summary>FK Location Locks <span class="badge badge-new">New</span></summary>
+  <div class="details-body">
+    <p>FK control bones have their <strong>location channels locked</strong> (<code>lock_location = (True, True, True)</code>) so they can only be rotated, not translated. This enforces proper FK workflow where rotation drives the chain.</p>
+    <h4>COG Exception</h4>
+    <p>The <strong>first FK bone of spine/root chains</strong> (Center of Gravity bone) keeps location <strong>unlocked</strong>. This allows the COG bone to translate the entire body while all other FK bones below it rotate only.</p>
+    <ul>
+      <li>Applied automatically during wrap rig generation via <code>assign_shapes_for_wrap_rig()</code></li>
+      <li>Also applied during modular rig generation</li>
+      <li>COG bones are identified as the first FK bone in the chain hierarchy</li>
+    </ul>
+    <div class="callout tip"><div class="callout-title">Why lock FK location?</div>Translating FK bones breaks the chain hierarchy and produces unexpected deformation. Locking location ensures animators use FK bones as intended: rotate joints, translate only the COG for overall body movement.</div>
+  </div>
+</details>
+
 <!-- ── FLOOR CONTACT ── -->
 <details>
   <summary>Floor Contact</summary>
@@ -618,7 +636,6 @@ python blender_api.py floor-contact --armature Armature --action disable</code><
       <tr><td>Spline hook</td><td>Sphere</td><td>0.4</td></tr>
     </table>
     <p>Built-in shapes: circle, cube, diamond, sphere, arrow, square, line. Users can extend by adding any mesh via <code>bt.add_custom_shape</code>.</p>
-    <p><strong>FK location locks:</strong> FK bones have location locked during wrap rig generation &mdash; they can only rotate. Exception: COG bones (first FK bone of spine/root chains) keep location unlocked for body positioning.</p>
     <p>Operators: <code>bt.assign_bone_shape</code>, <code>bt.resize_ctrl_bones</code>, <code>bt.clear_bone_shapes</code>, <code>bt.add_custom_shape</code></p>
   </div>
 </details>
@@ -766,6 +783,126 @@ python blender_api.py rigid-bind --mesh ArmorPlate --armature Armature</code></p
 <div class="page" id="page-animation">
 <div class="page-title"><span>//</span> Animation</div>
 
+<!-- ── SMART KEYFRAME SYSTEM ── -->
+<h2>Smart Keyframe System <span class="badge badge-new">New</span></h2>
+<p>Overrides the <code>I</code> key in Pose mode via addon keymap. Instead of Blender's default Insert Keyframe behavior, Smart Keyframe intelligently determines <strong>what</strong> to key and <strong>how</strong> based on bone type and chain state.</p>
+
+<div class="callout">
+  <div class="callout-title">Core Principle</div>
+  <strong>Never key IK bones directly.</strong> If an IK bone is selected and the chain is in IK mode, Smart Keyframe snaps FK to match the current IK pose, then keys the FK bone rotations instead. This ensures animation data lives on FK bones and survives FK/IK mode switches.
+</div>
+
+<table>
+  <tr><th>Bone Type</th><th>What Gets Keyed</th><th>Details</th></tr>
+  <tr><td><strong>IK bone</strong> (chain in IK mode)</td><td>FK rotation</td><td>Snaps FK to match IK pose first, then keys FK bone rotations</td></tr>
+  <tr><td><strong>FK bone</strong></td><td>Rotation</td><td>Keys rotation channels directly</td></tr>
+  <tr><td><strong>COG / root bone</strong></td><td>Location + Rotation</td><td>COG bones have unlocked location, so both channels are keyed</td></tr>
+  <tr><td><strong>Non-wrap bone</strong></td><td>Rotation + Location (if unlocked)</td><td>Falls back to standard keying for bones outside the wrap rig</td></tr>
+</table>
+
+<p>Operator: <code>bt.smart_keyframe</code></p>
+
+<div class="callout tip"><div class="callout-title">Workflow Benefit</div>Animate freely in IK mode (drag IK targets for posing), press <code>I</code> to key, and the FK bones receive the keyframes. Switch to FK mode at any time &mdash; all animation is preserved on the FK controls.</div>
+
+<!-- ── BONE TRAJECTORY ── -->
+<h2>Bone Trajectory <span class="badge badge-updated">Updated</span></h2>
+<p>Interactive 3D visualization of bone motion paths across keyframes. Select bones in Pose mode, enable via header Overlays or Animation &gt; Trajectory panel.</p>
+
+<div class="callout">
+  <div class="callout-title">Universal Trajectory</div>
+  Trajectory now works for <strong>all bone types</strong>, not just location-keyed bones. Any keyframe type (rotation, location, scale) is used for visualization. The trajectory curve shows the bone's world-space position at each keyed frame regardless of which channels are keyed.
+</div>
+
+<h3>Dot Colors</h3>
+<table>
+  <tr><th>Color</th><th>Meaning</th><th>Interaction</th></tr>
+  <tr><td><strong class="c-yellow">Yellow</strong></td><td>Directly editable</td><td>Bone has location keyframes. Click + drag to edit position. World-space delta is inverse-transformed to bone-local coords and FCurve values update in real-time.</td></tr>
+  <tr><td><strong class="c-cyan">Cyan</strong></td><td>IK-assisted editing</td><td>FK bone with IK available on its chain. Click to engage temporary IK workflow (see below).</td></tr>
+  <tr><td><strong style="color:#666">Dim gray</strong></td><td>Read-only</td><td>View trajectory only, no editing. Bones with only rotation/scale keys and no IK chain.</td></tr>
+  <tr><td><strong style="color:#fff">White</strong></td><td>Current frame</td><td>Highlights the bone's position at the current playback frame.</td></tr>
+</table>
+
+<h3>IK-Assisted Editing (Cyan Dots)</h3>
+<p>When you click a <strong class="c-cyan">cyan</strong> dot, the following sequence occurs:</p>
+<ol>
+  <li>IK target snaps to match the current FK pose</li>
+  <li>Chain temporarily switches to IK mode</li>
+  <li>Drag the IK target to reposition the chain end</li>
+  <li>On mouse release: FK bones snap to match the new IK-solved pose</li>
+  <li>FK rotation keyframes are inserted for all chain bones at that frame</li>
+  <li>Chain constraints restored to original FK/IK state</li>
+</ol>
+
+<p>The viewport header displays a hint showing available actions based on the dot types visible in the current selection.</p>
+<p>Trajectory curve colors: past = <span class="c-blue">blue</span>, future = <span class="c-green">green</span>.</p>
+<p>Operator: <code>bt.trajectory</code> (modal, ESC to exit)</p>
+
+<!-- ── ONION SKINNING ── -->
+<h2>Onion Skinning <span class="badge badge-updated">Updated</span></h2>
+<p>Camera-independent ghost frame display for armatures with child meshes. Past ghosts: <span class="c-blue">blue</span>, future ghosts: <span class="c-orange">orange</span>, opacity fades with distance from current frame.</p>
+
+<details open>
+  <summary>Settings &amp; Properties</summary>
+  <div class="details-body">
+    <p>All settings are always visible in the Animation &gt; Onion Skin panel (not gated behind enable state).</p>
+    <table>
+      <tr><th>Property</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>bt_onion_before</code></td><td>int</td><td>3</td><td>Number of ghost frames before current</td></tr>
+      <tr><td><code>bt_onion_after</code></td><td>int</td><td>3</td><td>Number of ghost frames after current</td></tr>
+      <tr><td><code>bt_onion_step</code></td><td>int</td><td>1</td><td>Frame interval between ghosts (ignored in Keyframes Only mode)</td></tr>
+      <tr><td><code>bt_onion_opacity</code></td><td>float</td><td>&mdash;</td><td>Base opacity for nearest ghost (fades with distance)</td></tr>
+      <tr><td><code>bt_onion_use_keyframes</code></td><td>bool</td><td>false</td><td><span class="badge badge-new">New</span> Show ghosts only at keyed frames instead of fixed intervals</td></tr>
+      <tr><td><code>bt_onion_proxy_ratio</code></td><td>float</td><td>0.25</td><td><span class="badge badge-new">New</span> Proxy LOD decimation ratio (0.05 &ndash; 1.0)</td></tr>
+    </table>
+  </div>
+</details>
+
+<details>
+  <summary>Keyframes Only Mode <span class="badge badge-new">New</span></summary>
+  <div class="details-body">
+    <p>When <code>bt_onion_use_keyframes</code> is enabled, ghosts appear <strong>only at frames that have actual keyframes</strong> rather than at fixed step intervals. This is useful for reviewing specific poses and transitions without cluttering the viewport with in-between frames.</p>
+    <ul>
+      <li>The <code>bt_onion_before</code> / <code>bt_onion_after</code> counts still apply (limiting how many keyed ghosts to show)</li>
+      <li>The <code>bt_onion_step</code> setting is ignored in this mode</li>
+      <li>Keyframes are detected from the active action's FCurves</li>
+    </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Proxy LOD System <span class="badge badge-new">New</span></summary>
+  <div class="details-body">
+    <p>Ghost evaluation can be expensive for high-poly meshes. The Proxy LOD system creates <strong>decimated proxy meshes</strong> for ghost rendering, dramatically improving performance.</p>
+    <h4>How It Works</h4>
+    <ol>
+      <li>On first enable (or ratio change), BlenderTools creates decimated copies of each armature child mesh</li>
+      <li>Uses Blender's <strong>Decimate modifier</strong> in COLLAPSE mode, which preserves vertex groups for correct skeletal deformation</li>
+      <li>A single depsgraph update evaluates all proxies, then bakes the decimated geometry</li>
+      <li>Ghost frames are rendered from the proxy meshes instead of full-resolution originals</li>
+    </ol>
+    <h4>Settings</h4>
+    <ul>
+      <li><code>bt_onion_proxy_ratio</code>: 0.05 (5% of original) to 1.0 (full resolution). Default 0.25 (25%)</li>
+      <li>Lower values = faster but coarser ghosts. 0.25 is a good balance for most characters</li>
+      <li>Shows a progress bar and WAIT cursor during proxy creation</li>
+    </ul>
+    <div class="callout tip"><div class="callout-title">Performance</div>At 0.25 ratio, a 50k-poly character mesh produces ~12.5k-poly ghost proxies. With 6 ghost frames, this saves evaluating ~225k triangles per frame change.</div>
+  </div>
+</details>
+
+<details>
+  <summary>Technical Details</summary>
+  <div class="details-body">
+    <ul>
+      <li>Evaluates child meshes at past/future frames via depsgraph</li>
+      <li>GPU-cached batches in world space &mdash; survives viewport rotation, rebuilds only on frame change</li>
+      <li>Proxy meshes are temporary and cleaned up on disable</li>
+    </ul>
+    <p>Operators: <code>bt.onion_skin</code> (toggle), <code>bt.onion_skin_refresh</code></p>
+  </div>
+</details>
+
+<!-- ── MECHANICAL ANIMATION ── -->
 <h2>Mechanical Animation</h2>
 <div class="card-grid">
   <div class="card"><h3 class="c-orange">Piston</h3><p>Linear stroke cycle along bone axis.</p></div>
@@ -797,54 +934,7 @@ python blender_api.py rigid-bind --mesh ArmorPlate --armature Armature</code></p
   </div>
 </details>
 
-<details>
-  <summary>Bone Trajectory (Cascadeur-style)</summary>
-  <div class="details-body">
-    <p>Interactive 3D trajectory visualization and editing for <strong>all bone types</strong> (any keyframe: rotation, location, scale).</p>
-    <ul>
-      <li>Select bones in Pose mode &rarr; enable via header Overlays or Animation &gt; Trajectory</li>
-      <li>Positions at keyframes shown as dots connected by a smooth curve (past=blue, future=green)</li>
-      <li><strong>Yellow dots</strong> &mdash; directly editable (bone has location keyframes). Click + drag to edit location FCurves in real-time</li>
-      <li><strong>Cyan dots</strong> &mdash; IK-assisted editing (FK bone with IK available). Drag to temporarily enable IK, then snap FK rotations on release</li>
-      <li><strong>Gray dots</strong> &mdash; read-only (rotation/scale-only keyframes)</li>
-      <li><strong>White dot</strong> &mdash; current frame marker</li>
-    </ul>
-    <p><strong>IK-assisted drag:</strong> click cyan dot &rarr; IK snaps to FK pose &rarr; IK enabled temporarily &rarr; drag IK target &rarr; release: FK snapped from IK, FK rotations keyed, constraints restored.</p>
-    <p>Operator: <code>bt.trajectory</code> (modal, ESC to exit or cancel drag)</p>
-  </div>
-</details>
-
-<details>
-  <summary>Onion Skinning / Ghost Frames</summary>
-  <div class="details-body">
-    <p>Camera-independent ghost frame display for armatures with child meshes.</p>
-    <ul>
-      <li>Evaluates child meshes at past/future frames via depsgraph</li>
-      <li>Past ghosts: <span class="c-blue">blue</span>, future ghosts: <span class="c-orange">orange</span>, opacity fades with distance</li>
-      <li>GPU-cached batches in world space &mdash; survives viewport rotation, rebuilds only on frame change</li>
-      <li>Settings: ghost count before/after, frame step, opacity</li>
-      <li><strong>Keyframes Only</strong> &mdash; show ghosts at actual keyframe positions instead of fixed step</li>
-      <li><strong>Ghost Detail (Proxy LOD)</strong> &mdash; decimated proxy meshes for faster evaluation (0.05&ndash;1.0, default 0.25). Uses Decimate modifier preserving vertex groups</li>
-    </ul>
-    <p>Operators: <code>bt.onion_skin</code> (toggle), <code>bt.onion_skin_refresh</code> (rebuild proxies &amp; recache)</p>
-  </div>
-</details>
-
-<details>
-  <summary>Smart Keyframe (I key override)</summary>
-  <div class="details-body">
-    <p>Intelligent keyframe insertion for wrap rigs. Overrides the <strong>I</strong> key in Pose mode.</p>
-    <ul>
-      <li><strong>IK bones</strong> are never keyed &mdash; if selected and chain is in IK mode, FK is snapped from the IK pose and FK rotations are keyed instead</li>
-      <li><strong>FK bones</strong> &mdash; keyed with rotation (euler/quaternion/axis-angle)</li>
-      <li><strong>COG / root bones</strong> (unlocked location) &mdash; keyed with location + rotation</li>
-      <li><strong>Non-wrap bones</strong> &mdash; keyed with rotation + location (if unlocked)</li>
-      <li>Fallback: if no wrap rig detected, keys all selected bones normally</li>
-    </ul>
-    <p>Operator: <code>bt.smart_keyframe</code></p>
-  </div>
-</details>
-
+<!-- ── ROOT MOTION ── -->
 <h2>Workflow: Root Motion Extraction</h2>
 <div class="workflow">
   <div class="workflow-head"><span class="wf-tag bg-purple">Root Motion</span> Pin controllers, extract root travel</div>
@@ -859,6 +949,24 @@ python blender_api.py rigid-bind --mesh ArmorPlate --armature Armature</code></p
 <pre><code>python blender_api.py root-motion-setup --armature Armature
 python blender_api.py root-motion-finalize --armature Armature
 python blender_api.py root-motion-cancel --armature Armature</code></pre>
+
+<!-- ── ANIMATION OPERATORS ── -->
+<h2>All Animation Operators</h2>
+<details>
+  <summary>Operator Reference</summary>
+  <div class="details-body">
+    <table>
+      <tr><th>Operator</th><th>Action</th></tr>
+      <tr><td><code>bt.smart_keyframe</code> <span class="badge badge-new">New</span></td><td>Intelligent keyframe insertion (overrides I key in Pose mode)</td></tr>
+      <tr><td><code>bt.trajectory</code></td><td>Bone trajectory overlay (modal, ESC to exit)</td></tr>
+      <tr><td><code>bt.onion_skin</code></td><td>Toggle onion skinning ghost frames</td></tr>
+      <tr><td><code>bt.onion_skin_refresh</code></td><td>Force rebuild onion skin cache</td></tr>
+      <tr><td><code>bt.root_motion_setup</code></td><td>Setup root motion extraction</td></tr>
+      <tr><td><code>bt.root_motion_finalize</code></td><td>Bake and finalize root motion</td></tr>
+      <tr><td><code>bt.root_motion_cancel</code></td><td>Cancel root motion extraction</td></tr>
+    </table>
+  </div>
+</details>
 </div>
 
 <!-- ================================================================ -->
@@ -955,26 +1063,26 @@ python blender_api.py export-ue --armature Armature --mesh Body --separate-anim<
   <div class="details-body">
     <table>
       <tr><th>Endpoint</th><th>Body</th></tr>
-      <tr><td><code>/seam/by-angle</code></td><td><code>{"object":"X", "threshold":30}</code></td></tr>
-      <tr><td><code>/seam/preset</code></td><td><code>{"object":"X", "preset":"hard_surface"}</code></td></tr>
-      <tr><td><code>/rig/add-module</code></td><td><code>{"armature":"X", "module_type":"arm", "config":{...}}</code></td></tr>
-      <tr><td><code>/rig/generate</code></td><td><code>{"armature":"X"}</code></td></tr>
-      <tr><td><code>/rig/load-config</code></td><td><code>{"armature":"X", "config":{...}}</code></td></tr>
-      <tr><td><code>/rig/scan-skeleton</code></td><td><code>{"armature":"X"}</code></td></tr>
-      <tr><td><code>/rig/apply-wrap</code></td><td><code>{"armature":"X"}</code></td></tr>
-      <tr><td><code>/rig/clear-wrap</code></td><td><code>{"armature":"X"}</code></td></tr>
-      <tr><td><code>/rig/toggle-fk-ik</code></td><td><code>{"armature":"X", "chain_id":"leg_L", "mode":"IK"}</code></td></tr>
-      <tr><td><code>/rig/bake-to-def</code></td><td><code>{"armature":"X"}</code></td></tr>
-      <tr><td><code>/rig/floor-contact</code></td><td><code>{"armature":"X", "action":"toggle"}</code></td></tr>
-      <tr><td><code>/anim/root-motion-setup</code></td><td><code>{"armature":"X"}</code></td></tr>
-      <tr><td><code>/anim/root-motion-finalize</code></td><td><code>{"armature":"X"}</code></td></tr>
-      <tr><td><code>/anim/root-motion-cancel</code></td><td><code>{"armature":"X"}</code></td></tr>
-      <tr><td><code>/skin/auto-weight</code></td><td><code>{"mesh":"X", "armature":"Y", "method":"heat_map"}</code></td></tr>
-      <tr><td><code>/skin/rigid-bind</code></td><td><code>{"mesh":"X", "armature":"Y"}</code></td></tr>
-      <tr><td><code>/anim/mechanical</code></td><td><code>{"object":"X", "type":"piston_cycle"}</code></td></tr>
-      <tr><td><code>/export/scale-rig</code></td><td><code>{"armature":"X", "factor":100.0}</code></td></tr>
-      <tr><td><code>/export/to-ue</code></td><td><code>{"armature":"X", "output":"./export"}</code></td></tr>
-      <tr><td><code>/exec</code></td><td><code>{"code":"bpy.ops..."}</code></td></tr>
+      <tr><td><code>/blendertools/seam/by-angle</code></td><td><code>{"object":"X", "threshold":30}</code></td></tr>
+      <tr><td><code>/blendertools/seam/preset</code></td><td><code>{"object":"X", "preset":"hard_surface"}</code></td></tr>
+      <tr><td><code>/blendertools/rig/add-module</code></td><td><code>{"armature":"X", "module_type":"arm", "config":{...}}</code></td></tr>
+      <tr><td><code>/blendertools/rig/generate</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/blendertools/rig/load-config</code></td><td><code>{"armature":"X", "config":{...}}</code></td></tr>
+      <tr><td><code>/blendertools/rig/scan-skeleton</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/blendertools/rig/apply-wrap</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/blendertools/rig/clear-wrap</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/blendertools/rig/toggle-fk-ik</code></td><td><code>{"armature":"X", "chain_id":"leg_L", "mode":"IK"}</code></td></tr>
+      <tr><td><code>/blendertools/rig/bake-to-def</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/blendertools/rig/floor-contact</code></td><td><code>{"armature":"X", "action":"toggle"}</code></td></tr>
+      <tr><td><code>/blendertools/anim/root-motion-setup</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/blendertools/anim/root-motion-finalize</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/blendertools/anim/root-motion-cancel</code></td><td><code>{"armature":"X"}</code></td></tr>
+      <tr><td><code>/blendertools/skin/auto-weight</code></td><td><code>{"mesh":"X", "armature":"Y", "method":"heat_map"}</code></td></tr>
+      <tr><td><code>/blendertools/skin/rigid-bind</code></td><td><code>{"mesh":"X", "armature":"Y"}</code></td></tr>
+      <tr><td><code>/blendertools/anim/mechanical</code></td><td><code>{"object":"X", "type":"piston_cycle"}</code></td></tr>
+      <tr><td><code>/blendertools/export/scale-rig</code></td><td><code>{"armature":"X", "factor":100.0}</code></td></tr>
+      <tr><td><code>/blendertools/export/to-ue</code></td><td><code>{"armature":"X", "output":"./export"}</code></td></tr>
+      <tr><td><code>/blendertools/exec</code></td><td><code>{"code":"bpy.ops..."}</code></td></tr>
     </table>
   </div>
 </details>
