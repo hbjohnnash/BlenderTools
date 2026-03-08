@@ -939,13 +939,14 @@ python blender_api.py rigid-bind --mesh ArmorPlate --armature Armature</code></p
 <div class="workflow">
   <div class="workflow-head"><span class="wf-tag bg-purple">Root Motion</span> Pin controllers, extract root travel</div>
   <div class="workflow-steps">
-    <div class="wf-step"><div class="wf-num c-purple">1</div><div class="wf-step-text"><strong>Setup</strong>Auto-detects source/root/pinned bones. Creates reference empties.</div></div>
+    <div class="wf-step"><div class="wf-num c-purple">1</div><div class="wf-step-text"><strong>Setup</strong>Auto-detects source/root/pinned bones (uses CTRL bone for wrap rigs). Creates reference empties.</div></div>
     <div class="wf-arrow">&rarr;</div>
     <div class="wf-step"><div class="wf-num c-purple">2</div><div class="wf-step-text"><strong>Polish</strong>(Optional) Edit root curves in Graph Editor.</div></div>
     <div class="wf-arrow">&rarr;</div>
-    <div class="wf-step"><div class="wf-num c-purple">3</div><div class="wf-step-text"><strong>Finalize</strong>Bakes controllers with visual keying, removes empties.</div></div>
+    <div class="wf-step"><div class="wf-num c-purple">3</div><div class="wf-step-text"><strong>Finalize</strong>Bakes controllers with visual keying, assigns channel groups, removes empties.</div></div>
   </div>
 </div>
+<div class="callout tip"><div class="callout-title">Wrap Rig Root Bone</div>Auto-detect selects the <strong>CTRL wrap bone</strong> (e.g. <code>CTRL-Wrap_generic_C_FK_1_01</code>) as root, not the original/DEF bone. This avoids constraint conflicts with the wrap rig's COPY_TRANSFORMS chain. Baked FCurves are automatically assigned to bone-named channel groups.</div>
 <pre><code>python blender_api.py root-motion-setup --armature Armature
 python blender_api.py root-motion-finalize --armature Armature
 python blender_api.py root-motion-cancel --armature Armature</code></pre>
@@ -961,9 +962,10 @@ python blender_api.py root-motion-cancel --armature Armature</code></pre>
       <tr><td><code>bt.trajectory</code></td><td>Bone trajectory overlay (modal, ESC to exit)</td></tr>
       <tr><td><code>bt.onion_skin</code></td><td>Toggle onion skinning ghost frames</td></tr>
       <tr><td><code>bt.onion_skin_refresh</code></td><td>Force rebuild onion skin cache</td></tr>
-      <tr><td><code>bt.root_motion_setup</code></td><td>Setup root motion extraction</td></tr>
-      <tr><td><code>bt.root_motion_finalize</code></td><td>Bake and finalize root motion</td></tr>
-      <tr><td><code>bt.root_motion_cancel</code></td><td>Cancel root motion extraction</td></tr>
+      <tr><td><code>bt.rm_auto_detect</code></td><td>Auto-detect source/root/pinned bones</td></tr>
+      <tr><td><code>bt.rm_setup</code></td><td>Setup root motion extraction</td></tr>
+      <tr><td><code>bt.rm_finalize</code></td><td>Bake and finalize root motion</td></tr>
+      <tr><td><code>bt.rm_cancel</code></td><td>Cancel root motion extraction</td></tr>
     </table>
   </div>
 </details>

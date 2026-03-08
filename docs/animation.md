@@ -45,7 +45,7 @@ One-click workflow for extracting root motion from animations, based on the refe
 **Key concepts:**
 - **Pinned bones** — All controllers that must hold their world-space position when the root moves. Each gets a reference empty baked to its current motion, then a COPY_TRANSFORMS constraint back to that empty. Typically IK targets (hands/feet) + the COG/torso. The source bone is always included.
 - **Source bone** — One of the pinned bones (the COG/hips/torso) whose XY translation and Z rotation are additionally extracted to the root bone. This defines the character's travel path. Auto-detected from the lowest spine FK controller or by name heuristic (Hips, pelvis, mixamorig:Hips, etc.)
-- **Root bone** — The bone that receives the extracted locomotion data. Created at origin if missing, with all top-level bones reparented to it.
+- **Root bone** — The bone that receives the extracted locomotion data. For wrap rigs, auto-detect selects the CTRL wrap bone (e.g. `CTRL-Wrap_generic_C_FK_1_01`), not the original/DEF bone, to avoid constraint conflicts with the wrap rig. Created at origin if missing, with all top-level bones reparented to it.
 
 **Workflow:**
 1. Select armature with animation
@@ -162,6 +162,8 @@ All animation output uses the `create_fcurve` helper in `core/utils.py` which ha
 5. Insert keyframe points
 
 When reading FCurves (e.g. trajectory, onion skin keyframe detection), the access path is `action.layers[].strips[].channelbags[].fcurves` — not `slot.channelbags`.
+
+**Channel groups:** After `nla.bake`, FCurves are ungrouped by default. Call `assign_channel_groups(armature_obj)` (from `core/utils.py`) to assign each FCurve to a bone-named channel group via `channelbag.groups`. This is done automatically by root motion setup/finalize and bake-to-DEF.
 
 ## Bridge API
 
