@@ -1,5 +1,7 @@
 """Shared BMesh/math helpers and Blender 5.0 animation utilities."""
 
+import re
+
 import bpy
 import bmesh
 import mathutils
@@ -7,6 +9,8 @@ import os
 import json
 from math import radians, degrees
 from pathlib import Path
+
+_BONE_PATH_RE = re.compile(r'pose\.bones\["(.+?)"\]')
 
 
 
@@ -78,6 +82,35 @@ def mirror_name(name):
 # ---------------------------------------------------------------------------
 # Blender 5.0 Channelbag Animation Helper
 # ---------------------------------------------------------------------------
+
+def assign_channel_groups(armature_obj):
+    """Assign ungrouped pose FCurves to bone-named channel groups.
+
+    Call after ``nla.bake`` to ensure baked curves appear under their
+    bone's channel group in the Graph/Dope Sheet editors.
+    """
+    anim = armature_obj.animation_data
+    if not anim or not anim.action or not anim.action.is_action_layered:
+        return
+    slot = anim.action_slot
+    if not slot:
+        return
+    for layer in anim.action.layers:
+        for strip in layer.strips:
+            for cb in strip.channelbags:
+                if cb.slot_handle != slot.handle:
+                    continue
+                for fc in cb.fcurves:
+                    if fc.group:
+                        continue
+                    m = _BONE_PATH_RE.search(fc.data_path)
+                    if not m:
+                        continue
+                    bone_name = m.group(1)
+                    group = cb.groups.get(bone_name)
+                    if not group:
+                        group = cb.groups.new(bone_name)
+                    fc.group = group
 
 def create_fcurve(obj, action_name, data_path, index, keyframes):
     """Create an FCurve using Blender 5.0 channelbag API.

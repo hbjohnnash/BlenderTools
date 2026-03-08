@@ -13,6 +13,7 @@ from mathutils import Vector
 from ...core.constants import (
     WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX, WRAP_CONSTRAINT_PREFIX, WRAP_SPLINE_PREFIX,
 )
+from ...core.utils import assign_channel_groups
 
 
 def assemble_wrap_rig(armature_obj, scan_data):
@@ -298,6 +299,7 @@ def bake_to_def(armature_obj, frame_start=None, frame_end=None):
         clear_constraints=False,
         bake_types={'POSE'},
     )
+    assign_channel_groups(armature_obj)
 
     bpy.ops.object.mode_set(mode='OBJECT')
 

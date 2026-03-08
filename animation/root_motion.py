@@ -14,6 +14,7 @@ from bpy.props import (
     StringProperty, BoolProperty, CollectionProperty, PointerProperty, IntProperty,
 )
 from ..core.constants import PANEL_CATEGORY, WRAP_CTRL_PREFIX
+from ..core.utils import assign_channel_groups
 
 RM_CONSTRAINT_PREFIX = "BT_RM_"
 RM_EMPTY_PREFIX = "RM_ref_"
@@ -71,13 +72,18 @@ def auto_detect(armature_obj):
                 if armature_obj.pose.bones.get(ik_target):
                     pinned.append(ik_target)
 
-        # Root bone from scan data
+        # Root bone from scan data — use CTRL wrap bone, not original/DEF
         for chain in sd.chains:
             if chain.module_type == 'root':
                 chain_bones = [b for b in sd.bones
                                if b.chain_id == chain.chain_id and not b.skip]
                 if chain_bones:
-                    root_bone = chain_bones[0].bone_name
+                    first = chain_bones[0]
+                    ctrl = f"{WRAP_CTRL_PREFIX}{chain.chain_id}_FK_{first.role}"
+                    if armature_obj.pose.bones.get(ctrl):
+                        root_bone = ctrl
+                    else:
+                        root_bone = first.bone_name
                     break
 
     # Fallback: heuristic name matching
@@ -208,6 +214,7 @@ def setup_root_motion(armature_obj):
         use_current_action=True,
         bake_types={'POSE'},
     )
+    assign_channel_groups(armature_obj)
 
     bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -246,6 +253,7 @@ def finalize_root_motion(armature_obj):
         use_current_action=True,
         bake_types={'POSE'},
     )
+    assign_channel_groups(armature_obj)
 
     # Remove only our BT_RM_ constraints
     for bone_name in pinned:
