@@ -191,7 +191,7 @@
   <div class="card" onclick="showPage('seams')"><h3 class="c-green">Seams</h3><p>6 UV seam algorithms + 3 presets</p></div>
   <div class="card" onclick="showPage('rigging')"><h3 class="c-orange">Rigging</h3><p>13 modules + scanner + wrap rig + custom shapes</p></div>
   <div class="card" onclick="showPage('skinning')"><h3 class="c-pink">Skinning</h3><p>Heat map, envelope, hybrid, rigid bind</p></div>
-  <div class="card" onclick="showPage('animation')"><h3 class="c-purple">Animation</h3><p>Mechanical, path/camera, root motion, trajectory, onion skin</p></div>
+  <div class="card" onclick="showPage('animation')"><h3 class="c-purple">Animation</h3><p>Mechanical, path/camera, root motion, trajectory, onion skin, smart keyframe</p></div>
   <div class="card" onclick="showPage('export')"><h3 class="c-blue">Export</h3><p>Scale rig + UE FBX export pipeline</p></div>
   <div class="card" onclick="showPage('bridge')"><h3 class="c-cyan">Bridge</h3><p>HTTP API on port 19785 for Claude Code</p></div>
 </div>
@@ -211,7 +211,7 @@
   <tr><td>Seams</td><td>UV seam creation tools</td></tr>
   <tr><td>Rigging</td><td>Modular rig builder + skeleton scanner</td></tr>
   <tr><td>Skinning</td><td>Weight painting tools</td></tr>
-  <tr><td>Animation</td><td>Mechanical animation, path/camera, root motion</td></tr>
+  <tr><td>Animation</td><td>Mechanical, path/camera, root motion, trajectory, onion skin, smart keyframe</td></tr>
   <tr><td>Export</td><td>Rig scaling &amp; UE FBX export</td></tr>
   <tr><td>LLM Bridge</td><td>HTTP server for Claude Code</td></tr>
 </table>
@@ -618,6 +618,7 @@ python blender_api.py floor-contact --armature Armature --action disable</code><
       <tr><td>Spline hook</td><td>Sphere</td><td>0.4</td></tr>
     </table>
     <p>Built-in shapes: circle, cube, diamond, sphere, arrow, square, line. Users can extend by adding any mesh via <code>bt.add_custom_shape</code>.</p>
+    <p><strong>FK location locks:</strong> FK bones have location locked during wrap rig generation &mdash; they can only rotate. Exception: COG bones (first FK bone of spine/root chains) keep location unlocked for body positioning.</p>
     <p>Operators: <code>bt.assign_bone_shape</code>, <code>bt.resize_ctrl_bones</code>, <code>bt.clear_bone_shapes</code>, <code>bt.add_custom_shape</code></p>
   </div>
 </details>
@@ -799,15 +800,17 @@ python blender_api.py rigid-bind --mesh ArmorPlate --armature Armature</code></p
 <details>
   <summary>Bone Trajectory (Cascadeur-style)</summary>
   <div class="details-body">
-    <p>Interactive 3D visualization and editing of bone location keyframes.</p>
+    <p>Interactive 3D trajectory visualization and editing for <strong>all bone types</strong> (any keyframe: rotation, location, scale).</p>
     <ul>
       <li>Select bones in Pose mode &rarr; enable via header Overlays or Animation &gt; Trajectory</li>
-      <li>Keyframe positions shown as <strong>yellow dots</strong> connected by a smooth curve (past=blue, future=green)</li>
-      <li><strong>Click + drag</strong> any keyframe dot to edit the bone's location at that frame</li>
-      <li>World-space delta inverse-transformed to bone-local coords &mdash; FCurve values update in real-time</li>
-      <li>Location channels only &mdash; no rotation, no new keyframes created</li>
+      <li>Positions at keyframes shown as dots connected by a smooth curve (past=blue, future=green)</li>
+      <li><strong>Yellow dots</strong> &mdash; directly editable (bone has location keyframes). Click + drag to edit location FCurves in real-time</li>
+      <li><strong>Cyan dots</strong> &mdash; IK-assisted editing (FK bone with IK available). Drag to temporarily enable IK, then snap FK rotations on release</li>
+      <li><strong>Gray dots</strong> &mdash; read-only (rotation/scale-only keyframes)</li>
+      <li><strong>White dot</strong> &mdash; current frame marker</li>
     </ul>
-    <p>Operator: <code>bt.trajectory</code> (modal, ESC to exit)</p>
+    <p><strong>IK-assisted drag:</strong> click cyan dot &rarr; IK snaps to FK pose &rarr; IK enabled temporarily &rarr; drag IK target &rarr; release: FK snapped from IK, FK rotations keyed, constraints restored.</p>
+    <p>Operator: <code>bt.trajectory</code> (modal, ESC to exit or cancel drag)</p>
   </div>
 </details>
 
@@ -820,8 +823,25 @@ python blender_api.py rigid-bind --mesh ArmorPlate --armature Armature</code></p
       <li>Past ghosts: <span class="c-blue">blue</span>, future ghosts: <span class="c-orange">orange</span>, opacity fades with distance</li>
       <li>GPU-cached batches in world space &mdash; survives viewport rotation, rebuilds only on frame change</li>
       <li>Settings: ghost count before/after, frame step, opacity</li>
+      <li><strong>Keyframes Only</strong> &mdash; show ghosts at actual keyframe positions instead of fixed step</li>
+      <li><strong>Ghost Detail (Proxy LOD)</strong> &mdash; decimated proxy meshes for faster evaluation (0.05&ndash;1.0, default 0.25). Uses Decimate modifier preserving vertex groups</li>
     </ul>
-    <p>Operators: <code>bt.onion_skin</code> (toggle), <code>bt.onion_skin_refresh</code></p>
+    <p>Operators: <code>bt.onion_skin</code> (toggle), <code>bt.onion_skin_refresh</code> (rebuild proxies &amp; recache)</p>
+  </div>
+</details>
+
+<details>
+  <summary>Smart Keyframe (I key override)</summary>
+  <div class="details-body">
+    <p>Intelligent keyframe insertion for wrap rigs. Overrides the <strong>I</strong> key in Pose mode.</p>
+    <ul>
+      <li><strong>IK bones</strong> are never keyed &mdash; if selected and chain is in IK mode, FK is snapped from the IK pose and FK rotations are keyed instead</li>
+      <li><strong>FK bones</strong> &mdash; keyed with rotation (euler/quaternion/axis-angle)</li>
+      <li><strong>COG / root bones</strong> (unlocked location) &mdash; keyed with location + rotation</li>
+      <li><strong>Non-wrap bones</strong> &mdash; keyed with rotation + location (if unlocked)</li>
+      <li>Fallback: if no wrap rig detected, keys all selected bones normally</li>
+    </ul>
+    <p>Operator: <code>bt.smart_keyframe</code></p>
   </div>
 </details>
 

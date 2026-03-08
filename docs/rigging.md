@@ -262,6 +262,8 @@ Procedural shape library for visual bone representation. Shapes are mesh objects
 - IK poles → diamond (scale 0.5)
 - Spline hooks → sphere (scale 0.4)
 
+**FK location locks:** FK bones have location locked (`lock_location = True, True, True`) during wrap rig generation — they can only rotate. Exception: COG bones (first FK bone of spine/root chains) keep location unlocked for body positioning.
+
 **User extension:** Any mesh can be added to the library via `bt.add_custom_shape`. It moves the active mesh object into the `BT_Shapes` collection.
 
 **Operators:**
@@ -333,6 +335,7 @@ When using IK legs, the floor contact system prevents feet from going below a co
 - `bt.resize_ctrl_bones` — Scale custom shapes of selected bones
 - `bt.clear_bone_shapes` — Remove custom shapes from selected bones
 - `bt.add_custom_shape` — Add active mesh to shape library
+- `bt.smart_keyframe` — Smart keyframe: keys FK rotation, snaps FK from IK for IK bones, never keys IK directly
 
 ## Auto-Name Chain
 

@@ -69,21 +69,35 @@ One-click workflow for extracting root motion from animations, based on the refe
 
 ## Bone Trajectory
 
-Interactive 3D visualization and editing of bone location keyframes. Inspired by Cascadeur's trajectory system.
+Interactive 3D visualization and editing of bone trajectories. Inspired by Cascadeur's trajectory system.
 
 **How it works:**
+- Works for **all bone types** — any bone with keyframes (rotation, location, scale) gets a trajectory
 - Evaluates selected bone's world-space position at each keyframe and intermediate frames
 - Draws a smooth curve through the positions (past=blue, future=green)
-- Keyframe positions shown as yellow draggable dots, current frame as white
 - Non-keyframe positions shown as small gray dots
 
-**Editing:**
-- Click a keyframe dot to grab it, drag to move
+**Dot colors:**
+- **Yellow** — directly editable (bone has location keyframes with unlocked location)
+- **Cyan** — IK-assisted editing available (FK bone whose chain has IK enabled)
+- **Dim gray** — read-only (rotation/scale-only keyframes, no editing path)
+- **White** — current frame marker
+
+**Editing — direct (yellow dots):**
+- Click a yellow keyframe dot to grab it, drag to move
 - World-space delta is inverse-transformed to bone-local location using the bone's location-space matrix (accounts for parent chain + rest pose)
 - FCurve values update in real-time during drag
-- Location channels only — no rotation editing, no new keyframes created
 
-**Operators:** `bt.trajectory` (modal toggle, ESC to exit)
+**Editing — IK-assisted (cyan dots):**
+1. Click a cyan dot on an FK bone
+2. System snaps the IK target/pole to match the current FK pose
+3. IK constraints are temporarily enabled on the chain
+4. Drag the IK target — the FK chain follows via the IK solver in real-time
+5. On mouse release: FK bones are snapped to match the IK-solved pose, FK rotations are keyed at that frame, and constraints are restored to their original state
+
+**Header hint** updates dynamically based on available edit modes (direct drag, IK-assisted, or view-only).
+
+**Operators:** `bt.trajectory` (modal toggle, ESC to exit or cancel drag)
 
 ## Onion Skinning
 
@@ -96,13 +110,46 @@ Camera-independent ghost frame display for armatures with child meshes.
 - Future ghosts: orange tint with decreasing opacity
 - Cache rebuilds only on frame change (survives viewport rotation)
 
+**Proxy LOD system:**
+- On activation, decimated proxy meshes are created for each child mesh to speed up per-frame ghost evaluation
+- Uses a Decimate modifier (COLLAPSE mode) to bake low-poly geometry, then replaces it with an Armature modifier so the proxy deforms with the rig
+- Vertex groups are preserved through decimation so skinning remains correct
+- Proxy ratio controls detail level: lower values = faster evaluation, `1.0` = full quality (no proxies created)
+- Proxies are stored in a hidden `BT_OnionSkin_Proxy` collection and destroyed when onion skin is disabled
+
+**Keyframes Only mode:**
+- When `bt_onion_use_keyframes` is enabled, ghosts appear at actual keyframe positions instead of fixed frame intervals
+- Selects the nearest N keyframes before/after the current frame (respecting `bt_onion_before`/`bt_onion_after` counts)
+- Keyframes are collected from all FCurves in the armature's action
+
 **Settings (Scene properties):**
 - `bt_onion_before` — Ghost count before current frame (default 3)
 - `bt_onion_after` — Ghost count after current frame (default 3)
 - `bt_onion_step` — Frame interval between ghosts (default 1)
 - `bt_onion_opacity` — Base opacity (default 0.25)
+- `bt_onion_use_keyframes` — Show ghosts at keyframes instead of fixed intervals (default false)
+- `bt_onion_proxy_ratio` — Proxy mesh detail level, 0.05–1.0 (default 0.25, `FACTOR` subtype)
 
-**Operators:** `bt.onion_skin` (toggle), `bt.onion_skin_refresh` (force recache)
+**Operators:**
+- `bt.onion_skin` — Toggle onion skinning on/off (creates/destroys proxy meshes)
+- `bt.onion_skin_refresh` — Force rebuild proxy meshes and recache ghost frames
+
+## Smart Keyframe
+
+Intelligent keyframe insertion for wrap rigs. Overrides the **I** key in Pose mode.
+
+**Core rule:** IK bones are never keyed directly. Instead, FK rotations are always the keyed data — ensuring clean curves and predictable playback.
+
+**Per-bone behavior:**
+- **IK bone selected** (target, pole, or spline hook) + chain is in IK mode: snaps FK bones to match the current IK-solved pose, then keys FK rotations for the entire chain
+- **FK bone selected**: keys rotation (respects the bone's rotation mode — euler, quaternion, or axis-angle)
+- **COG / root bone** (has unlocked location channels): keys location + rotation
+- **Non-wrap bones** (original skeleton, custom bones): keys rotation, plus location if any location channel is unlocked
+- **IK bone selected but chain is in FK mode**: skipped with an info message
+
+**Fallback:** If no wrap rig is detected on the armature, all selected bones are keyed with rotation + location (when unlocked) — standard Blender behavior.
+
+**Operator:** `bt.smart_keyframe`
 
 ## Animation Data Flow
 
@@ -110,9 +157,11 @@ All animation output uses the `create_fcurve` helper in `core/utils.py` which ha
 
 1. Get/create Action
 2. Get/create Slot for the object (`slots.new(name=obj.name, id_type='OBJECT')`)
-3. Ensure Channelbag for the slot
+3. Ensure Channelbag for the slot (`action_ensure_channelbag_for_slot(action, slot)`)
 4. Create FCurve in the channelbag
 5. Insert keyframe points
+
+When reading FCurves (e.g. trajectory, onion skin keyframe detection), the access path is `action.layers[].strips[].channelbags[].fcurves` — not `slot.channelbags`.
 
 ## Bridge API
 

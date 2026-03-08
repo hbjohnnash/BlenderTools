@@ -20,7 +20,7 @@ All panels are in the 3D Viewport sidebar (press `N`) under the **BlenderTools**
 - **Seams** — UV seam creation tools
 - **Rigging** — Modular rig builder + Skeleton Scanner + Center of Mass / Balance + Control Shapes
 - **Skinning** — Weight painting tools
-- **Animation** — Mechanical animation, path/camera, root motion, trajectory editing, onion skinning
+- **Animation** — Mechanical animation, path/camera, root motion, trajectory editing, onion skinning, Smart Keyframe (I key override)
 - **Export** — Rig scaling & UE FBX export
 - **LLM Bridge** — HTTP server for Claude Code integration
 
@@ -83,18 +83,29 @@ All 13 rig modules use a universal **three-tier architecture: CTRL -> MCH -> DEF
 
 ### Bone Trajectory (Cascadeur-style):
 1. Select armature in Pose mode
-2. Select bones with location keyframes
+2. Select any bones (works for all bone types, not just location-keyed)
 3. Enable Trajectory overlay (header panel or Animation > Trajectory)
-4. Bone positions at keyframes appear as yellow dots connected by a curve
-5. Click + drag any keyframe dot to edit the bone's location at that frame
-6. FCurve values update in real-time during drag
+4. Bone positions at keyframes appear as dots connected by a curve
+5. Three dot colors: yellow = editable (location-keyed), cyan = IK-assisted (FK bones that can be dragged via IK), gray = read-only
+6. Click + drag any yellow or cyan dot to edit position at that frame
+7. IK-assisted drag: FK bones use temporary IK to translate drag into rotation
+8. FCurve values update in real-time during drag
 
 ### Onion Skinning / Ghost Frames:
 1. Select armature in Pose mode
 2. Enable Onion Skin (header panel or Animation > Onion Skin)
 3. Past frames shown in blue, future frames in orange (semi-transparent meshes)
 4. Configure ghost count (before/after), frame step, and opacity
-5. Camera-independent — works in any viewport angle
+5. Keyframes Only mode — show ghosts only at keyframed frames instead of fixed step
+6. Ghost Detail — proxy LOD setting to reduce mesh complexity for performance
+7. Camera-independent — works in any viewport angle
+
+### Smart Keyframe (I key):
+1. Select bones in Pose mode
+2. Press I — smart keyframe insertion
+3. FK bones are keyed with rotation
+4. IK bones are never keyed — FK snaps from IK automatically
+5. COG/root bones get location + rotation keyed
 
 ### Extract root motion:
 1. Select armature with animation
