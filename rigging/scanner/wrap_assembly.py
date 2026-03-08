@@ -287,7 +287,7 @@ def bake_to_def(armature_obj, frame_start=None, frame_end=None):
     for name in def_bones:
         pbone = armature_obj.pose.bones.get(name)
         if pbone:
-            pbone.bone.select = True
+            pbone.select = True
 
     # Bake visual keying: evaluates constraints and writes keyframes
     bpy.ops.nla.bake(

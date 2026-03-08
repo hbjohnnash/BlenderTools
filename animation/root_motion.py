@@ -196,7 +196,7 @@ def setup_root_motion(armature_obj):
         bpy.ops.object.mode_set(mode='OBJECT')
         return
     bpy.ops.pose.select_all(action='DESELECT')
-    root_pbone.bone.select = True
+    root_pbone.select = True
     armature_obj.data.bones.active = root_pbone.bone
 
     bpy.ops.nla.bake(
@@ -234,7 +234,7 @@ def finalize_root_motion(armature_obj):
     for bone_name in pinned:
         pbone = armature_obj.pose.bones.get(bone_name)
         if pbone:
-            pbone.bone.select = True
+            pbone.select = True
 
     # Bake with visual keying, overwrite action
     bpy.ops.nla.bake(
