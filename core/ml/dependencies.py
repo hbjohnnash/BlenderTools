@@ -1,10 +1,28 @@
 """PyTorch dependency management for Blender's bundled Python."""
 
 import importlib
+import site
 import subprocess
 import sys
 
 _TORCH_AVAILABLE = None
+
+
+def _refresh_imports():
+    """Ensure newly pip-installed packages are importable in this process.
+
+    Blender's embedded Python may not pick up new site-packages entries
+    with just ``importlib.invalidate_caches()``.  We also need to reload
+    ``site`` so that any new ``.pth`` files and package directories are
+    added to ``sys.path``.
+    """
+    importlib.invalidate_caches()
+    # Re-run site initialization to pick up new .pth files and paths
+    importlib.reload(site)
+    # Ensure user site-packages is on sys.path
+    user_site = site.getusersitepackages()
+    if user_site and user_site not in sys.path:
+        sys.path.append(user_site)
 
 
 def get_blender_python():
@@ -81,7 +99,7 @@ def install_torch(use_gpu=True, progress_callback=None):
         raise RuntimeError(f"pip install torch failed:\n{result.stderr[-500:]}")
 
     # Make newly installed package importable without restart
-    importlib.invalidate_caches()
+    _refresh_imports()
 
     _TORCH_AVAILABLE = True
 
@@ -108,5 +126,5 @@ def install_extra_deps(packages, progress_callback=None):
             f"Failed to install {packages}:\n{result.stderr[-500:]}"
         )
 
-    importlib.invalidate_caches()
+    _refresh_imports()
     return True
