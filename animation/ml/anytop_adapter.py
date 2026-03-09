@@ -93,7 +93,15 @@ class AnyTopAdapter(BaseModelAdapter):
                 "swing_axis": best_axis,  # 0=X, 1=Y, 2=Z
             })
 
-        return {"joints": joint_list}
+        # Compute skeleton height for scale-aware motion
+        z_vals = []
+        for bone in bones:
+            if bone.name in deform_names:
+                z_vals.append(bone.head_local.z)
+                z_vals.append(bone.tail_local.z)
+        skel_height = (max(z_vals) - min(z_vals)) if z_vals else 1.8
+
+        return {"joints": joint_list, "height": skel_height}
 
     def _bone_description(self, name):
         """Generate a textual description of a bone for AnyTop's input."""
@@ -466,6 +474,11 @@ class AnyTopAdapter(BaseModelAdapter):
                 tags.add("right")
             roles[i] = tags
 
+        # Scale factor: root translations scale with skeleton height.
+        # A 1.8m human is the baseline; a 4m robot gets ~2.2x larger strides.
+        height = skeleton.get("height", 1.8)
+        scale = height / 1.8
+
         # Initialise output as zeros
         rots = [[(0.0, 0.0, 0.0)] * num_joints for _ in range(num_frames)]
         root_pos = [(0.0, 0.0, 0.0)] * num_frames
@@ -497,8 +510,8 @@ class AnyTopAdapter(BaseModelAdapter):
 
                 root_pos[f] = (
                     0.0,
-                    f / num_frames * stride,
-                    abs(np.sin(t)) * 0.03,
+                    f / num_frames * stride * scale,
+                    abs(np.sin(t)) * 0.03 * scale,
                 )
 
                 for ji in range(num_joints):
