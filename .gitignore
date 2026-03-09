@@ -10,3 +10,6 @@ BlenderTools.zip
 Transcript.txt
 piston_check.png
 .claude/
+tests/smoke_results.txt
+blender_test_output.txt
+.pytest_cache/
