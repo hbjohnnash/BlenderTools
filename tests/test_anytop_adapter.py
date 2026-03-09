@@ -111,17 +111,16 @@ class TestFallbackGenerate:
         """Idle should produce small but non-identity rotations."""
         skeleton = self._make_skeleton(3)
         rots, _ = AnyTopAdapter._fallback_generate(skeleton, 10, "idle")
-        # Spine bone (index 0) should have subtle motion
+        # Spine bone (index 0) should have subtle motion on Z (forward/back)
         all_zero = all(
-            abs(rots[f][0][0]) < 1e-9 and abs(rots[f][0][1]) < 1e-9
-            for f in range(10)
+            abs(rots[f][0][2]) < 1e-9 for f in range(10)
         )
         assert not all_zero, "Idle should produce subtle motion on spine"
 
     def test_walk_prompt_adds_motion(self):
-        """Walk prompt should produce visible rotation on legs."""
+        """Walk prompt should produce visible rotation on legs (Z axis)."""
         skeleton = self._make_skeleton(5)
         rots, _ = AnyTopAdapter._fallback_generate(skeleton, 60, "a person walking")
-        # Left upper leg (index 1) should swing
-        vals = [abs(rots[f][1][0]) for f in range(60)]
-        assert max(vals) > 0.1, "Walk should produce visible leg swing"
+        # Left upper leg (index 1) should swing on Z axis (forward/back)
+        vals = [abs(rots[f][1][2]) for f in range(60)]
+        assert max(vals) > 0.1, "Walk should produce visible leg swing on Z"

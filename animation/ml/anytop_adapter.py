@@ -458,6 +458,14 @@ class AnyTopAdapter(BaseModelAdapter):
         is_idle = any(w in prompt_lower
                       for w in ["idle", "stand", "breathe", "rest"])
 
+        # Bone axes for this rig:
+        #   local X ≈ world -Y  (rx = side-to-side)
+        #   local Y ≈ bone dir  (ry = twist)
+        #   local Z ≈ world +X  (rz = forward/back swing)
+        # Spine:
+        #   local X ≈ world +Y  (rx = side-to-side)
+        #   local Z ≈ world +X  (rz = forward/back bend)
+
         if is_walk:
             speed = 4.0 if "run" in prompt_lower else 2.0
             amp = 0.5 if "run" in prompt_lower else 0.3
@@ -479,35 +487,33 @@ class AnyTopAdapter(BaseModelAdapter):
 
                     if "spine" in tags:
                         rz = np.sin(t) * 0.04
-                        ry = np.sin(t * 2) * 0.02
+                        rx = np.sin(t * 2) * 0.02
 
                     elif "hip" in tags:
                         rz = np.sin(t) * 0.03
 
                     elif "upper_leg" in tags:
                         phase = 0 if "left" in tags else pi
-                        rx = np.sin(t + phase) * amp
+                        rz = np.sin(t + phase) * amp
 
                     elif "lower_leg" in tags:
                         phase = 0 if "left" in tags else pi
-                        # Knee bends back more during swing
-                        rx = max(0, np.sin(t + phase + 0.5)) * amp * 0.8
+                        rz = max(0, np.sin(t + phase + 0.5)) * amp * 0.8
 
                     elif "foot" in tags:
                         phase = 0 if "left" in tags else pi
-                        rx = np.sin(t + phase + 1.0) * amp * 0.3
+                        rz = np.sin(t + phase + 1.0) * amp * 0.3
 
                     elif "upper_arm" in tags:
-                        # Arms swing opposite to legs
                         phase = pi if "left" in tags else 0
-                        rx = np.sin(t + phase) * amp * 0.4
+                        rz = np.sin(t + phase) * amp * 0.4
 
                     elif "lower_arm" in tags:
                         phase = pi if "left" in tags else 0
-                        rx = max(0, np.sin(t + phase + 0.3)) * amp * 0.3
+                        rz = max(0, np.sin(t + phase + 0.3)) * amp * 0.3
 
                     elif "head" in tags:
-                        ry = np.sin(t * 2) * 0.01
+                        rx = np.sin(t * 2) * 0.01
 
                     elif "neck" in tags:
                         rz = np.sin(t) * 0.02
@@ -515,7 +521,6 @@ class AnyTopAdapter(BaseModelAdapter):
                     rots[f][ji] = (rx, ry, rz)
 
         elif is_idle:
-            # Subtle breathing / weight shift
             for f in range(num_frames):
                 t = f / num_frames * 2 * pi
 
@@ -524,18 +529,17 @@ class AnyTopAdapter(BaseModelAdapter):
                     rx, ry, rz = 0.0, 0.0, 0.0
 
                     if "spine" in tags:
-                        rx = np.sin(t) * 0.015
+                        rz = np.sin(t) * 0.015
                     elif "hip" in tags:
-                        rz = np.sin(t * 0.5) * 0.01
+                        rx = np.sin(t * 0.5) * 0.01
                     elif "upper_arm" in tags:
-                        rx = np.sin(t) * 0.01
+                        rz = np.sin(t) * 0.01
                     elif "head" in tags:
-                        ry = np.sin(t * 0.7) * 0.02
+                        rx = np.sin(t * 0.7) * 0.02
 
                     rots[f][ji] = (rx, ry, rz)
 
         else:
-            # Generic: gentle oscillation on spine + arms
             for f in range(num_frames):
                 t = f / num_frames * 2 * pi
 
@@ -544,13 +548,13 @@ class AnyTopAdapter(BaseModelAdapter):
                     rx, ry, rz = 0.0, 0.0, 0.0
 
                     if "spine" in tags:
-                        rx = np.sin(t) * 0.1
-                        rz = np.sin(t * 0.5) * 0.05
+                        rz = np.sin(t) * 0.1
+                        rx = np.sin(t * 0.5) * 0.05
                     elif "upper_arm" in tags:
                         phase = 0 if "left" in tags else pi
-                        rx = np.sin(t + phase) * 0.15
+                        rz = np.sin(t + phase) * 0.15
                     elif "head" in tags:
-                        ry = np.sin(t) * 0.05
+                        rx = np.sin(t) * 0.05
 
                     rots[f][ji] = (rx, ry, rz)
 
