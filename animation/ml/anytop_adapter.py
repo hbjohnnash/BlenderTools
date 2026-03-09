@@ -1,8 +1,18 @@
 """AnyTop adapter — topology-agnostic text-to-motion generation.
 
 Works with ANY skeleton topology (humans, animals, robots).
-Outputs 6D joint rotations per frame, which are converted to
-Euler rotations and applied as keyframes.
+Uses the AnyTop diffusion model (SIGGRAPH 2025) for text-conditioned
+motion generation, with automatic skeleton conditioning and T5-based
+joint name encoding.
+
+Pipeline:
+    1. Extract skeleton topology from Blender armature
+    2. Build conditioning (graph topology, T-pose, T5 embeddings)
+    3. Run 100-step cosine-schedule diffusion sampling
+    4. Recover Euler rotations + root position from 13D features
+    5. Apply as keyframes to pose bones (CTRL FK when wrap rig exists)
+
+Falls back to procedural motion when model inference fails.
 
 GitHub: https://github.com/Anytop2025/Anytop
 Paper:  SIGGRAPH 2025
@@ -12,6 +22,7 @@ import sys
 from math import atan2, pi
 
 import bpy
+import numpy as np
 
 from ...core.ml.base_adapter import BaseModelAdapter
 
@@ -33,9 +44,9 @@ class AnyTopAdapter(BaseModelAdapter):
 
     CODE_URL = _CODE_URL
     # Weights are on HuggingFace — downloaded via huggingface_hub.
-    # WEIGHT_URLS left empty; install_model is overridden to use HF.
+    # WEIGHT_URLS left empty; download_weights is overridden to use HF.
     WEIGHT_URLS = {}
-    EXTRA_DEPS = ["einops", "tqdm", "huggingface_hub"]
+    EXTRA_DEPS = ["einops", "tqdm", "huggingface_hub", "transformers"]
 
     # ── Skeleton extraction ──
 
@@ -154,13 +165,24 @@ class AnyTopAdapter(BaseModelAdapter):
         weights_dir.mkdir(parents=True, exist_ok=True)
 
         if progress_callback:
-            progress_callback(0.2, "Downloading AnyTop from HuggingFace...")
+            progress_callback(0.1, "Downloading AnyTop from HuggingFace...")
 
         snapshot_download(
             repo_id=_HF_REPO,
             local_dir=str(weights_dir / "hf_snapshot"),
             allow_patterns=["checkpoints/**"],
         )
+
+        if progress_callback:
+            progress_callback(0.6, "Downloading T5 text encoder...")
+
+        # Pre-download T5 model so first generation doesn't stall
+        try:
+            from transformers import T5EncoderModel, T5Tokenizer
+            T5Tokenizer.from_pretrained("t5-base")
+            T5EncoderModel.from_pretrained("t5-base")
+        except Exception:
+            pass  # T5 will download on first use if this fails
 
         if progress_callback:
             progress_callback(1.0, "AnyTop weights downloaded")
@@ -176,17 +198,22 @@ class AnyTopAdapter(BaseModelAdapter):
         return code_dir / "Anytop-main"
 
     def _find_checkpoint(self):
-        """Locate the best checkpoint file in the weights directory."""
+        """Locate the best model checkpoint file in the weights directory."""
         weights_dir = self.get_weights_dir()
-        # Look in HF snapshot checkpoints/
-        for pt in sorted(weights_dir.rglob("*.pt"), reverse=True):
-            return pt
-        return None
+        candidates = sorted(weights_dir.rglob("model*.pt"), reverse=True)
+        # Prefer the all_model checkpoint (trained on all skeleton types)
+        for pt in candidates:
+            if "all_model" in pt.parent.name:
+                return pt
+        return candidates[0] if candidates else None
 
     def load_model(self):
-        """Load AnyTop model from downloaded code and weights."""
+        """Load AnyTop model, diffusion, and T5 conditioner."""
         if self._model is not None:
             return
+
+        import json
+        from argparse import Namespace
 
         import torch
 
@@ -195,26 +222,76 @@ class AnyTopAdapter(BaseModelAdapter):
         if repo_str not in sys.path:
             sys.path.insert(0, repo_str)
 
-        # Load the model checkpoint
+        # Find checkpoint and load args
         ckpt_path = self._find_checkpoint()
         if ckpt_path is None:
             raise FileNotFoundError(
                 "AnyTop checkpoint not found. Re-run 'Initialize AI Motion'."
             )
 
-        checkpoint = torch.load(
-            ckpt_path,
-            map_location="cpu",
-            weights_only=False,
+        args_path = ckpt_path.parent / "args.json"
+        with open(args_path) as f:
+            args_dict = json.load(f)
+        args = Namespace(**args_dict)
+
+        # Create model and diffusion pipeline
+        from utils.model_util import create_model_and_diffusion_general_skeleton
+        from utils.model_util import load_model as load_weights
+
+        model_net, diffusion = create_model_and_diffusion_general_skeleton(
+            args,
         )
 
-        self._model = checkpoint
+        # Load trained weights
+        state_dict = torch.load(
+            ckpt_path, map_location="cpu", weights_only=False,
+        )
+        load_weights(model_net, state_dict)
+
+        # Set device and eval mode
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model_net = model_net.to(device)
+        model_net.eval()
+
+        # Initialize dist_util for any internal device lookups
+        from utils import dist_util
+        dist_util.setup_dist(0 if device == "cuda" else -1)
+
+        self._model = {
+            "net": model_net,
+            "diffusion": diffusion,
+            "device": device,
+            "temporal_window": getattr(args, "temporal_window", 31),
+        }
         self._repo_root = repo_root
+
+    def unload_model(self):
+        """Free model from memory."""
+        from .anytop_conditioning import _t5_cache
+        _t5_cache.clear()
+        self._model = None
+        self._repo_root = None
+        import gc
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
 
     # ── Inference ──
 
     def predict(self, skeleton, prompt, num_frames=120):
         """Generate motion from text prompt for the given skeleton.
+
+        Uses the full AnyTop diffusion pipeline:
+            1. Build conditioning from skeleton topology
+            2. Encode joint names via T5
+            3. Run 100-step denoising diffusion
+            4. Recover rotations and root position from features
+
+        Falls back to procedural motion on any failure.
 
         Args:
             skeleton: dict from extract_skeleton().
@@ -222,9 +299,7 @@ class AnyTopAdapter(BaseModelAdapter):
             num_frames: Number of frames to generate.
 
         Returns:
-            dict with 'rotations' (list of per-joint Euler XYZ per frame),
-            'root_positions' (list of root XYZ per frame),
-            and 'joint_names'.
+            dict with 'rotations', 'root_positions', 'joint_names'.
         """
         joints = skeleton["joints"]
         num_joints = len(joints)
@@ -233,54 +308,97 @@ class AnyTopAdapter(BaseModelAdapter):
             self.load_model()
             import torch
 
-            repo_root = self._repo_root
-            repo_str = str(repo_root)
+            model_net = self._model["net"]
+            diffusion = self._model["diffusion"]
+            device = self._model["device"]
+            temporal_window = self._model["temporal_window"]
+
+            # Ensure AnyTop repo is on path for imports
+            repo_str = str(self._repo_root)
             if repo_str not in sys.path:
                 sys.path.insert(0, repo_str)
 
-            # Build skeleton topology tensor
-            parent_indices = torch.tensor(
-                [j["parent"] for j in joints], dtype=torch.long,
+            from .anytop_conditioning import (
+                FEATURE_LEN,
+                MAX_JOINTS,
+                build_cond_dict,
+                create_temporal_mask,
+                encode_joint_names_t5,
             )
-            offsets = torch.tensor(
-                [j["offset"] for j in joints], dtype=torch.float32,
+
+            # 1. Build conditioning from skeleton
+            object_type = "blender_skeleton"
+            cond_dict = build_cond_dict(skeleton, object_type)
+            cond = cond_dict[object_type]
+
+            # 2. Encode joint names via T5
+            joint_names_embs = encode_joint_names_t5(
+                cond["joints_names"], device=device,
+            ).detach().cpu().numpy()
+
+            # Normalize T-pose for model input
+            tpose_norm = (
+                (cond["tpos_first_frame"] - cond["mean"])
+                / (cond["std"] + 1e-6)
             )
-            descriptions = [j["description"] for j in joints]
+            tpose_norm = np.nan_to_num(tpose_norm)
 
-            from model.generate import generate_motion
+            # 3. Build batch in the format expected by truebones_batch_collate
+            temporal_mask = create_temporal_mask(temporal_window, num_frames)
+            batch = [
+                np.zeros((num_frames, num_joints, FEATURE_LEN)),
+                num_frames,
+                cond["parents"],
+                tpose_norm,
+                cond["offsets"],
+                temporal_mask,
+                cond["joints_graph_dist"],
+                cond["joint_relations"],
+                object_type,
+                joint_names_embs,
+                0,                  # crop_start_ind
+                cond["mean"],
+                cond["std"],
+                MAX_JOINTS,
+            ]
 
-            result = generate_motion(
-                model=self._model,
-                text_prompt=prompt,
-                skeleton_offsets=offsets,
-                skeleton_parents=parent_indices,
-                joint_descriptions=descriptions,
-                num_frames=num_frames,
+            from data_loaders.tensors import truebones_batch_collate
+            _, model_kwargs = truebones_batch_collate([batch])
+
+            # Move tensors to model device
+            for k, v in model_kwargs["y"].items():
+                if isinstance(v, torch.Tensor):
+                    model_kwargs["y"][k] = v.to(device)
+
+            # 4. Run diffusion sampling (100 denoising steps)
+            sample = diffusion.p_sample_loop(
+                model_net,
+                (1, MAX_JOINTS, model_net.feature_len, num_frames),
+                clip_denoised=False,
+                model_kwargs=model_kwargs,
+                skip_timesteps=0,
+                init_image=None,
+                progress=True,
+                dump_steps=None,
+                noise=None,
+                const_noise=False,
             )
-            rotations_6d = result.cpu().numpy()
 
-            # Convert 6D → Euler
-            rotations_euler = []
-            root_positions = []
-            for f in range(len(rotations_6d)):
-                frame_rots = []
-                for j in range(num_joints):
-                    if (rotations_6d[f].ndim > 1
-                            and rotations_6d[f].shape[-1] >= 6):
-                        euler = self._rotation_6d_to_euler(rotations_6d[f][j])
-                    else:
-                        euler = (0.0, 0.0, 0.0)
-                    frame_rots.append(euler)
-                rotations_euler.append(frame_rots)
+            # 5. Extract and denormalize
+            motion = sample[0, :num_joints]  # trim joint padding
+            motion = motion.cpu().permute(2, 0, 1).numpy()  # → (F, J, 13)
+            mean = cond["mean"][np.newaxis, :]
+            std = cond["std"][np.newaxis, :]
+            motion = motion * std + mean
 
-                if (rotations_6d[f].ndim > 1
-                        and rotations_6d[f].shape[-1] >= 9):
-                    root_positions.append(tuple(rotations_6d[f][0][:3]))
-                else:
-                    root_positions.append((0.0, 0.0, 0.0))
+            # 6. Recover rotations and root position
+            rotations_euler, root_positions = self._recover_motion(
+                motion, num_joints, skeleton.get("height", 1.8),
+            )
 
         except Exception:
-            # Fallback: procedural motion (model not available)
+            import traceback
+            traceback.print_exc()
             rotations_euler, root_positions = self._fallback_generate(
                 skeleton, num_frames, prompt,
             )
@@ -290,6 +408,61 @@ class AnyTopAdapter(BaseModelAdapter):
             "root_positions": root_positions,
             "joint_names": [j["name"] for j in joints],
         }
+
+    # ── Motion recovery from 13D features ──
+
+    def _recover_motion(self, motion, num_joints, height=1.8):
+        """Convert denormalized 13D features to Euler rotations + root pos.
+
+        Extracts 6D rotations (features [3:9]) and converts to Euler XYZ.
+        Recovers root position by integrating XZ velocity and using
+        absolute Y height from features.
+
+        Args:
+            motion: ``(n_frames, n_joints, 13)`` denormalized features.
+            num_joints: actual joint count (unpadded).
+            height: skeleton height for position scaling.
+
+        Returns:
+            ``(rotations_euler, root_positions)`` — per-frame lists.
+        """
+        n_frames = motion.shape[0]
+
+        # Root rotation matrices for velocity rotation
+        root_6d = motion[:, 0, 3:9]
+        root_rot = self._rotation_6d_to_matrix_batch(root_6d)
+
+        # Recover root world-space position from local-frame velocity
+        root_pos = np.zeros((n_frames, 3))
+        root_pos[1:, 0] = motion[:-1, 0, 9]   # X velocity
+        root_pos[1:, 2] = motion[:-1, 0, 11]  # Z velocity
+
+        # Rotate from root local frame to world frame (R^T for inverse)
+        for f in range(n_frames):
+            root_pos[f] = root_rot[f].T @ root_pos[f]
+
+        root_pos = np.cumsum(root_pos, axis=0)
+        root_pos[:, 1] = motion[:, 0, 1]  # Y is absolute height
+
+        # Scale root position by skeleton height
+        scale = height / 1.8
+        root_pos[:, 0] *= scale
+        root_pos[:, 2] *= scale
+
+        # Extract per-joint Euler rotations from 6D features
+        rotations_euler = []
+        for f in range(n_frames):
+            frame_rots = []
+            for j in range(num_joints):
+                r6d = motion[f, j, 3:9]
+                euler = self._rotation_6d_to_euler(r6d)
+                frame_rots.append(euler)
+            rotations_euler.append(frame_rots)
+
+        root_positions = [tuple(root_pos[f]) for f in range(n_frames)]
+        return rotations_euler, root_positions
+
+    # ── Apply motion to Blender ──
 
     def apply_motion(self, armature_obj, motion_data, action_name=None,
                      frame_start=1):
@@ -397,13 +570,35 @@ class AnyTopAdapter(BaseModelAdapter):
     # ── Rotation conversion ──
 
     @staticmethod
+    def _rotation_6d_to_matrix_batch(r6d):
+        """Convert batch of 6D rotation representations to 3×3 matrices.
+
+        Uses Gram-Schmidt orthogonalisation (Zhou et al., CVPR 2019).
+
+        Args:
+            r6d: ``(N, 6)`` array — two 3D column vectors per rotation.
+
+        Returns:
+            ``(N, 3, 3)`` array of rotation matrices.
+        """
+        a1 = r6d[:, :3].astype(np.float64)
+        a2 = r6d[:, 3:6].astype(np.float64)
+
+        b1 = a1 / (np.linalg.norm(a1, axis=1, keepdims=True) + 1e-8)
+        dot = np.sum(b1 * a2, axis=1, keepdims=True)
+        b2 = a2 - dot * b1
+        b2 = b2 / (np.linalg.norm(b2, axis=1, keepdims=True) + 1e-8)
+        b3 = np.cross(b1, b2)
+
+        R = np.stack([b1, b2, b3], axis=-1)  # (N, 3, 3)
+        return R
+
+    @staticmethod
     def _rotation_6d_to_euler(r6d):
         """Convert 6D rotation representation to Euler XYZ angles.
 
         The 6D representation is the first two columns of the rotation matrix.
         """
-        import numpy as np
-
         a1 = np.array(r6d[:3], dtype=np.float64)
         a2 = np.array(r6d[3:6], dtype=np.float64)
 
@@ -437,8 +632,6 @@ class AnyTopAdapter(BaseModelAdapter):
         Returns ``(rotations_euler, root_positions)`` directly in Euler
         space so the caller can skip the 6D conversion.
         """
-        import numpy as np
-
         joints = skeleton["joints"]
         num_joints = len(joints)
         prompt_lower = prompt.lower()
