@@ -328,7 +328,7 @@ class AnyTopAdapter(BaseModelAdapter):
                 continue
 
             # Set Euler mode so the rotation FCurves take effect
-            pbone.rotation_mode = 'XYZ_EULER'
+            pbone.rotation_mode = 'XYZ'
 
             # Rotation FCurves
             for axis in range(3):

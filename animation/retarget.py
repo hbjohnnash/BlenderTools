@@ -199,7 +199,7 @@ def retarget_action_to_fk(armature_obj, action=None):
                     prop = fc.data_path.split('"].')[1]
 
                     if "rotation_euler" in prop:
-                        rotation_modes[ctrl_name] = 'XYZ_EULER'
+                        rotation_modes[ctrl_name] = 'XYZ'
                     elif "rotation_quaternion" in prop:
                         rotation_modes[ctrl_name] = 'QUATERNION'
 
