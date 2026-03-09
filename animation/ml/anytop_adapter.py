@@ -72,11 +72,25 @@ class AnyTopAdapter(BaseModelAdapter):
             else:
                 offset = bone.head_local.copy()
 
+            # Determine which Euler axis produces forward/back swing.
+            # World X = (1,0,0) is the rotation axis for YZ-plane motion
+            # (forward/back).  Find which bone-local axis aligns with it.
+            mat = bone.matrix_local
+            best_axis = 0
+            best_dot = 0.0
+            for col in range(3):
+                local_vec = [mat[row][col] for row in range(3)]
+                dot = abs(local_vec[0])  # dot with (1,0,0)
+                if dot > best_dot:
+                    best_dot = dot
+                    best_axis = col
+
             joint_list.append({
                 "name": bone.name,
                 "parent": parent_idx,
                 "offset": [offset.x, offset.y, offset.z],
                 "description": self._bone_description(bone.name),
+                "swing_axis": best_axis,  # 0=X, 1=Y, 2=Z
             })
 
         return {"joints": joint_list}
@@ -421,10 +435,12 @@ class AnyTopAdapter(BaseModelAdapter):
         num_joints = len(joints)
         prompt_lower = prompt.lower()
 
-        # Classify each joint by its description
-        roles = {}  # index → set of tags
+        # Classify each joint by its description and read its swing axis
+        roles = {}   # index → set of tags
+        swing = {}   # index → euler component for fwd/back (0=X, 1=Y, 2=Z)
         for i, j in enumerate(joints):
             desc = j.get("description", "").lower()
+            swing[i] = j.get("swing_axis", 2)  # default Z if not set
             tags = set()
             if "spine" in desc or "chest" in desc:
                 tags.add("spine")
@@ -458,13 +474,18 @@ class AnyTopAdapter(BaseModelAdapter):
         is_idle = any(w in prompt_lower
                       for w in ["idle", "stand", "breathe", "rest"])
 
-        # Bone axes for this rig:
-        #   local X ≈ world -Y  (rx = side-to-side)
-        #   local Y ≈ bone dir  (ry = twist)
-        #   local Z ≈ world +X  (rz = forward/back swing)
-        # Spine:
-        #   local X ≈ world +Y  (rx = side-to-side)
-        #   local Z ≈ world +X  (rz = forward/back bend)
+        def _set_axis(axis_idx, value):
+            """Return an (rx, ry, rz) tuple with *value* on *axis_idx*."""
+            r = [0.0, 0.0, 0.0]
+            r[axis_idx] = value
+            return tuple(r)
+
+        def _set_two(axis_a, val_a, axis_b, val_b):
+            """Return (rx, ry, rz) with two axes set."""
+            r = [0.0, 0.0, 0.0]
+            r[axis_a] = val_a
+            r[axis_b] = val_b
+            return tuple(r)
 
         if is_walk:
             speed = 4.0 if "run" in prompt_lower else 2.0
@@ -474,7 +495,6 @@ class AnyTopAdapter(BaseModelAdapter):
             for f in range(num_frames):
                 t = f / num_frames * 2 * pi * speed
 
-                # Root: forward translation + subtle bounce
                 root_pos[f] = (
                     0.0,
                     f / num_frames * stride,
@@ -483,42 +503,54 @@ class AnyTopAdapter(BaseModelAdapter):
 
                 for ji in range(num_joints):
                     tags = roles.get(ji, set())
-                    rx, ry, rz = 0.0, 0.0, 0.0
+                    sa = swing[ji]  # forward/back axis for this bone
 
                     if "spine" in tags:
-                        rz = np.sin(t) * 0.04
-                        rx = np.sin(t * 2) * 0.02
+                        rots[f][ji] = _set_two(
+                            sa, np.sin(t) * 0.04,
+                            (sa + 1) % 3, np.sin(t * 2) * 0.02,
+                        )
 
                     elif "hip" in tags:
-                        rz = np.sin(t) * 0.03
+                        rots[f][ji] = _set_axis(sa, np.sin(t) * 0.03)
 
                     elif "upper_leg" in tags:
                         phase = 0 if "left" in tags else pi
-                        rz = np.sin(t + phase) * amp
+                        rots[f][ji] = _set_axis(
+                            sa, np.sin(t + phase) * amp,
+                        )
 
                     elif "lower_leg" in tags:
                         phase = 0 if "left" in tags else pi
-                        rz = max(0, np.sin(t + phase + 0.5)) * amp * 0.8
+                        rots[f][ji] = _set_axis(
+                            sa, max(0, np.sin(t + phase + 0.5)) * amp * 0.8,
+                        )
 
                     elif "foot" in tags:
                         phase = 0 if "left" in tags else pi
-                        rz = np.sin(t + phase + 1.0) * amp * 0.3
+                        rots[f][ji] = _set_axis(
+                            sa, np.sin(t + phase + 1.0) * amp * 0.3,
+                        )
 
                     elif "upper_arm" in tags:
                         phase = pi if "left" in tags else 0
-                        rz = np.sin(t + phase) * amp * 0.4
+                        rots[f][ji] = _set_axis(
+                            sa, np.sin(t + phase) * amp * 0.4,
+                        )
 
                     elif "lower_arm" in tags:
                         phase = pi if "left" in tags else 0
-                        rz = max(0, np.sin(t + phase + 0.3)) * amp * 0.3
+                        rots[f][ji] = _set_axis(
+                            sa, max(0, np.sin(t + phase + 0.3)) * amp * 0.3,
+                        )
 
                     elif "head" in tags:
-                        rx = np.sin(t * 2) * 0.01
+                        rots[f][ji] = _set_axis(
+                            (sa + 1) % 3, np.sin(t * 2) * 0.01,
+                        )
 
                     elif "neck" in tags:
-                        rz = np.sin(t) * 0.02
-
-                    rots[f][ji] = (rx, ry, rz)
+                        rots[f][ji] = _set_axis(sa, np.sin(t) * 0.02)
 
         elif is_idle:
             for f in range(num_frames):
@@ -526,18 +558,20 @@ class AnyTopAdapter(BaseModelAdapter):
 
                 for ji in range(num_joints):
                     tags = roles.get(ji, set())
-                    rx, ry, rz = 0.0, 0.0, 0.0
+                    sa = swing[ji]
 
                     if "spine" in tags:
-                        rz = np.sin(t) * 0.015
+                        rots[f][ji] = _set_axis(sa, np.sin(t) * 0.015)
                     elif "hip" in tags:
-                        rx = np.sin(t * 0.5) * 0.01
+                        rots[f][ji] = _set_axis(
+                            (sa + 1) % 3, np.sin(t * 0.5) * 0.01,
+                        )
                     elif "upper_arm" in tags:
-                        rz = np.sin(t) * 0.01
+                        rots[f][ji] = _set_axis(sa, np.sin(t) * 0.01)
                     elif "head" in tags:
-                        rx = np.sin(t * 0.7) * 0.02
-
-                    rots[f][ji] = (rx, ry, rz)
+                        rots[f][ji] = _set_axis(
+                            (sa + 1) % 3, np.sin(t * 0.7) * 0.02,
+                        )
 
         else:
             for f in range(num_frames):
@@ -545,17 +579,21 @@ class AnyTopAdapter(BaseModelAdapter):
 
                 for ji in range(num_joints):
                     tags = roles.get(ji, set())
-                    rx, ry, rz = 0.0, 0.0, 0.0
+                    sa = swing[ji]
 
                     if "spine" in tags:
-                        rz = np.sin(t) * 0.1
-                        rx = np.sin(t * 0.5) * 0.05
+                        rots[f][ji] = _set_two(
+                            sa, np.sin(t) * 0.1,
+                            (sa + 1) % 3, np.sin(t * 0.5) * 0.05,
+                        )
                     elif "upper_arm" in tags:
                         phase = 0 if "left" in tags else pi
-                        rz = np.sin(t + phase) * 0.15
+                        rots[f][ji] = _set_axis(
+                            sa, np.sin(t + phase) * 0.15,
+                        )
                     elif "head" in tags:
-                        rx = np.sin(t) * 0.05
-
-                    rots[f][ji] = (rx, ry, rz)
+                        rots[f][ji] = _set_axis(
+                            (sa + 1) % 3, np.sin(t) * 0.05,
+                        )
 
         return rots, root_pos

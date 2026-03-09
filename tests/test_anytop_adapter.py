@@ -95,6 +95,7 @@ class TestFallbackGenerate:
                 "parent": max(0, i - 1) if i > 0 else -1,
                 "offset": [0, 0, 0.1],
                 "description": desc,
+                "swing_axis": 2,  # Z = forward/back (standard Blender)
             })
         return {"joints": joints}
 
