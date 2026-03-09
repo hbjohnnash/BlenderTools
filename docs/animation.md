@@ -151,6 +151,46 @@ Intelligent keyframe insertion for wrap rigs. Overrides the **I** key in Pose mo
 
 **Operator:** `bt.smart_keyframe`
 
+## AI Motion Generation
+
+### Text-to-Motion (AnyTop)
+Generate animation from a text prompt for **any skeleton topology** (human, animal, robot).
+
+**Requirements:** Click "Initialize AI Motion" first (downloads PyTorch + AnyTop + SinMDM).
+
+**How it works:**
+1. Extracts skeleton topology from Blender armature (joint offsets + text descriptions)
+2. Sends skeleton + text prompt to AnyTop model
+3. Model outputs 6D joint rotations per frame
+4. Rotations are converted to Euler angles via Gram-Schmidt orthonormalization
+5. Applied as keyframes on the armature using Blender 5.0 channelbag API
+6. Falls back to simple procedural oscillation if model inference fails
+
+**Model:** AnyTop (SIGGRAPH 2025, topology-agnostic, HuggingFace: `inbar2344/AnyTop`)
+
+### Style Transfer (SinMDM)
+Learn motion style from a single example animation and generate variations.
+
+**Tasks:**
+- **Style Transfer** — Apply the style of the current animation to new motion
+- **Inbetween** — Fill gaps between keyframes with learned motion patterns
+- **Expand** — Extend a short animation into a longer sequence
+
+**Model:** SinMDM (MIT license, single-motion diffusion, generic BVH input)
+
+**Operators:**
+- `bt.init_anim_ai` — Download PyTorch + AnyTop (HuggingFace) + SinMDM (Google Drive)
+- `bt.remove_anim_ai` — Delete cached models
+- `bt.ai_generate_motion` — Text prompt → motion (AnyTop)
+- `bt.ai_style_transfer` — Style transfer from current animation (SinMDM)
+- `bt.ai_inbetween` — Fill between keyframes (SinMDM)
+
+### Model Management
+- Models cached at `~/.blendertools/models/<model_id>/`
+- Persist across Blender restarts
+- "Remove" buttons free disk space
+- Adapter pattern allows swapping models (e.g. when SeamGPT releases weights)
+
 ## Animation Data Flow
 
 All animation output uses the `create_fcurve` helper in `core/utils.py` which handles Blender 5.0's channelbag API:

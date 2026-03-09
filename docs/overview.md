@@ -2,7 +2,9 @@
 
 ## What is BlenderTools?
 
-A comprehensive Blender 5.0+ addon for seam creation, modular rigging, skinning, animation tools, and LLM bridge integration. You model; BlenderTools handles everything after.
+A comprehensive Blender 5.0+ addon for seam creation, modular rigging, skinning, animation tools, AI-powered workflows, and LLM bridge integration. You model; BlenderTools handles everything after.
+
+**GitHub:** https://github.com/hbjohnnash/BlenderTools
 
 ## Installation
 
@@ -17,10 +19,10 @@ All panels are in the 3D Viewport sidebar (press `N`) under the **BlenderTools**
 
 ### Panel Sections:
 - **BlenderTools (Header)** — Subsystem toggles + unified Overlay controls (Module, FK/IK, CoM, Trajectory, Onion Skin)
-- **Seams** — UV seam creation tools
+- **Seams** — UV seam creation tools + AI neural seam prediction (MeshCNN)
 - **Rigging** — Modular rig builder + Skeleton Scanner + Center of Mass / Balance + Control Shapes
 - **Skinning** — Weight painting tools
-- **Animation** — Mechanical animation, path/camera, root motion, trajectory editing, onion skinning, Smart Keyframe (I key override)
+- **Animation** — Mechanical animation, path/camera, root motion, trajectory editing, onion skinning, Smart Keyframe (I key override) + AI motion generation (AnyTop, SinMDM)
 - **Export** — Rig scaling & UE FBX export
 - **LLM Bridge** — HTTP server for Claude Code integration
 
@@ -134,6 +136,39 @@ All 13 rig modules use a universal **three-tier architecture: CTRL -> MCH -> DEF
 ### Use with Claude Code:
 1. Click "Start Bridge" in the LLM Bridge panel
 2. From terminal: `python blender_api.py ping`
+
+### AI Seam Prediction:
+1. Open BlenderTools > Seams > AI Seams
+2. Click "Initialize AI Seams" — downloads PyTorch + MeshCNN (~300MB one-time)
+3. Select a mesh, click "Neural Seams"
+4. MeshCNN segments mesh into body parts; boundaries become seams
+
+### AI Motion Generation:
+1. Open BlenderTools > Animation > AI Motion
+2. Click "Initialize AI Motion" — downloads PyTorch + AnyTop + SinMDM
+3. Select armature, click "Generate Motion", enter text prompt (e.g. "a person walking")
+4. AnyTop generates motion for any skeleton topology
+
+### AI Style Transfer:
+1. Initialize AI Motion (above)
+2. Select armature with existing animation
+3. Click "Style Transfer" — SinMDM learns from the motion and generates variations
+
+## Development
+
+### Testing
+```bash
+pip install -r requirements-dev.txt
+ruff check .                    # lint
+pytest                          # 46 unit tests (no Blender needed)
+blender-launcher --background --python tests/smoke_test_blender.py  # real Blender check
+```
+
+### CI/CD
+Every push to `main` triggers GitHub Actions (`.github/workflows/ci.yml`):
+1. **lint-and-test** — ruff + pytest
+2. **smoke-test** — installs addon in Blender headless, verifies registration
+3. **build** — packages `BlenderTools.zip`, downloadable from Actions artifacts
 
 ## Blender 5.0 Compatibility
 

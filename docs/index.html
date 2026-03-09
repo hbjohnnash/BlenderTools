@@ -175,6 +175,7 @@
     <a class="nav-link" data-page="export"><span class="nav-dot bg-blue"></span>Export &amp; Scale</a>
     <div class="nav-section">Integration</div>
     <a class="nav-link" data-page="bridge"><span class="nav-dot bg-cyan"></span>LLM Bridge</a>
+    <a class="nav-link" data-page="dev"><span class="nav-dot bg-purple"></span>Development</a>
     <div class="nav-section">Reference</div>
     <a class="nav-link" data-page="rig-config"><span class="nav-dot bg-orange"></span>Rig Config Format</a>
   </nav>
@@ -311,6 +312,16 @@
   <summary>Clear All Seams</summary>
   <div class="details-body"><p>Removes all seams from the active mesh. Useful before applying a new method from scratch.</p></div>
 </details>
+
+<h2>AI Seams <span style="color:var(--neon-pink); font-size:11px;">(MeshCNN)</span></h2>
+<p>Neural seam prediction using edge-based mesh segmentation. MeshCNN classifies edges into 8 body-part segments; segment boundaries become seams.</p>
+<table>
+  <tr><th>Operator</th><th>Description</th></tr>
+  <tr><td><code>bt.init_seam_ai</code></td><td>Download PyTorch + MeshCNN model (~300MB, one-time)</td></tr>
+  <tr><td><code>bt.seam_neural</code></td><td>Run neural seam prediction on selected mesh</td></tr>
+  <tr><td><code>bt.remove_seam_ai</code></td><td>Delete cached model to free disk space</td></tr>
+</table>
+<p>Falls back to angle-based prediction (&gt;45&deg; dihedral) if the model fails. Model: <strong>MeshCNN</strong> (MIT license).</p>
 
 <h2>Presets</h2>
 <table>
@@ -951,6 +962,24 @@ python blender_api.py rigid-bind --mesh ArmorPlate --armature Armature</code></p
 python blender_api.py root-motion-finalize --armature Armature
 python blender_api.py root-motion-cancel --armature Armature</code></pre>
 
+<!-- ── AI MOTION ── -->
+<h2>AI Motion <span style="color:var(--neon-pink); font-size:11px;">Neural</span></h2>
+<h3>Text-to-Motion (AnyTop)</h3>
+<p>Generate animation from a text prompt for <strong>any skeleton topology</strong> (human, animal, robot). SIGGRAPH 2025. Uses 6D rotation representation with Gram-Schmidt orthonormalization.</p>
+
+<h3>Style Transfer &amp; Inbetweening (SinMDM)</h3>
+<p>Learn motion style from a single example animation. Supports style transfer, gap filling between keyframes, and motion expansion. MIT license, generic BVH input.</p>
+
+<table>
+  <tr><th>Operator</th><th>Description</th></tr>
+  <tr><td><code>bt.init_anim_ai</code></td><td>Download PyTorch + AnyTop (HuggingFace) + SinMDM (Google Drive)</td></tr>
+  <tr><td><code>bt.remove_anim_ai</code></td><td>Delete cached models to free disk space</td></tr>
+  <tr><td><code>bt.ai_generate_motion</code></td><td>Text prompt &rarr; motion (AnyTop)</td></tr>
+  <tr><td><code>bt.ai_style_transfer</code></td><td>Style transfer from current animation (SinMDM)</td></tr>
+  <tr><td><code>bt.ai_inbetween</code></td><td>Fill between keyframes (SinMDM)</td></tr>
+</table>
+<p>Models cached at <code>~/.blendertools/models/</code>. Adapter pattern allows swapping models in the future.</p>
+
 <!-- ── ANIMATION OPERATORS ── -->
 <h2>All Animation Operators</h2>
 <details>
@@ -966,6 +995,10 @@ python blender_api.py root-motion-cancel --armature Armature</code></pre>
       <tr><td><code>bt.rm_setup</code></td><td>Setup root motion extraction</td></tr>
       <tr><td><code>bt.rm_finalize</code></td><td>Bake and finalize root motion</td></tr>
       <tr><td><code>bt.rm_cancel</code></td><td>Cancel root motion extraction</td></tr>
+      <tr><td><code>bt.init_anim_ai</code></td><td>Initialize AI motion models (download PyTorch + models)</td></tr>
+      <tr><td><code>bt.ai_generate_motion</code></td><td>Generate motion from text prompt (AnyTop)</td></tr>
+      <tr><td><code>bt.ai_style_transfer</code></td><td>Style transfer from current animation (SinMDM)</td></tr>
+      <tr><td><code>bt.ai_inbetween</code></td><td>Fill between keyframes (SinMDM)</td></tr>
     </table>
   </div>
 </details>
@@ -1275,6 +1308,60 @@ result = json.dumps({
 }</code></pre>
   </div>
 </details>
+</div>
+
+<!-- ================================================================ -->
+<!-- DEVELOPMENT -->
+<!-- ================================================================ -->
+<div class="page" id="page-dev">
+<div class="page-title"><span>//</span> Development</div>
+
+<p><strong>GitHub:</strong> <a href="https://github.com/hbjohnnash/BlenderTools">github.com/hbjohnnash/BlenderTools</a></p>
+
+<h2>Testing</h2>
+<pre><code><span class="cm"># Install dev dependencies</span>
+pip install -r requirements-dev.txt
+
+<span class="cm"># Lint (catches style + import issues)</span>
+ruff check .
+
+<span class="cm"># Unit tests (46 tests, no Blender needed, ~0.15s)</span>
+pytest
+
+<span class="cm"># Blender smoke test (verifies addon loads in real Blender)</span>
+blender-launcher --background --python tests/smoke_test_blender.py
+<span class="cm"># Results: tests/smoke_results.txt</span></code></pre>
+
+<h2>CI/CD Pipeline</h2>
+<p>Every push to <code>main</code> triggers <code>.github/workflows/ci.yml</code> with 3 jobs:</p>
+<table>
+  <tr><th>Job</th><th>What it does</th><th>Speed</th></tr>
+  <tr><td><strong>lint-and-test</strong></td><td>ruff check + pytest (46 unit tests)</td><td>~15s</td></tr>
+  <tr><td><strong>smoke-test</strong></td><td>Downloads Blender 5.0.1 (cached), installs addon, runs headless verification</td><td>~30s</td></tr>
+  <tr><td><strong>build</strong></td><td>Packages <code>BlenderTools.zip</code>, uploads as downloadable artifact</td><td>~10s</td></tr>
+</table>
+<p>Jobs 2 and 3 run in parallel after Job 1 passes. Download the built zip from <strong>GitHub &gt; Actions &gt; latest run &gt; Artifacts</strong>.</p>
+
+<h2>Test Architecture</h2>
+<table>
+  <tr><th>File</th><th>Tests</th><th>What it covers</th></tr>
+  <tr><td><code>tests/conftest.py</code></td><td>&mdash;</td><td>Mocks bpy/bmesh/mathutils, patches relative imports</td></tr>
+  <tr><td><code>tests/test_model_manager.py</code></td><td>14</td><td>Adapter registry, model status, cache paths, install/remove</td></tr>
+  <tr><td><code>tests/test_bvh_utils.py</code></td><td>13</td><td>BVH file parsing (hierarchy, motion data, edge cases)</td></tr>
+  <tr><td><code>tests/test_anytop_adapter.py</code></td><td>13</td><td>6D rotation math, bone descriptions, fallback generation</td></tr>
+  <tr><td><code>tests/test_mesh_cnn_adapter.py</code></td><td>6</td><td>Segment-to-seam conversion, angle-based fallback</td></tr>
+  <tr><td><code>tests/smoke_test_blender.py</code></td><td>5</td><td>Addon registration, operators, panels (real Blender)</td></tr>
+</table>
+
+<h2>ML Model Management</h2>
+<p>Models are downloaded on demand via "Initialize" buttons in the UI. Cached at <code>~/.blendertools/models/</code>.</p>
+<table>
+  <tr><th>Model</th><th>Use</th><th>Source</th><th>License</th></tr>
+  <tr><td><strong>MeshCNN</strong></td><td>Seam prediction</td><td>Dropbox (weights) + GitHub (code)</td><td>MIT</td></tr>
+  <tr><td><strong>AnyTop</strong></td><td>Text-to-motion</td><td>HuggingFace <code>inbar2344/AnyTop</code></td><td>SIGGRAPH 2025</td></tr>
+  <tr><td><strong>SinMDM</strong></td><td>Style transfer</td><td>Google Drive + GitHub</td><td>MIT</td></tr>
+</table>
+<p>Adapter pattern (<code>core/ml/base_adapter.py</code>) allows swapping models without changing operator code.</p>
 </div>
 
 </div><!-- .main -->
