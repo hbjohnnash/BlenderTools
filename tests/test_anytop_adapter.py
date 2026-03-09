@@ -82,22 +82,46 @@ class TestBoneDescription:
 class TestFallbackGenerate:
     """Test the procedural fallback motion generator."""
 
-    def test_output_shape(self):
-        """Output should be (num_frames, num_joints, 6)."""
-        result = AnyTopAdapter._fallback_generate(5, 30, "walking")
-        assert result.shape == (30, 5, 6)
+    @staticmethod
+    def _make_skeleton(num_joints):
+        """Create a minimal skeleton dict for fallback testing."""
+        descs = ["spine bone", "left upper leg bone", "right upper leg bone",
+                 "left upper arm bone", "right upper arm bone"]
+        joints = []
+        for i in range(num_joints):
+            desc = descs[i] if i < len(descs) else "bone"
+            joints.append({
+                "name": f"bone_{i}",
+                "parent": max(0, i - 1) if i > 0 else -1,
+                "offset": [0, 0, 0.1],
+                "description": desc,
+            })
+        return {"joints": joints}
 
-    def test_identity_rotation_by_default(self):
-        """Default should set identity-like 6D rotation."""
-        result = AnyTopAdapter._fallback_generate(3, 10, "idle")
-        # First column X should be 1.0 (identity)
-        assert result[0, 0, 0] == 1.0
-        # Second column Y should be 1.0 (identity)
-        assert result[0, 0, 4] == 1.0
+    def test_output_shape(self):
+        """Output should be (num_frames) lists of (num_joints) tuples."""
+        skeleton = self._make_skeleton(5)
+        rots, root_pos = AnyTopAdapter._fallback_generate(skeleton, 30, "walking")
+        assert len(rots) == 30
+        assert len(rots[0]) == 5
+        assert len(rots[0][0]) == 3  # Euler XYZ
+        assert len(root_pos) == 30
+
+    def test_idle_near_zero(self):
+        """Idle should produce small but non-identity rotations."""
+        skeleton = self._make_skeleton(3)
+        rots, _ = AnyTopAdapter._fallback_generate(skeleton, 10, "idle")
+        # Spine bone (index 0) should have subtle motion
+        all_zero = all(
+            abs(rots[f][0][0]) < 1e-9 and abs(rots[f][0][1]) < 1e-9
+            for f in range(10)
+        )
+        assert not all_zero, "Idle should produce subtle motion on spine"
 
     def test_walk_prompt_adds_motion(self):
-        """Walk prompt should produce non-zero variation."""
-        result = AnyTopAdapter._fallback_generate(3, 60, "a person walking")
-        # Frame 0 and frame 30 should differ (oscillation)
-        diff = np.abs(result[0] - result[30]).sum()
-        assert diff > 0.0, "Walk should produce some motion"
+        """Walk prompt should produce visible rotation on legs."""
+        skeleton = self._make_skeleton(5)
+        rots, _ = AnyTopAdapter._fallback_generate(skeleton, 60, "a person walking")
+        # Left upper leg (index 1) should swing
+        vals = [abs(rots[f][1][0]) for f in range(60)]
+        assert max(vals) > 0.1, "Walk should produce visible leg swing"

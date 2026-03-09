@@ -524,6 +524,54 @@ class BT_OT_AIInbetween(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BT_OT_RetargetActionToFK(bpy.types.Operator):
+    bl_idname = "bt.retarget_action_to_fk"
+    bl_label = "Retarget Action to FK Controls"
+    bl_description = (
+        "Transfer the active action's keyframes from deform bones "
+        "to wrap rig FK controls so the animation becomes editable"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    all_actions: bpy.props.BoolProperty(
+        name="All Actions",
+        description="Retarget every action that references this armature's bones",
+        default=False,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        if not obj or obj.type != 'ARMATURE':
+            return False
+        from .retarget import has_wrap_rig
+        return has_wrap_rig(obj)
+
+    def execute(self, context):
+        arm_obj = context.active_object
+        from .retarget import retarget_action_to_fk, retarget_all_actions_to_fk
+
+        if self.all_actions:
+            count = retarget_all_actions_to_fk(arm_obj)
+            self.report({'INFO'}, f"Retargeted {count} FCurves across all actions")
+        else:
+            ad = arm_obj.animation_data
+            if not ad or not ad.action:
+                self.report({'WARNING'}, "No active action to retarget")
+                return {'CANCELLED'}
+            count = retarget_action_to_fk(arm_obj, ad.action)
+            self.report(
+                {'INFO'},
+                f"Retargeted {count} FCurves → FK controls "
+                f"({ad.action.name})",
+            )
+
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+
 classes = (
     BT_OT_MechanicalAnim,
     BT_OT_FollowPath,
@@ -536,6 +584,7 @@ classes = (
     BT_OT_AIGenerateMotion,
     BT_OT_AIStyleTransfer,
     BT_OT_AIInbetween,
+    BT_OT_RetargetActionToFK,
 )
 
 

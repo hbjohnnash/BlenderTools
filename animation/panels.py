@@ -91,6 +91,27 @@ class BT_PT_AnimationMain(bpy.types.Panel):
                     col.operator("bt.ai_style_transfer", icon='BRUSHES_ALL')
                     col.operator("bt.ai_inbetween", icon='IPO_BEZIER')
 
+                # Retarget to FK (visible when wrap rig exists + action)
+                from ..animation.retarget import has_wrap_rig
+                if (is_armature and has_wrap_rig(obj)
+                        and obj.animation_data
+                        and obj.animation_data.action):
+                    sub = box.box()
+                    sub.label(text="Retarget to FK", icon='CON_ARMATURE')
+                    col = sub.column(align=True)
+                    op = col.operator(
+                        "bt.retarget_action_to_fk",
+                        text="Active Action → FK",
+                        icon='ACTION',
+                    )
+                    op.all_actions = False
+                    op = col.operator(
+                        "bt.retarget_action_to_fk",
+                        text="All Actions → FK",
+                        icon='NLA',
+                    )
+                    op.all_actions = True
+
                 # Remove button
                 total_mb = (model_manager.get_cache_size_mb("anytop")
                             + model_manager.get_cache_size_mb("sinmdm"))

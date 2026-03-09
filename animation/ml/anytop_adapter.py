@@ -9,7 +9,7 @@ Paper:  SIGGRAPH 2025
 """
 
 import sys
-from math import atan2
+from math import atan2, pi
 
 import bpy
 
@@ -42,17 +42,30 @@ class AnyTopAdapter(BaseModelAdapter):
     def extract_skeleton(self, armature_obj):
         """Convert Blender armature to AnyTop skeleton description.
 
+        Only includes deform bones (skips CTRL/MCH wrap-rig helpers).
+
         Returns:
-            dict with 'joints' list and 'hierarchy' for the model.
+            dict with 'joints' list for the model.
         """
+        from ..retarget import get_deform_bone_names
+
+        deform_names = set(get_deform_bone_names(armature_obj))
         bones = armature_obj.data.bones
         joint_list = []
         name_to_idx = {}
 
         for bone in bones:
+            if bone.name not in deform_names:
+                continue
+
             idx = len(joint_list)
             name_to_idx[bone.name] = idx
-            parent_idx = name_to_idx.get(bone.parent.name, -1) if bone.parent else -1
+
+            # Walk up to find nearest *included* parent
+            parent = bone.parent
+            while parent and parent.name not in name_to_idx:
+                parent = parent.parent
+            parent_idx = name_to_idx[parent.name] if parent else -1
 
             if bone.parent:
                 offset = bone.head_local - bone.parent.head_local
@@ -78,18 +91,22 @@ class AnyTopAdapter(BaseModelAdapter):
             ("toe", "toe bone"),
             ("thigh", "upper leg bone"),
             ("shin", "lower leg bone"),
+            ("upper_leg", "upper leg bone"),
+            ("lower_leg", "lower leg bone"),
             ("leg", "leg bone"),
+            ("pelvis", "hip/pelvis bone"),
             ("hand", "hand bone"),
             ("finger", "finger bone"),
             ("shoulder", "shoulder bone"),
             ("clavicle", "clavicle bone"),
+            ("upper_arm", "upper arm bone"),
+            ("lower_arm", "lower arm bone"),
             ("arm", "arm bone"),
             ("head", "head bone"),
             ("neck", "neck bone"),
+            ("chest", "chest bone"),
             ("spine", "spine bone"),
             ("hip", "hip/pelvis bone"),
-            ("upper", "upper limb bone"),
-            ("lower", "lower limb bone"),
         ]
         for key, desc in parts:
             if key in name_lower:
@@ -183,32 +200,31 @@ class AnyTopAdapter(BaseModelAdapter):
             num_frames: Number of frames to generate.
 
         Returns:
-            dict with 'rotations' (list of per-joint Euler rotations per frame)
-            and 'root_positions' (list of root XYZ per frame).
+            dict with 'rotations' (list of per-joint Euler XYZ per frame),
+            'root_positions' (list of root XYZ per frame),
+            and 'joint_names'.
         """
-        self.load_model()
-
-        import torch
-
-        repo_root = self._repo_root
-        repo_str = str(repo_root)
-        if repo_str not in sys.path:
-            sys.path.insert(0, repo_str)
-
         joints = skeleton["joints"]
         num_joints = len(joints)
 
-        # Build skeleton topology tensor
-        parent_indices = torch.tensor(
-            [j["parent"] for j in joints], dtype=torch.long,
-        )
-        offsets = torch.tensor(
-            [j["offset"] for j in joints], dtype=torch.float32,
-        )
-        descriptions = [j["description"] for j in joints]
-
-        # Try using AnyTop's inference API
         try:
+            self.load_model()
+            import torch
+
+            repo_root = self._repo_root
+            repo_str = str(repo_root)
+            if repo_str not in sys.path:
+                sys.path.insert(0, repo_str)
+
+            # Build skeleton topology tensor
+            parent_indices = torch.tensor(
+                [j["parent"] for j in joints], dtype=torch.long,
+            )
+            offsets = torch.tensor(
+                [j["offset"] for j in joints], dtype=torch.float32,
+            )
+            descriptions = [j["description"] for j in joints]
+
             from model.generate import generate_motion
 
             result = generate_motion(
@@ -219,35 +235,33 @@ class AnyTopAdapter(BaseModelAdapter):
                 joint_descriptions=descriptions,
                 num_frames=num_frames,
             )
-            # result expected to be (num_frames, num_joints, 6) for 6D rotations
             rotations_6d = result.cpu().numpy()
 
-        except (ImportError, Exception):
-            # Fallback: generate simple procedural motion
-            rotations_6d = self._fallback_generate(
-                num_joints, num_frames, prompt,
-            )
+            # Convert 6D → Euler
+            rotations_euler = []
+            root_positions = []
+            for f in range(len(rotations_6d)):
+                frame_rots = []
+                for j in range(num_joints):
+                    if (rotations_6d[f].ndim > 1
+                            and rotations_6d[f].shape[-1] >= 6):
+                        euler = self._rotation_6d_to_euler(rotations_6d[f][j])
+                    else:
+                        euler = (0.0, 0.0, 0.0)
+                    frame_rots.append(euler)
+                rotations_euler.append(frame_rots)
 
-        # Convert 6D rotations to Euler angles
-        rotations_euler = []
-        root_positions = []
-
-        for f in range(len(rotations_6d)):
-            frame_rots = []
-            for j in range(num_joints):
-                if rotations_6d[f].ndim > 1 and rotations_6d[f].shape[-1] >= 6:
-                    r6d = rotations_6d[f][j]
-                    euler = self._rotation_6d_to_euler(r6d)
+                if (rotations_6d[f].ndim > 1
+                        and rotations_6d[f].shape[-1] >= 9):
+                    root_positions.append(tuple(rotations_6d[f][0][:3]))
                 else:
-                    euler = (0.0, 0.0, 0.0)
-                frame_rots.append(euler)
-            rotations_euler.append(frame_rots)
+                    root_positions.append((0.0, 0.0, 0.0))
 
-            # Root position (first 3 values if present)
-            if rotations_6d[f].ndim > 1 and rotations_6d[f].shape[-1] >= 9:
-                root_positions.append(tuple(rotations_6d[f][0][:3]))
-            else:
-                root_positions.append((0.0, 0.0, 0.0))
+        except Exception:
+            # Fallback: procedural motion (model not available)
+            rotations_euler, root_positions = self._fallback_generate(
+                skeleton, num_frames, prompt,
+            )
 
         return {
             "rotations": rotations_euler,
@@ -259,11 +273,10 @@ class AnyTopAdapter(BaseModelAdapter):
                      frame_start=1):
         """Apply generated motion data to a Blender armature.
 
-        Args:
-            armature_obj: Target armature object.
-            motion_data: dict from predict().
-            action_name: Name for the new action.
-            frame_start: Starting frame number.
+        Automatically detects whether a wrap rig is present and writes
+        keyframes to the appropriate bones (CTRL FK when wrap rig exists,
+        deform bones otherwise).  Sets target bones to Euler rotation
+        mode for intuitive editing.
 
         Returns:
             The created Action.
@@ -271,10 +284,29 @@ class AnyTopAdapter(BaseModelAdapter):
         from bpy_extras.anim_utils import action_ensure_channelbag_for_slot
 
         from ...core.utils import assign_channel_groups
+        from ..retarget import build_def_to_fk_map, has_wrap_rig
 
         if not action_name:
             action_name = f"{armature_obj.name}_AnyTop"
 
+        # Build bone target mapping
+        bone_map = {}  # joint_name → target_bone_name
+        using_fk = False
+        if has_wrap_rig(armature_obj):
+            def_to_fk = build_def_to_fk_map(armature_obj)
+            if def_to_fk:
+                using_fk = True
+                for jname in motion_data["joint_names"]:
+                    bone_map[jname] = def_to_fk.get(jname, jname)
+        if not bone_map:
+            for jname in motion_data["joint_names"]:
+                bone_map[jname] = jname
+
+        # Ensure FK mode on all chains when targeting FK controls
+        if using_fk:
+            self._ensure_fk_mode(armature_obj)
+
+        # Create action
         action = bpy.data.actions.new(name=action_name)
         if not armature_obj.animation_data:
             armature_obj.animation_data_create()
@@ -290,13 +322,17 @@ class AnyTopAdapter(BaseModelAdapter):
         num_frames = len(rotations)
 
         for ji, bone_name in enumerate(joint_names):
-            pbone = armature_obj.pose.bones.get(bone_name)
+            target_name = bone_map.get(bone_name, bone_name)
+            pbone = armature_obj.pose.bones.get(target_name)
             if pbone is None:
                 continue
 
+            # Set Euler mode so the rotation FCurves take effect
+            pbone.rotation_mode = 'XYZ_EULER'
+
             # Rotation FCurves
             for axis in range(3):
-                dp = f'pose.bones["{bone_name}"].rotation_euler'
+                dp = f'pose.bones["{target_name}"].rotation_euler'
                 fc = cb.fcurves.new(dp, index=axis)
                 fc.keyframe_points.add(num_frames)
                 for fi in range(num_frames):
@@ -305,10 +341,10 @@ class AnyTopAdapter(BaseModelAdapter):
                     kf.interpolation = 'BEZIER'
                 fc.update()
 
-            # Root position FCurves
+            # Root position (first joint only)
             if ji == 0 and root_positions:
                 for axis in range(3):
-                    dp = f'pose.bones["{bone_name}"].location'
+                    dp = f'pose.bones["{target_name}"].location'
                     fc = cb.fcurves.new(dp, index=axis)
                     fc.keyframe_points.add(num_frames)
                     for fi in range(num_frames):
@@ -319,6 +355,22 @@ class AnyTopAdapter(BaseModelAdapter):
 
         assign_channel_groups(armature_obj)
         return action
+
+    @staticmethod
+    def _ensure_fk_mode(armature_obj):
+        """Set all wrap rig chains to FK mode (disable IK influence)."""
+        from ...core.constants import WRAP_CONSTRAINT_PREFIX
+
+        for pbone in armature_obj.pose.bones:
+            for con in pbone.constraints:
+                if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
+                    continue
+                # IK constraints → influence 0; FK copy → influence 1
+                if con.type == 'IK':
+                    con.influence = 0.0
+                elif (con.type == 'COPY_TRANSFORMS'
+                      and "_FK_" in con.name):
+                    con.influence = 1.0
 
     # ── Rotation conversion ──
 
@@ -340,7 +392,6 @@ class AnyTopAdapter(BaseModelAdapter):
         b3 = np.cross(b1, b2)
 
         # Rotation matrix to Euler XYZ
-        # R = [[b1x b2x b3x], [b1y b2y b3y], [b1z b2z b3z]]
         R = np.column_stack([b1, b2, b3])
 
         sy = (R[0, 0] ** 2 + R[1, 0] ** 2) ** 0.5
@@ -355,29 +406,152 @@ class AnyTopAdapter(BaseModelAdapter):
 
         return (x, y, z)
 
-    # ── Fallback ──
+    # ── Fallback procedural motion ──
 
     @staticmethod
-    def _fallback_generate(num_joints, num_frames, prompt):
-        """Generate simple procedural motion when model inference fails."""
+    def _fallback_generate(skeleton, num_frames, prompt):
+        """Generate procedural motion when model inference fails.
+
+        Returns ``(rotations_euler, root_positions)`` directly in Euler
+        space so the caller can skip the 6D conversion.
+        """
         import numpy as np
 
+        joints = skeleton["joints"]
+        num_joints = len(joints)
         prompt_lower = prompt.lower()
-        motion = np.zeros((num_frames, num_joints, 6), dtype=np.float32)
 
-        # Set identity rotation (6D: first two columns of identity matrix)
-        for f in range(num_frames):
-            for j in range(num_joints):
-                motion[f, j, 0] = 1.0  # col1.x
-                motion[f, j, 4] = 1.0  # col2.y
+        # Classify each joint by its description
+        roles = {}  # index → set of tags
+        for i, j in enumerate(joints):
+            desc = j.get("description", "").lower()
+            tags = set()
+            if "spine" in desc or "chest" in desc:
+                tags.add("spine")
+            if "hip" in desc or "pelvis" in desc:
+                tags.add("hip")
+            if "upper leg" in desc:
+                tags.add("upper_leg")
+            if "lower leg" in desc:
+                tags.add("lower_leg")
+            if "foot" in desc:
+                tags.add("foot")
+            if "upper arm" in desc or "upper limb" in desc:
+                tags.add("upper_arm")
+            if "lower arm" in desc or "lower limb" in desc:
+                tags.add("lower_arm")
+            if "head" in desc:
+                tags.add("head")
+            if "neck" in desc:
+                tags.add("neck")
+            if "left" in desc:
+                tags.add("left")
+            if "right" in desc:
+                tags.add("right")
+            roles[i] = tags
 
-        # Add simple oscillation for common prompts
-        freq = 2.0 * np.pi / num_frames
-        if any(w in prompt_lower for w in ["walk", "run", "jog"]):
+        # Initialise output as zeros
+        rots = [[(0.0, 0.0, 0.0)] * num_joints for _ in range(num_frames)]
+        root_pos = [(0.0, 0.0, 0.0)] * num_frames
+
+        is_walk = any(w in prompt_lower for w in ["walk", "run", "jog"])
+        is_idle = any(w in prompt_lower
+                      for w in ["idle", "stand", "breathe", "rest"])
+
+        if is_walk:
+            speed = 4.0 if "run" in prompt_lower else 2.0
+            amp = 0.5 if "run" in prompt_lower else 0.3
+            stride = 3.0 if "run" in prompt_lower else 2.0
+
             for f in range(num_frames):
-                t = f * freq * 2
-                # Subtle spine rotation
-                if num_joints > 0:
-                    motion[f, 0, 3] = np.sin(t) * 0.05  # slight side sway
+                t = f / num_frames * 2 * pi * speed
 
-        return motion
+                # Root: forward translation + subtle bounce
+                root_pos[f] = (
+                    0.0,
+                    f / num_frames * stride,
+                    abs(np.sin(t)) * 0.03,
+                )
+
+                for ji in range(num_joints):
+                    tags = roles.get(ji, set())
+                    rx, ry, rz = 0.0, 0.0, 0.0
+
+                    if "spine" in tags:
+                        rz = np.sin(t) * 0.04
+                        ry = np.sin(t * 2) * 0.02
+
+                    elif "hip" in tags:
+                        rz = np.sin(t) * 0.03
+
+                    elif "upper_leg" in tags:
+                        phase = 0 if "left" in tags else pi
+                        rx = np.sin(t + phase) * amp
+
+                    elif "lower_leg" in tags:
+                        phase = 0 if "left" in tags else pi
+                        # Knee bends back more during swing
+                        rx = max(0, np.sin(t + phase + 0.5)) * amp * 0.8
+
+                    elif "foot" in tags:
+                        phase = 0 if "left" in tags else pi
+                        rx = np.sin(t + phase + 1.0) * amp * 0.3
+
+                    elif "upper_arm" in tags:
+                        # Arms swing opposite to legs
+                        phase = pi if "left" in tags else 0
+                        rx = np.sin(t + phase) * amp * 0.4
+
+                    elif "lower_arm" in tags:
+                        phase = pi if "left" in tags else 0
+                        rx = max(0, np.sin(t + phase + 0.3)) * amp * 0.3
+
+                    elif "head" in tags:
+                        ry = np.sin(t * 2) * 0.01
+
+                    elif "neck" in tags:
+                        rz = np.sin(t) * 0.02
+
+                    rots[f][ji] = (rx, ry, rz)
+
+        elif is_idle:
+            # Subtle breathing / weight shift
+            for f in range(num_frames):
+                t = f / num_frames * 2 * pi
+
+                for ji in range(num_joints):
+                    tags = roles.get(ji, set())
+                    rx, ry, rz = 0.0, 0.0, 0.0
+
+                    if "spine" in tags:
+                        rx = np.sin(t) * 0.015
+                    elif "hip" in tags:
+                        rz = np.sin(t * 0.5) * 0.01
+                    elif "upper_arm" in tags:
+                        rx = np.sin(t) * 0.01
+                    elif "head" in tags:
+                        ry = np.sin(t * 0.7) * 0.02
+
+                    rots[f][ji] = (rx, ry, rz)
+
+        else:
+            # Generic: gentle oscillation on spine + arms
+            for f in range(num_frames):
+                t = f / num_frames * 2 * pi
+
+                for ji in range(num_joints):
+                    tags = roles.get(ji, set())
+                    rx, ry, rz = 0.0, 0.0, 0.0
+
+                    if "spine" in tags:
+                        rx = np.sin(t) * 0.1
+                        rz = np.sin(t * 0.5) * 0.05
+                    elif "upper_arm" in tags:
+                        phase = 0 if "left" in tags else pi
+                        rx = np.sin(t + phase) * 0.15
+                    elif "head" in tags:
+                        ry = np.sin(t) * 0.05
+
+                    rots[f][ji] = (rx, ry, rz)
+
+        return rots, root_pos
