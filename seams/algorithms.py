@@ -1,9 +1,11 @@
 """Pure BMesh seam logic — no operators, just functions."""
 
+import math
+import os
+import tempfile
+
 import bmesh
 import bpy
-import math
-from mathutils import Vector
 
 
 def mark_seams_by_angle(bm, threshold_degrees=30.0):
@@ -177,6 +179,69 @@ def mark_seams_projection(bm, obj, mode='BOX'):
     return count
 
 
+def mark_seams_neural(obj):
+    """Mark seams using MeshCNN neural network prediction.
+
+    The mesh is exported to a temporary OBJ, run through MeshCNN's
+    pretrained body segmentation model, and segment boundaries are
+    marked as seam edges.
+
+    Must be called in OBJECT mode — the function handles mode switching.
+
+    Args:
+        obj: The mesh object to process.
+
+    Returns:
+        Number of edges marked as seams.
+    """
+    from .ml.mesh_cnn_adapter import MeshCNNAdapter
+
+    adapter = MeshCNNAdapter.get_instance()
+    if not adapter.is_ready():
+        raise RuntimeError(
+            "MeshCNN not initialized. Click 'Initialize AI Seams' first."
+        )
+
+    # Export mesh to temp OBJ (must be in object mode)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+
+    fd, temp_path = tempfile.mkstemp(suffix=".obj")
+    os.close(fd)
+    try:
+        bpy.ops.wm.obj_export(
+            filepath=temp_path,
+            export_selected_objects=True,
+            export_uv=False,
+            export_normals=True,
+        )
+
+        # Run neural prediction
+        seam_edge_indices = adapter.predict(temp_path)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+        # Also remove the .mtl sidecar if created
+        mtl_path = temp_path.replace(".obj", ".mtl")
+        if os.path.exists(mtl_path):
+            os.unlink(mtl_path)
+
+    # Switch back to edit mode and mark the predicted edges
+    bpy.ops.object.mode_set(mode='EDIT')
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.edges.ensure_lookup_table()
+
+    count = 0
+    for edge_idx in seam_edge_indices:
+        if 0 <= edge_idx < len(bm.edges):
+            bm.edges[edge_idx].seam = True
+            count += 1
+
+    bmesh.update_edit_mesh(obj.data)
+    return count
+
+
 def clear_all_seams(bm):
     """Clear all seams on the mesh."""
     for edge in bm.edges:
@@ -194,8 +259,8 @@ def apply_seam_preset(bm, obj, preset_name):
     Returns:
         Number of edges marked.
     """
-    from ..core.utils import load_json_preset
     from ..core.constants import SEAM_PRESET_DIR
+    from ..core.utils import load_json_preset
 
     preset = load_json_preset(SEAM_PRESET_DIR, preset_name)
 

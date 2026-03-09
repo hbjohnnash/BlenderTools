@@ -23,16 +23,18 @@ def get_module_items(self=None, context=None):
 
 
 # Import all modules to trigger registration
-from . import spine
-from . import arm
-from . import leg
-from . import tail
-from . import wing
-from . import tentacle
-from . import neck_head
-from . import finger_chain
-from . import piston
-from . import wheel
-from . import jaw
-from . import eye
-from . import custom_chain
+from . import (
+    arm,
+    custom_chain,
+    eye,
+    finger_chain,
+    jaw,
+    leg,
+    neck_head,
+    piston,
+    spine,
+    tail,
+    tentacle,
+    wheel,
+    wing,
+)

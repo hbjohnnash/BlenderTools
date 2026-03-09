@@ -1,7 +1,8 @@
 """Scale an armature rig and update all related data."""
 
-import bpy
 import json
+
+import bpy
 
 
 def scale_rig(armature_obj, factor):
@@ -189,10 +190,6 @@ def _scale_child_meshes(armature_obj, factor):
     for child in armature_obj.children:
         if child.type != 'MESH':
             continue
-
-        # Temporarily clear parent to avoid transform inheritance issues
-        parent_type = child.parent_type
-        parent_bone = child.parent_bone
 
         # Scale the mesh data directly in edit mode for clean results
         child.scale = (factor, factor, factor)

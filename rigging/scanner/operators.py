@@ -3,15 +3,23 @@
 import math
 
 import bpy
+
+from ...core.constants import WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX
+from .floor_contact import (
+    remove_floor_contact,
+    setup_floor_contact,
+    toggle_toe_bend_for_chain,
+)
 from .scan import scan_skeleton
 from .wrap_assembly import (
-    assemble_wrap_rig, disassemble_wrap_rig, bake_to_def,
-    snap_fk_to_ik, snap_ik_to_fk, snap_spline_to_fk, toggle_ik_limits,
+    assemble_wrap_rig,
+    bake_to_def,
+    disassemble_wrap_rig,
+    snap_fk_to_ik,
+    snap_ik_to_fk,
+    snap_spline_to_fk,
+    toggle_ik_limits,
 )
-from .floor_contact import (
-    setup_floor_contact, remove_floor_contact, toggle_toe_bend_for_chain,
-)
-from ...core.constants import WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX
 
 
 def _scan_data_to_props(armature_obj, scan_data):

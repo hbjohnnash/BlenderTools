@@ -1,0 +1,7 @@
+# Development/CI dependencies — install with: pip install -r requirements-dev.txt
+# These are NOT needed inside Blender, only for linting and testing.
+
+ruff>=0.8.0        # Linter (Step 1)
+pytest>=8.0        # Test runner (Step 2)
+pytest-mock>=3.14  # Convenient mock fixtures for pytest
+numpy>=1.26        # Used by AnyTop adapter tests

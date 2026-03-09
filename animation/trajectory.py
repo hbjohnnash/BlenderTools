@@ -6,18 +6,22 @@ or triggers IK-assisted editing for FK bones (temporarily enables IK,
 snaps FK on release, keys FK rotations).
 """
 
+from math import cos, pi, sin
+
+import blf
 import bpy
 import gpu
-import blf
-from gpu_extras.batch import batch_for_shader
-from mathutils import Vector, Matrix
-from math import cos, sin, pi
 from bpy_extras.view3d_utils import (
     location_3d_to_region_2d,
     region_2d_to_location_3d,
 )
+from gpu_extras.batch import batch_for_shader
+from mathutils import Matrix, Vector
+
 from ..core.constants import (
-    PANEL_CATEGORY, WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX, WRAP_CONSTRAINT_PREFIX,
+    WRAP_CONSTRAINT_PREFIX,
+    WRAP_CTRL_PREFIX,
+    WRAP_MCH_PREFIX,
 )
 
 # ---------------------------------------------------------------------------
@@ -668,7 +672,7 @@ class BT_OT_Trajectory(bpy.types.Operator):
         global _ik_saved_constraints
 
         from ..rigging.scanner.wrap_assembly import snap_fk_to_ik
-        from .smart_keyframe import _key_rotation, _get_chain_fk_pbones
+        from .smart_keyframe import _get_chain_fk_pbones, _key_rotation
 
         sd = obj.bt_scan
         frame = _drag_frame

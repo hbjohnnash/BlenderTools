@@ -1,6 +1,7 @@
 """Addon preferences — bridge port, defaults."""
 
 import bpy
+
 from .constants import BRIDGE_PORT
 
 

@@ -1,6 +1,7 @@
 """Bridge UI panels — Start/Stop button, status."""
 
 import bpy
+
 from ..core.constants import PANEL_CATEGORY
 
 

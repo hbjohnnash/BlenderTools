@@ -1,7 +1,6 @@
 """Export & scale subsystem."""
 
-from . import operators
-from . import panels
+from . import operators, panels
 
 
 def register():

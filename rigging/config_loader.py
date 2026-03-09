@@ -1,8 +1,9 @@
 """JSON config parser for rig configurations."""
 
 import json
-from ..core.utils import load_json_preset, save_json_preset
+
 from ..core.constants import RIG_CONFIG_DIR
+from ..core.utils import load_json_preset, save_json_preset
 from .modules import get_module_class
 
 

@@ -1,6 +1,7 @@
 """Neck + Head rig module — three-tier (CTRL -> MCH -> DEF) FK chain."""
 
 from mathutils import Vector
+
 from ..module_base import RigModule
 from . import register_module
 

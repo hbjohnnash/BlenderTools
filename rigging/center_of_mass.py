@@ -7,15 +7,16 @@ Shows in pose mode:
 - Balance indicator bar
 """
 
+from math import cos, pi, sin
+
+import blf
 import bpy
 import gpu
-import blf
+from bpy.props import BoolProperty, CollectionProperty, FloatProperty, StringProperty
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector
-from math import cos, sin, pi
-from bpy.props import FloatProperty, StringProperty, BoolProperty, CollectionProperty
-from ..core.constants import PANEL_CATEGORY
 
+from ..core.constants import PANEL_CATEGORY
 
 # ---------------------------------------------------------------------------
 # Properties

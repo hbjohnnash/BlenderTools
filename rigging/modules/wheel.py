@@ -17,8 +17,9 @@ MCH bones are parented to their respective CTRLs.
 CTRL-Position inherits axle's skeleton parent.
 """
 
+
 from mathutils import Vector
-from math import pi
+
 from ..module_base import RigModule
 from . import register_module
 

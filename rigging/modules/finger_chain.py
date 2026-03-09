@@ -1,6 +1,7 @@
 """Finger chain rig module — three-tier (CTRL -> MCH -> DEF) individual finger with curl controls."""
 
 from mathutils import Vector
+
 from ..module_base import RigModule
 from . import register_module
 

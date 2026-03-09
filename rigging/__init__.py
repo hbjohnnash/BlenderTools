@@ -1,11 +1,6 @@
 """Modular rigging subsystem."""
 
-from . import operators
-from . import panels
-from . import scanner
-from . import viewport_overlay
-from . import center_of_mass
-from . import shapes
+from . import center_of_mass, operators, panels, scanner, shapes, viewport_overlay
 
 
 def register():

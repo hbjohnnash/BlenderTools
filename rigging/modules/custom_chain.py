@@ -1,6 +1,7 @@
 """Custom chain rig module — three-tier (CTRL -> MCH -> DEF) generic FK/IK bone chain."""
 
 from mathutils import Vector
+
 from ..module_base import RigModule
 from . import register_module
 

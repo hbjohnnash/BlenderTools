@@ -1,6 +1,5 @@
 """Facial expression shape key presets."""
 
-import bpy
 
 # Expression preset definitions: name -> {shape_key_name: value}
 EXPRESSION_PRESETS = {

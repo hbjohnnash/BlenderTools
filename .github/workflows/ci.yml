@@ -1,0 +1,56 @@
+# ──────────────────────────────────────────────────────────────
+# BlenderTools CI — Lint + Test on every push and pull request
+# ──────────────────────────────────────────────────────────────
+# This workflow runs on GitHub's free Linux runners.
+# No Docker needed — just Python on a clean virtual machine.
+
+name: CI
+
+# ── When does this run? ──
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest    # GitHub provides a fresh Linux VM
+
+    strategy:
+      matrix:
+        python-version: ["3.12"]    # Match Blender 5.0's Python
+
+    steps:
+      # 1. Check out the repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Install the Python version we need
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # 3. Cache pip packages so repeat runs are faster
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # 4. Install dev dependencies (linter + test runner + test libs)
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      # 5. Run the linter — catches style issues and import errors
+      - name: Lint with Ruff
+        run: ruff check .
+
+      # 6. Run the test suite — catches logic bugs
+      - name: Test with pytest
+        run: pytest --tb=short -q

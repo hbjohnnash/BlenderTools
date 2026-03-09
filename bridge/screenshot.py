@@ -1,9 +1,10 @@
 """Viewport capture via gpu module (Blender 5.0 — no legacy BGL)."""
 
-import bpy
 import base64
-import tempfile
 import os
+import tempfile
+
+import bpy
 
 
 def capture_viewport(width=960, height=540):
@@ -19,8 +20,6 @@ def capture_viewport(width=960, height=540):
         Dict with success status and base64 image data.
     """
     try:
-        import gpu
-        from gpu_extras.presets import draw_texture_2d
 
         # Use Blender's built-in opengl render
         # Save to temp file, read back as base64

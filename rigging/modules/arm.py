@@ -1,6 +1,7 @@
 """Arm rig module — three-tier (CTRL -> MCH -> DEF) IK/FK with optional clavicle and twist bones."""
 
 from mathutils import Vector
+
 from ..module_base import RigModule
 from . import register_module
 

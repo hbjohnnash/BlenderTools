@@ -37,3 +37,8 @@ WRAP_CTRL_PREFIX = "CTRL-Wrap_"
 WRAP_MCH_PREFIX = "MCH-Wrap_"
 WRAP_CONSTRAINT_PREFIX = "BT_Wrap_"
 WRAP_SPLINE_PREFIX = "BT_Wrap_Spline_"
+
+# ML model IDs
+ML_MODEL_MESHCNN = "meshcnn"
+ML_MODEL_ANYTOP = "anytop"
+ML_MODEL_SINMDM = "sinmdm"

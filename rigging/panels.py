@@ -1,6 +1,7 @@
 """Rigging UI panels."""
 
 import bpy
+
 from ..core.constants import PANEL_CATEGORY
 from .config_loader import config_from_armature
 

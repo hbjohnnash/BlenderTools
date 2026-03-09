@@ -1,6 +1,7 @@
 """Seam creation UI panels."""
 
 import bpy
+
 from ..core.constants import PANEL_CATEGORY
 
 
@@ -48,6 +49,33 @@ class BT_PT_SeamsMain(bpy.types.Panel):
         col = box.column(align=True)
         col.operator("bt.seam_preset")
         col.operator("bt.clear_seams", icon='X')
+
+        # AI Seams
+        box = layout.box()
+        box.label(text="AI Seams", icon='OUTLINER_OB_LIGHT')
+        box.separator(factor=0.3)
+
+        wm = context.window_manager
+        from ..core.ml import model_manager
+
+        if wm.bt_ml_busy and wm.bt_ml_status:
+            box.label(text=wm.bt_ml_status, icon='SORTTIME')
+            col = box.column(align=True)
+            col.scale_y = 0.5
+            col.prop(wm, "bt_ml_progress", text="", slider=True)
+        elif model_manager.is_model_installed("meshcnn"):
+            col = box.column(align=True)
+            col.label(text="MeshCNN: Ready", icon='CHECKMARK')
+            col.operator("bt.seam_neural", icon='OUTLINER_OB_LIGHT')
+            row = col.row(align=True)
+            size = model_manager.get_cache_size_mb("meshcnn")
+            row.operator(
+                "bt.remove_seam_ai",
+                text=f"Remove ({size:.0f} MB)",
+                icon='TRASH',
+            )
+        else:
+            box.operator("bt.init_seam_ai", icon='IMPORT')
 
 
 classes = (

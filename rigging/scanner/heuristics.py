@@ -1,7 +1,5 @@
 """Position and hierarchy heuristics for bones not matched by name maps."""
 
-import math
-from mathutils import Vector
 
 
 def analyze_by_heuristics(armature_obj, already_mapped):
@@ -119,8 +117,6 @@ def analyze_by_heuristics(armature_obj, already_mapped):
         chain = _get_chain_follow_main(branch, bones, bone_heads, bone_tails)
         if not chain:
             continue
-
-        branch_pos = bone_heads[branch.name]
 
         # Classify by position and direction
         module_type = _classify_branch(

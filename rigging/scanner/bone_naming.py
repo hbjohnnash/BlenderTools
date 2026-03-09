@@ -7,19 +7,22 @@ When bones follow this convention, the scanner detects them instantly
 with 100% confidence -- no heuristic analysis needed.
 """
 
-import bpy
-import blf
-import gpu
 import time
-from gpu_extras.batch import batch_for_shader
-from mathutils import Vector
-from math import cos, sin, pi
-from bpy.props import StringProperty, EnumProperty, IntProperty
-from ...core.constants import (
-    DEFORM_PREFIX, CONTROL_PREFIX, MECHANISM_PREFIX,
-    WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX,
-)
+from math import cos, pi, sin
 
+import blf
+import bpy
+import gpu
+from bpy.props import EnumProperty, IntProperty, StringProperty
+from gpu_extras.batch import batch_for_shader
+
+from ...core.constants import (
+    CONTROL_PREFIX,
+    DEFORM_PREFIX,
+    MECHANISM_PREFIX,
+    WRAP_CTRL_PREFIX,
+    WRAP_MCH_PREFIX,
+)
 
 # ---------------------------------------------------------------------------
 # Naming convention tables

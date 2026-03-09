@@ -1,6 +1,7 @@
 """Animation UI panels."""
 
 import bpy
+
 from ..core.constants import PANEL_CATEGORY
 
 
@@ -53,6 +54,56 @@ class BT_PT_AnimationMain(bpy.types.Panel):
         col = box.column(align=True)
         col.operator("bt.match_cycle_keyframes", icon='FILE_REFRESH')
         col.operator("bt.push_to_nla", icon='NLA')
+
+        # ── AI Motion ──
+        is_armature = obj and obj.type == 'ARMATURE'
+        box = layout.box()
+        box.label(text="AI Motion", icon='OUTLINER_OB_LIGHT')
+        box.separator(factor=0.3)
+
+        wm = context.window_manager
+        from ..core.ml import model_manager
+
+        if wm.bt_ml_busy and wm.bt_ml_status:
+            box.label(text=wm.bt_ml_status, icon='SORTTIME')
+            col = box.column(align=True)
+            col.scale_y = 0.5
+            col.prop(wm, "bt_ml_progress", text="", slider=True)
+        else:
+            anytop_ready = model_manager.is_model_installed("anytop")
+            sinmdm_ready = model_manager.is_model_installed("sinmdm")
+
+            if anytop_ready or sinmdm_ready:
+                # AnyTop — Text-to-Motion
+                if anytop_ready:
+                    sub = box.box()
+                    sub.label(text="Text-to-Motion (AnyTop)", icon='CHECKMARK')
+                    col = sub.column(align=True)
+                    col.enabled = is_armature
+                    col.operator("bt.ai_generate_motion", icon='PLAY')
+
+                # SinMDM — Style & In-Between
+                if sinmdm_ready:
+                    sub = box.box()
+                    sub.label(text="Style & In-Between (SinMDM)", icon='CHECKMARK')
+                    col = sub.column(align=True)
+                    col.enabled = is_armature
+                    col.operator("bt.ai_style_transfer", icon='BRUSHES_ALL')
+                    col.operator("bt.ai_inbetween", icon='IPO_BEZIER')
+
+                # Remove button
+                total_mb = (model_manager.get_cache_size_mb("anytop")
+                            + model_manager.get_cache_size_mb("sinmdm"))
+                row = box.row(align=True)
+                row.operator(
+                    "bt.remove_anim_ai",
+                    text=f"Remove Models ({total_mb:.0f} MB)",
+                    icon='TRASH',
+                )
+            else:
+                box.operator("bt.init_anim_ai", icon='IMPORT')
+                if not is_armature:
+                    box.label(text="Select an armature to use AI motion", icon='INFO')
 
 
 class BT_PT_TrajectorySettings(bpy.types.Panel):

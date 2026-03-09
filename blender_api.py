@@ -24,12 +24,11 @@ Usage:
     python blender_api.py rig-toggle-fk-ik --armature Armature --chain leg_L --mode IK
 """
 
-import sys
+import argparse
 import json
-import urllib.request
 import urllib.error
 import urllib.parse
-import argparse
+import urllib.request
 
 DEFAULT_PORT = 19785
 BASE = "/blendertools"
@@ -150,7 +149,7 @@ def cmd_rig_generate(args):
 
 def cmd_rig_load(args):
     config_path = args.config
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config = json.load(f)
     data = {"armature": args.armature, "config": config}
     _print_result(_post_json("rig/load-config", data, port=args.port))

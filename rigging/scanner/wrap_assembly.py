@@ -10,8 +10,12 @@ import math
 
 import bpy
 from mathutils import Vector
+
 from ...core.constants import (
-    WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX, WRAP_CONSTRAINT_PREFIX, WRAP_SPLINE_PREFIX,
+    WRAP_CONSTRAINT_PREFIX,
+    WRAP_CTRL_PREFIX,
+    WRAP_MCH_PREFIX,
+    WRAP_SPLINE_PREFIX,
 )
 from ...core.utils import assign_channel_groups
 
@@ -721,6 +725,7 @@ def snap_ik_to_fk(armature_obj, chain_id):
       MCH bones outside (foot/toe) → keep FK active, inherit IK-solved parent
     """
     import math
+
     from mathutils import Matrix
 
     sd = armature_obj.bt_scan
@@ -756,14 +761,17 @@ def snap_ik_to_fk(armature_obj, chain_id):
     # For 2-bone: ik_mch.head IS the joint (no walk needed).
     # For 3+: walk up (chain_count-1)//2 steps to find the middle bone.
     if ik_chain_count <= 2:
-        mid_point_getter = lambda: ik_mch.head.copy()
+        def mid_point_getter():
+            return ik_mch.head.copy()
     else:
         mid_steps = (ik_chain_count - 1) // 2
         mid_pb = ik_mch
         for _ in range(mid_steps):
             if mid_pb.parent:
                 mid_pb = mid_pb.parent
-        mid_point_getter = lambda: mid_pb.head.copy()
+
+        def mid_point_getter():
+            return mid_pb.head.copy()
 
     # Snap IK target to the chain tip (tail of the IK bone = foot/hand)
     ik_target_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"

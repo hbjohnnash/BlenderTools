@@ -9,10 +9,15 @@ The animation stays visually identical — only the root bone gains locomotion d
 """
 
 import bpy
-from mathutils import Vector
 from bpy.props import (
-    StringProperty, BoolProperty, CollectionProperty, PointerProperty, IntProperty,
+    BoolProperty,
+    CollectionProperty,
+    IntProperty,
+    PointerProperty,
+    StringProperty,
 )
+from mathutils import Vector
+
 from ..core.constants import PANEL_CATEGORY, WRAP_CTRL_PREFIX
 from ..core.utils import assign_channel_groups
 

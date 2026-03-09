@@ -25,6 +25,7 @@ no mapping is provided.
 """
 
 from mathutils import Vector
+
 from ..module_base import RigModule
 from . import register_module
 

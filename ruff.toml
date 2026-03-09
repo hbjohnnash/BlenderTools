@@ -1,0 +1,34 @@
+# Ruff linter configuration for BlenderTools
+# Docs: https://docs.astral.sh/ruff/
+
+# Target Python version (Blender 5.0 ships Python 3.12)
+target-version = "py312"
+
+# Max line length — 95 is a good balance for readability
+line-length = 95
+
+[lint]
+# Rules we enable:
+#   E = pycodestyle errors (basic style)
+#   F = pyflakes (unused imports, undefined names, etc.)
+#   W = pycodestyle warnings
+#   I = isort (import ordering)
+#   UP = pyupgrade (use modern Python syntax)
+select = ["E", "F", "W", "I", "UP"]
+
+# Rules we ignore:
+#   E501 = line too long (we handle this via line-length, not per-line)
+#   F401 = unused import (some imports are needed for Blender registration)
+#   E402 = module-level import not at top (Blender addons do conditional imports)
+ignore = ["E501", "E402"]
+
+# Files/dirs to skip entirely
+[lint.per-file-ignores]
+# __init__.py files often have imports just for re-export
+"__init__.py" = ["F401"]
+# Test files can have wildcard imports for fixtures
+"tests/*" = ["F401", "F811"]
+
+[format]
+# Use double quotes (Python convention)
+quote-style = "double"

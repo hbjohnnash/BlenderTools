@@ -1,13 +1,18 @@
 """Rigging operators — add module, remove module, generate rig, load/save config."""
 
+
 import bpy
-import json
-from .modules import get_module_items, get_module_class, MODULE_REGISTRY
-from .config_loader import (
-    instantiate_modules, load_rig_config, save_rig_config,
-    config_from_armature, store_config_on_armature, list_rig_configs,
-)
+
 from .assembly import assemble_rig, disassemble_rig
+from .config_loader import (
+    config_from_armature,
+    instantiate_modules,
+    list_rig_configs,
+    load_rig_config,
+    save_rig_config,
+    store_config_on_armature,
+)
+from .modules import get_module_class, get_module_items
 
 
 class BT_OT_AddRigModule(bpy.types.Operator):

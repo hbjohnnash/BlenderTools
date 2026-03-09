@@ -2,7 +2,6 @@
 
 import bpy
 
-
 # Default bone name mappings between common rig formats
 DEFAULT_MAPPINGS = {
     "mixamo_to_bt": {

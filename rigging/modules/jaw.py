@@ -1,6 +1,7 @@
 """Jaw rig module — three-tier (CTRL -> MCH -> DEF) simple hinge for mouth/jaw."""
 
 from mathutils import Vector
+
 from ..module_base import RigModule
 from . import register_module
 

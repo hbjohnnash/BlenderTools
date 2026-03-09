@@ -1,6 +1,7 @@
 """Spine rig module — three-tier (CTRL → MCH → DEF) FK chain with optional IK spline."""
 
 from mathutils import Vector
+
 from ..module_base import RigModule
 from . import register_module
 

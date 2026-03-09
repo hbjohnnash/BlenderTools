@@ -1,6 +1,7 @@
 """Tentacle rig module — three-tier (CTRL -> MCH -> DEF) long FK chain with IK tip and stretch."""
 
 from mathutils import Vector
+
 from ..module_base import RigModule
 from . import register_module
 

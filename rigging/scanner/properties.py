@@ -4,8 +4,13 @@ import math
 
 import bpy
 from bpy.props import (
-    StringProperty, EnumProperty, BoolProperty, FloatProperty,
-    IntProperty, CollectionProperty, PointerProperty,
+    BoolProperty,
+    CollectionProperty,
+    EnumProperty,
+    FloatProperty,
+    IntProperty,
+    PointerProperty,
+    StringProperty,
 )
 
 BONE_MODULE_TYPE_ITEMS = [

@@ -1,6 +1,7 @@
 """Skinning operators — auto-weight, rigid bind, cleanup."""
 
 import bpy
+
 from . import algorithms
 
 

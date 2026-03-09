@@ -1,7 +1,8 @@
 """Route dispatch for bridge HTTP requests."""
 
+
 import bpy
-import json
+
 from ..core.constants import BRIDGE_PREFIX
 
 
@@ -129,7 +130,8 @@ def _seam_by_angle(body):
         return None, err
 
     import bmesh
-    from ..seams.algorithms import mark_seams_by_angle, clear_all_seams
+
+    from ..seams.algorithms import clear_all_seams, mark_seams_by_angle
 
     bpy.context.view_layer.objects.active = obj
     bpy.ops.object.mode_set(mode='EDIT')
@@ -151,6 +153,7 @@ def _seam_preset(body):
         return None, err
 
     import bmesh
+
     from ..seams.algorithms import apply_seam_preset
 
     bpy.context.view_layer.objects.active = obj
@@ -186,8 +189,8 @@ def _rig_generate(body):
     if err:
         return None, err
 
-    from ..rigging.config_loader import config_from_armature, instantiate_modules
     from ..rigging.assembly import assemble_rig, disassemble_rig
+    from ..rigging.config_loader import config_from_armature, instantiate_modules
 
     config = config_from_armature(arm)
     if not config:
@@ -288,7 +291,9 @@ def _anim_mechanical(body):
     params = body.get("params", {})
 
     from ..animation.procedural.mechanical import (
-        generate_piston_cycle, generate_gear_rotation, generate_conveyor
+        generate_conveyor,
+        generate_gear_rotation,
+        generate_piston_cycle,
     )
 
     if anim_type == "piston_cycle":
@@ -356,8 +361,8 @@ def _rig_scan_skeleton(body):
     if err:
         return None, err
 
-    from ..rigging.scanner.scan import scan_skeleton
     from ..rigging.scanner.operators import _scan_data_to_props
+    from ..rigging.scanner.scan import scan_skeleton
     scan_data = scan_skeleton(arm)
     _scan_data_to_props(arm, scan_data)
 
@@ -665,11 +670,7 @@ def _exec_code(body):
     if not code:
         return None, "Missing 'code' in body"
 
-    # Safety: only allow bpy and mathutils
-    allowed_modules = {"bpy", "mathutils", "math", "json"}
-
     # Basic safety check — no os, subprocess, sys, etc.
-    import re
     for dangerous in ["import os", "import sys", "import subprocess",
                        "__import__", "eval(", "exec(", "open(",
                        "shutil", "pathlib"]:

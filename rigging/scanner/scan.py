@@ -1,8 +1,8 @@
 """Core scan orchestrator — combines name maps, BT convention, and heuristics."""
 
-from .name_maps import detect_skeleton_type, apply_name_map
+from .bone_naming import INDEXED_TYPES, parse_bt_name
 from .heuristics import analyze_by_heuristics
-from .bone_naming import parse_bt_name, INDEXED_TYPES
+from .name_maps import apply_name_map, detect_skeleton_type
 
 
 def scan_skeleton(armature_obj):

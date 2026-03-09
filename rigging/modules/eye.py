@@ -1,6 +1,7 @@
 """Eye rig module — three-tier (CTRL -> MCH -> DEF) aim-based eye with optional eyelid bones."""
 
 from mathutils import Vector
+
 from ..module_base import RigModule
 from . import register_module
 

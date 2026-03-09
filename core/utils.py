@@ -1,14 +1,11 @@
 """Shared BMesh/math helpers and Blender 5.0 animation utilities."""
 
-import re
-
-import bpy
-import bmesh
-import mathutils
-import os
 import json
-from math import radians, degrees
+import re
 from pathlib import Path
+
+import bmesh
+import bpy
 
 _BONE_PATH_RE = re.compile(r'pose\.bones\["(.+?)"\]')
 
@@ -29,7 +26,7 @@ def load_json_preset(subdir, name):
     path = get_presets_directory() / subdir / f"{name}.json"
     if not path.exists():
         raise FileNotFoundError(f"Preset not found: {path}")
-    with open(path, "r") as f:
+    with open(path) as f:
         return json.load(f)
 
 

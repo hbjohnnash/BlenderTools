@@ -1,7 +1,5 @@
 """Follow curve animation with banking."""
 
-import bpy
-import math
 
 
 def setup_follow_path(obj, curve_obj, duration=100, use_banking=True, bank_amount=1.0):

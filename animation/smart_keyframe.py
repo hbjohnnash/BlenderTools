@@ -6,8 +6,8 @@ snapped to match the IK pose and keyed instead.
 """
 
 import bpy
-from ..core.constants import WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX, WRAP_CONSTRAINT_PREFIX
 
+from ..core.constants import WRAP_CTRL_PREFIX
 
 # ---------------------------------------------------------------------------
 # Helpers

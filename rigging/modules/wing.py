@@ -1,6 +1,7 @@
 """Wing rig module — three-tier (CTRL -> MCH -> DEF) multi-segment with feather bones."""
 
 from mathutils import Vector
+
 from ..module_base import RigModule
 from . import register_module
 

@@ -1,11 +1,13 @@
 """HTTP server on daemon thread with main-thread dispatch via bpy.app.timers."""
 
-import bpy
 import json
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
-from ..core.constants import BRIDGE_PORT, BRIDGE_PREFIX
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlparse
+
+import bpy
+
+from ..core.constants import BRIDGE_PORT
 
 _server = None
 _server_thread = None

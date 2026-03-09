@@ -7,10 +7,13 @@ bone.custom_shape. Sizing uses custom_shape_scale_xyz (no mesh duplication).
 Users can extend the library by adding any mesh to the BT_Shapes collection.
 """
 
+from math import cos, pi, sin
+
 import bpy
-from math import cos, sin, pi
+
 from ..core.constants import (
-    WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX, CONTROL_PREFIX,
+    CONTROL_PREFIX,
+    WRAP_CTRL_PREFIX,
 )
 
 SHAPE_COLLECTION = "BT_Shapes"

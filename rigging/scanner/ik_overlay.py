@@ -4,12 +4,10 @@ Shows clickable buttons for each IK-capable chain in pose mode.
 Only visible when a wrap rig is active.
 """
 
-import bpy
 import blf
+import bpy
 import gpu
 from gpu_extras.batch import batch_for_shader
-from ...core.constants import WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX
-
 
 # ---------------------------------------------------------------------------
 # State
@@ -127,7 +125,6 @@ def _draw_ik_overlay_callback(context):
     gpu.state.depth_test_set('NONE')
 
     # Bar background
-    region = context.region
     bar_x1 = buttons[0]["x"] - BTN_MARGIN
     bar_x2 = buttons[-1]["x"] + buttons[-1]["w"] + BTN_MARGIN
     bar_y1 = BAR_MARGIN_BOTTOM - BTN_PAD_Y

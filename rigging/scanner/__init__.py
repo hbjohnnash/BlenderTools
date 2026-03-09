@@ -1,10 +1,6 @@
 """Skeleton scanner — wrap control rig around existing bones."""
 
-from . import properties
-from . import bone_naming
-from . import operators
-from . import panels
-from . import ik_overlay
+from . import bone_naming, ik_overlay, operators, panels, properties
 
 
 def register():

@@ -1,7 +1,9 @@
 """Export armature + meshes to FBX for Unreal Engine."""
 
-import bpy
 import os
+
+import bpy
+
 from .scale_rig import scale_rig
 
 

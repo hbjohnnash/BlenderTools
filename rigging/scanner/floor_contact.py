@@ -1,8 +1,10 @@
 """Floor interaction — floor constraint on leg IK targets + auto toe bend."""
 
-import bpy
 import math
-from ...core.constants import WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX, WRAP_CONSTRAINT_PREFIX
+
+import bpy
+
+from ...core.constants import WRAP_CONSTRAINT_PREFIX, WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX
 
 FLOOR_CONSTRAINT = f"{WRAP_CONSTRAINT_PREFIX}Floor"
 FLOOR_TOE_CONSTRAINT = f"{WRAP_CONSTRAINT_PREFIX}FloorToe"

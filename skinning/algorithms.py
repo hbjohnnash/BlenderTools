@@ -1,9 +1,6 @@
 """Weight math — heat map, envelope, rigid, cleanup."""
 
 import bpy
-import bmesh
-from mathutils import Vector
-from ..core.constants import DEFORM_PREFIX
 
 
 def get_deform_bones(armature_obj):

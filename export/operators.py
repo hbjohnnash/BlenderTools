@@ -1,7 +1,7 @@
 """Export subsystem operators."""
 
 import bpy
-from bpy.props import FloatProperty, StringProperty, BoolProperty
+from bpy.props import BoolProperty, FloatProperty, StringProperty
 
 
 class BT_OT_ScaleRig(bpy.types.Operator):

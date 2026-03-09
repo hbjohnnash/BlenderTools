@@ -1,9 +1,17 @@
 """Module → final rig assembly."""
 
 import bpy
-from ..core.constants import COL_DEFORM, COL_CONTROL, COL_MECHANISM
-from ..core.constants import DEFORM_PREFIX, CONTROL_PREFIX, MECHANISM_PREFIX
-from ..core.constants import WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX
+
+from ..core.constants import (
+    COL_CONTROL,
+    COL_DEFORM,
+    COL_MECHANISM,
+    CONTROL_PREFIX,
+    DEFORM_PREFIX,
+    MECHANISM_PREFIX,
+    WRAP_CTRL_PREFIX,
+    WRAP_MCH_PREFIX,
+)
 
 
 def _ensure_bone_collections(armature):

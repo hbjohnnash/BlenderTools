@@ -1,8 +1,10 @@
 """Camera animation tools — orbit, dolly, shake, focus pull."""
 
-import bpy
 import math
 import random
+
+import bpy
+
 from ..core.utils import create_fcurve
 
 

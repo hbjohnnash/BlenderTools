@@ -1,7 +1,7 @@
 """Seam preset discovery and listing."""
 
-from ..core.utils import get_presets_directory
 from ..core.constants import SEAM_PRESET_DIR
+from ..core.utils import get_presets_directory
 
 
 def list_seam_presets():

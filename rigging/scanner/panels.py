@@ -1,6 +1,7 @@
 """UI panels for skeleton scanner."""
 
 import bpy
+
 from ...core.constants import PANEL_CATEGORY, WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX
 
 

@@ -1,7 +1,10 @@
 """Animation operators."""
 
+import threading
+
 import bpy
-from ..core.utils import create_bone_fcurve, create_fcurve
+
+from ..core.utils import create_fcurve
 
 
 class BT_OT_MechanicalAnim(bpy.types.Operator):
@@ -27,7 +30,9 @@ class BT_OT_MechanicalAnim(bpy.types.Operator):
 
     def execute(self, context):
         from .procedural.mechanical import (
-            generate_piston_cycle, generate_gear_rotation, generate_conveyor
+            generate_conveyor,
+            generate_gear_rotation,
+            generate_piston_cycle,
         )
 
         obj = context.active_object
@@ -195,6 +200,330 @@ class BT_OT_PushToNLA(bpy.types.Operator):
         return context.window_manager.invoke_props_dialog(self)
 
 
+class BT_OT_InitAnimAI(bpy.types.Operator):
+    bl_idname = "bt.init_anim_ai"
+    bl_label = "Initialize AI Motion"
+    bl_description = (
+        "Install PyTorch and download AnyTop + SinMDM models for "
+        "AI-powered motion generation and style transfer"
+    )
+
+    _timer = None
+    _thread = None
+    _finished = False
+    _error = ""
+    _status_msg = "Starting..."
+    _progress = 0.0
+
+    def modal(self, context, event):
+        if event.type == 'TIMER':
+            wm = context.window_manager
+            wm.bt_ml_progress = self._progress
+            wm.bt_ml_status = self._status_msg
+
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    area.tag_redraw()
+
+            if self._finished:
+                wm.event_timer_remove(self._timer)
+                wm.bt_ml_busy = False
+                wm.bt_ml_progress = 0.0
+                wm.bt_ml_status = ""
+
+                if self._error:
+                    self.report({'ERROR'}, f"Initialization failed: {self._error}")
+                    return {'CANCELLED'}
+
+                self.report({'INFO'}, "AI Motion initialized — AnyTop + SinMDM ready!")
+                return {'FINISHED'}
+
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        wm = context.window_manager
+        if wm.bt_ml_busy:
+            self.report({'WARNING'}, "Another ML operation is in progress")
+            return {'CANCELLED'}
+
+        wm.bt_ml_busy = True
+        wm.bt_ml_progress = 0.0
+        wm.bt_ml_status = "Starting initialization..."
+
+        self._finished = False
+        self._error = ""
+        self._progress = 0.0
+        self._status_msg = "Starting..."
+
+        def _worker():
+            try:
+                from ..core.ml import dependencies, model_manager
+
+                # Step 1: Install PyTorch if needed
+                if not dependencies.check_torch_available():
+                    self._status_msg = "Installing PyTorch..."
+                    self._progress = 0.05
+
+                    def on_torch_progress(p, msg=""):
+                        self._progress = 0.05 + p * 0.25
+                        if msg:
+                            self._status_msg = msg
+
+                    dependencies.install_torch(
+                        use_gpu=True,
+                        progress_callback=on_torch_progress,
+                    )
+
+                # Step 2: Download AnyTop (code from GitHub + weights from HF)
+                self._progress = 0.35
+                self._status_msg = "Downloading AnyTop code..."
+
+                def on_anytop_progress(p, msg=""):
+                    self._progress = 0.35 + p * 0.15
+                    if msg:
+                        self._status_msg = msg
+
+                model_manager.install_model("anytop", progress_callback=on_anytop_progress)
+
+                # AnyTop weights from HuggingFace
+                self._progress = 0.5
+                self._status_msg = "Downloading AnyTop weights from HuggingFace..."
+                from .ml.anytop_adapter import AnyTopAdapter
+
+                def on_anytop_hf(p, msg=""):
+                    self._progress = 0.5 + p * 0.15
+                    if msg:
+                        self._status_msg = msg
+
+                AnyTopAdapter.download_weights(progress_callback=on_anytop_hf)
+                # Update status to mark AnyTop as installed
+                model_manager._write_status("anytop", {
+                    "installed": True,
+                    "model_name": "AnyTop",
+                    "version": "1.0",
+                })
+
+                # Step 3: Download SinMDM (code from GitHub + weights from GDrive)
+                self._progress = 0.7
+                self._status_msg = "Downloading SinMDM code..."
+
+                def on_sinmdm_progress(p, msg=""):
+                    self._progress = 0.7 + p * 0.1
+                    if msg:
+                        self._status_msg = msg
+
+                model_manager.install_model("sinmdm", progress_callback=on_sinmdm_progress)
+
+                # SinMDM weights from Google Drive
+                self._progress = 0.8
+                self._status_msg = "Downloading SinMDM weights from Google Drive..."
+                from .ml.sinmdm_adapter import SinMDMAdapter
+
+                def on_sinmdm_gd(p, msg=""):
+                    self._progress = 0.8 + p * 0.2
+                    if msg:
+                        self._status_msg = msg
+
+                SinMDMAdapter.download_weights(progress_callback=on_sinmdm_gd)
+                # Update status to mark SinMDM as installed
+                model_manager._write_status("sinmdm", {
+                    "installed": True,
+                    "model_name": "SinMDM",
+                    "version": "1.0",
+                })
+
+                self._progress = 1.0
+                self._status_msg = "Done!"
+                self._finished = True
+
+            except Exception as e:
+                self._error = str(e)
+                self._finished = True
+
+        self._thread = threading.Thread(target=_worker, daemon=True)
+        self._thread.start()
+
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+
+class BT_OT_RemoveAnimAI(bpy.types.Operator):
+    bl_idname = "bt.remove_anim_ai"
+    bl_label = "Remove AI Motion Models"
+    bl_description = "Delete downloaded AnyTop and SinMDM models to free disk space"
+
+    def execute(self, context):
+        from ..core.ml import model_manager
+
+        total = 0.0
+        for mid in ("anytop", "sinmdm"):
+            total += model_manager.get_cache_size_mb(mid)
+            model_manager.remove_model(mid)
+
+        self.report({'INFO'}, f"Removed AI motion models ({total:.0f} MB freed)")
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
+
+class BT_OT_AIGenerateMotion(bpy.types.Operator):
+    bl_idname = "bt.ai_generate_motion"
+    bl_label = "Generate Motion"
+    bl_description = "Generate animation from text using AnyTop (any skeleton)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    prompt: bpy.props.StringProperty(
+        name="Prompt",
+        description="Describe the motion (e.g. 'a person walking forward')",
+        default="a person walking forward",
+    )
+    num_frames: bpy.props.IntProperty(
+        name="Frames",
+        description="Number of frames to generate",
+        default=120,
+        min=30,
+        max=300,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        if not obj or obj.type != 'ARMATURE':
+            return False
+        from ..core.ml import model_manager
+        return model_manager.is_model_installed("anytop")
+
+    def execute(self, context):
+        arm_obj = context.active_object
+        from .ml.anytop_adapter import AnyTopAdapter
+
+        adapter = AnyTopAdapter.get_instance()
+
+        try:
+            skeleton = adapter.extract_skeleton(arm_obj)
+            motion_data = adapter.predict(
+                skeleton=skeleton,
+                prompt=self.prompt,
+                num_frames=self.num_frames,
+            )
+            adapter.apply_motion(arm_obj, motion_data)
+            self.report(
+                {'INFO'},
+                f"Generated {self.num_frames} frames: '{self.prompt}'"
+            )
+        except Exception as e:
+            self.report({'ERROR'}, f"Motion generation failed: {e}")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=400)
+
+
+class BT_OT_AIStyleTransfer(bpy.types.Operator):
+    bl_idname = "bt.ai_style_transfer"
+    bl_label = "Style Transfer"
+    bl_description = "Generate style variations of current animation using SinMDM"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    num_variations: bpy.props.IntProperty(
+        name="Variations",
+        description="Number of style variations to generate",
+        default=1,
+        min=1,
+        max=5,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        if not obj or obj.type != 'ARMATURE':
+            return False
+        if not obj.animation_data or not obj.animation_data.action:
+            return False
+        from ..core.ml import model_manager
+        return model_manager.is_model_installed("sinmdm")
+
+    def execute(self, context):
+        arm_obj = context.active_object
+        from .ml.sinmdm_adapter import SinMDMAdapter
+
+        adapter = SinMDMAdapter.get_instance()
+
+        try:
+            bvh_path = adapter.export_animation_bvh(arm_obj)
+            result_paths = adapter.predict(
+                input_bvh=bvh_path,
+                task="style_transfer",
+                num_results=self.num_variations,
+            )
+            if result_paths:
+                adapter.import_animation_bvh(arm_obj, result_paths[0])
+                self.report(
+                    {'INFO'},
+                    f"Generated {len(result_paths)} style variation(s)",
+                )
+            else:
+                self.report({'WARNING'}, "No results generated")
+                return {'CANCELLED'}
+        except Exception as e:
+            self.report({'ERROR'}, f"Style transfer failed: {e}")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+
+class BT_OT_AIInbetween(bpy.types.Operator):
+    bl_idname = "bt.ai_inbetween"
+    bl_label = "AI In-Between"
+    bl_description = "Fill in frames between keyframes using SinMDM"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        if not obj or obj.type != 'ARMATURE':
+            return False
+        if not obj.animation_data or not obj.animation_data.action:
+            return False
+        from ..core.ml import model_manager
+        return model_manager.is_model_installed("sinmdm")
+
+    def execute(self, context):
+        arm_obj = context.active_object
+        from .ml.sinmdm_adapter import SinMDMAdapter
+
+        adapter = SinMDMAdapter.get_instance()
+
+        try:
+            bvh_path = adapter.export_animation_bvh(arm_obj)
+            result_paths = adapter.predict(
+                input_bvh=bvh_path,
+                task="inbetween",
+                num_results=1,
+            )
+            if result_paths:
+                adapter.import_animation_bvh(
+                    arm_obj, result_paths[0],
+                    action_name=f"{arm_obj.name}_Inbetween",
+                )
+                self.report({'INFO'}, "Generated in-between frames")
+            else:
+                self.report({'WARNING'}, "No results generated")
+                return {'CANCELLED'}
+        except Exception as e:
+            self.report({'ERROR'}, f"In-betweening failed: {e}")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+
 classes = (
     BT_OT_MechanicalAnim,
     BT_OT_FollowPath,
@@ -202,6 +531,11 @@ classes = (
     BT_OT_CameraShake,
     BT_OT_MatchCycleKeyframes,
     BT_OT_PushToNLA,
+    BT_OT_InitAnimAI,
+    BT_OT_RemoveAnimAI,
+    BT_OT_AIGenerateMotion,
+    BT_OT_AIStyleTransfer,
+    BT_OT_AIInbetween,
 )
 
 

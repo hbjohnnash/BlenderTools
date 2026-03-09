@@ -8,18 +8,23 @@ Hidden in pose mode.
 """
 
 import re
-import bpy
-import blf
-import gpu
 import time
+from math import cos, pi, sin
+
+import blf
+import bpy
+import gpu
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector
-from math import cos, sin, pi
+
 from ..core.constants import (
-    PANEL_CATEGORY, DEFORM_PREFIX, CONTROL_PREFIX, MECHANISM_PREFIX,
-    WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX,
+    CONTROL_PREFIX,
+    DEFORM_PREFIX,
+    MECHANISM_PREFIX,
+    WRAP_CTRL_PREFIX,
+    WRAP_MCH_PREFIX,
 )
-from .modules import get_module_items, get_module_class, MODULE_REGISTRY
+from .modules import MODULE_REGISTRY, get_module_class
 
 
 def _detect_side(bone_name):
@@ -626,8 +631,8 @@ class BT_OT_AddModuleAtPoint(bpy.types.Operator):
     use_existing: bpy.props.BoolProperty(default=False)
 
     def execute(self, context):
-        from .modules import get_module_class
         from .config_loader import config_from_armature, store_config_on_armature
+        from .modules import get_module_class
 
         arm_obj = context.active_object
         if not arm_obj or arm_obj.type != 'ARMATURE':

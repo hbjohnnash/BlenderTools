@@ -1,8 +1,8 @@
 """BlenderTools — Comprehensive seam, rigging, skinning, animation & LLM bridge toolkit."""
 
 import bpy
-from .core import preferences
 
+from .core import preferences
 
 # Subsystem imports — each has register()/unregister()
 _subsystems = []
@@ -138,18 +138,18 @@ class BT_PT_Header(bpy.types.Panel):
 
 def _import_subsystems():
     global _subsystems
-    from . import seams
-    from . import rigging
-    from . import skinning
-    from . import animation
-    from . import bridge
-    from . import export
+    from . import animation, bridge, export, rigging, seams, skinning
 
     _subsystems = [seams, rigging, skinning, animation, bridge, export]
 
 
 def register():
     preferences.register()
+
+    # Core ML infrastructure (WM properties for progress tracking)
+    from .core import ml as core_ml
+    core_ml.register()
+
     bpy.utils.register_class(BT_OT_ToggleSubsystem)
     bpy.utils.register_class(BT_OT_SetAllPanels)
     bpy.utils.register_class(BT_PT_Header)
@@ -174,4 +174,8 @@ def unregister():
     bpy.utils.unregister_class(BT_PT_Header)
     bpy.utils.unregister_class(BT_OT_SetAllPanels)
     bpy.utils.unregister_class(BT_OT_ToggleSubsystem)
+
+    from .core import ml as core_ml
+    core_ml.unregister()
+
     preferences.unregister()
