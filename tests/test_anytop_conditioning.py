@@ -18,6 +18,7 @@ from animation.ml.anytop_conditioning import (
     compute_tpose_features,
     create_topology_edge_relations,
     estimate_mean_std,
+    scale_and_ground_skeleton,
 )
 
 
@@ -129,7 +130,7 @@ class TestMeanStd:
     def test_shape(self):
         skeleton = _make_skeleton(5)
         tpose = compute_tpose_features(skeleton["joints"], 5)
-        mean, std = estimate_mean_std(tpose, 5, 1.8)
+        mean, std = estimate_mean_std(tpose, 5)
         assert mean.shape == (5, FEATURE_LEN)
         assert std.shape == (5, FEATURE_LEN)
 
@@ -137,17 +138,38 @@ class TestMeanStd:
         """All std values must be positive."""
         skeleton = _make_skeleton(5)
         tpose = compute_tpose_features(skeleton["joints"], 5)
-        _, std = estimate_mean_std(tpose, 5, 1.8)
+        _, std = estimate_mean_std(tpose, 5)
         assert np.all(std > 0)
 
-    def test_height_scaling(self):
-        """Taller skeleton should have larger position std."""
+    def test_mean_equals_tpose(self):
+        """Mean should equal the T-pose features (rest pose as mean)."""
         skeleton = _make_skeleton(3)
         tpose = compute_tpose_features(skeleton["joints"], 3)
-        _, std_small = estimate_mean_std(tpose, 3, 1.0)
-        _, std_large = estimate_mean_std(tpose, 3, 4.0)
-        # Position std for non-root should be larger for taller skeleton
-        assert std_large[1, 0] > std_small[1, 0]
+        mean, _ = estimate_mean_std(tpose, 3)
+        np.testing.assert_allclose(mean, tpose)
+
+
+class TestScaleAndGround:
+    """Test scale_and_ground_skeleton."""
+
+    def test_scale_factor_positive(self):
+        skeleton = _make_skeleton(5)
+        _, sf = scale_and_ground_skeleton(skeleton["joints"])
+        assert sf > 0
+
+    def test_grounded(self):
+        """After grounding, lowest Y should be ≈ 0."""
+        joints = [
+            {"name": "root", "parent": -1, "offset": [0, 1.0, 0],
+             "description": "spine"},
+            {"name": "foot", "parent": 0, "offset": [0, -1.5, 0],
+             "description": "foot"},
+        ]
+        scaled, _ = scale_and_ground_skeleton(joints)
+        # Compute global positions
+        p0 = np.array(scaled[0]["offset"])
+        p1 = p0 + np.array(scaled[1]["offset"])
+        assert min(p0[1], p1[1]) >= -1e-6
 
 
 class TestTemporalMask:

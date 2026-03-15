@@ -371,7 +371,7 @@ class BT_OT_RemoveAnimAI(bpy.types.Operator):
 class BT_OT_AIGenerateMotion(bpy.types.Operator):
     bl_idname = "bt.ai_generate_motion"
     bl_label = "Generate Motion"
-    bl_description = "Generate animation from text using AnyTop (any skeleton)"
+    bl_description = "Generate animation from text prompt (auto-selects best model)"
     bl_options = {'REGISTER', 'UNDO'}
 
     prompt: bpy.props.StringProperty(
@@ -386,33 +386,106 @@ class BT_OT_AIGenerateMotion(bpy.types.Operator):
         min=30,
         max=300,
     )
+    model: bpy.props.EnumProperty(
+        name="Model",
+        items=[
+            ('AUTO', "Auto", "MotionLCM for humanoid, AnyTop for exotic"),
+            ('MOTIONLCM', "MotionLCM", "Fast humanoid motion (~30ms)"),
+            ('ANYTOP', "AnyTop", "Any skeleton topology (~5s)"),
+        ],
+        default='AUTO',
+    )
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
         if not obj or obj.type != 'ARMATURE':
             return False
+        from .retarget import has_wrap_rig
+        return has_wrap_rig(obj)
+
+    def _select_adapter(self, armature_obj):
+        """Select the best adapter based on model choice and rig type."""
         from ..core.ml import model_manager
-        return model_manager.is_model_installed("anytop")
+
+        has_lcm = model_manager.is_model_installed("motionlcm")
+        has_anytop = model_manager.is_model_installed("anytop")
+
+        if self.model == 'MOTIONLCM':
+            if not has_lcm:
+                raise RuntimeError("MotionLCM not installed.")
+            from .ml.motionlcm_adapter import MotionLCMAdapter
+            return MotionLCMAdapter.get_instance()
+
+        if self.model == 'ANYTOP':
+            if not has_anytop:
+                raise RuntimeError("AnyTop not installed.")
+            from .ml.anytop_adapter import AnyTopAdapter
+            return AnyTopAdapter.get_instance()
+
+        # AUTO: prefer MotionLCM for humanoid rigs
+        is_humanoid = self._is_humanoid(armature_obj)
+
+        if is_humanoid and has_lcm:
+            from .ml.motionlcm_adapter import MotionLCMAdapter
+            return MotionLCMAdapter.get_instance()
+
+        if has_anytop:
+            from .ml.anytop_adapter import AnyTopAdapter
+            return AnyTopAdapter.get_instance()
+
+        if has_lcm:
+            from .ml.motionlcm_adapter import MotionLCMAdapter
+            return MotionLCMAdapter.get_instance()
+
+        raise RuntimeError("No motion model installed")
+
+    @staticmethod
+    def _is_humanoid(armature_obj):
+        """Check if armature has humanoid topology (spine + arms + legs)."""
+        scan = getattr(armature_obj, 'bt_scan', None)
+        if scan is None:
+            return False
+        chains = getattr(scan, 'chains', [])
+        types = {getattr(c, 'module_type', '') for c in chains}
+        return ('spine' in types
+                and 'arm' in types
+                and 'leg' in types)
 
     def execute(self, context):
         arm_obj = context.active_object
-        from .ml.anytop_adapter import AnyTopAdapter
-
-        adapter = AnyTopAdapter.get_instance()
+        adapter = self._select_adapter(arm_obj)
+        model_name = adapter.MODEL_NAME
 
         try:
-            skeleton = adapter.extract_skeleton(arm_obj)
-            motion_data = adapter.predict(
-                skeleton=skeleton,
-                prompt=self.prompt,
-                num_frames=self.num_frames,
+            motion_data = adapter.generate(
+                arm_obj, self.prompt, self.num_frames,
             )
             adapter.apply_motion(arm_obj, motion_data)
-            self.report(
-                {'INFO'},
-                f"Generated {self.num_frames} frames: '{self.prompt}'"
+
+            # Animate SMPL preview if it exists (side-by-side comparison)
+            from .ml.retarget_preview import apply_preview_motion
+            smpl_data = None
+            if motion_data.get('_smpl_rotations'):
+                smpl_data = {
+                    'rotations': motion_data['_smpl_rotations'],
+                    'root_positions': motion_data['_smpl_root_positions'],
+                }
+            has_preview = apply_preview_motion(
+                smpl_data or motion_data, user_armature=arm_obj,
             )
+            if has_preview:
+                self.report(
+                    {'INFO'},
+                    f"[{model_name}] Generated {self.num_frames} frames "
+                    f"+ SMPL preview: '{self.prompt}'"
+                )
+            else:
+                self.report(
+                    {'INFO'},
+                    f"[{model_name}] Generated {self.num_frames} frames: "
+                    f"'{self.prompt}'"
+                )
         except Exception as e:
             self.report({'ERROR'}, f"Motion generation failed: {e}")
             return {'CANCELLED'}
@@ -524,6 +597,333 @@ class BT_OT_AIInbetween(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BT_OT_RetargetPreview(bpy.types.Operator):
+    bl_idname = "bt.retarget_preview"
+    bl_label = "SMPL Reference"
+    bl_description = (
+        "Toggle SMPL reference skeleton for retarget validation. "
+        "Shows the standard 22-joint skeleton next to your armature "
+        "so you can verify alignment before generating motion"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj and obj.type == 'ARMATURE'
+
+    def execute(self, context):
+        from .ml.retarget_preview import (
+            apply_preview_motion,
+            create_smpl_preview,
+            get_cached_frame_start,
+            get_cached_motion,
+            get_smpl_preview,
+            remove_smpl_preview,
+        )
+
+        if get_smpl_preview():
+            remove_smpl_preview()
+            self.report({'INFO'}, "Removed SMPL reference skeleton")
+        else:
+            arm_obj = context.active_object
+            create_smpl_preview(arm_obj)
+
+            cached = get_cached_motion()
+            if cached is not None:
+                apply_preview_motion(
+                    cached,
+                    user_armature=arm_obj,
+                    frame_start=get_cached_frame_start(),
+                )
+                self.report(
+                    {'INFO'},
+                    "Created SMPL reference with cached motion",
+                )
+            else:
+                self.report(
+                    {'INFO'},
+                    "Created SMPL reference — verify both skeletons "
+                    "face the same direction in T-pose",
+                )
+        return {'FINISHED'}
+
+
+class BT_OT_LinkSMPLPreview(bpy.types.Operator):
+    bl_idname = "bt.link_smpl_preview"
+    bl_label = "Link SMPL to User"
+    bl_description = (
+        "Toggle live retarget link: posing SMPL preview bones "
+        "drives the user armature in real-time for debugging"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        from .ml.retarget_preview import get_smpl_preview
+        obj = context.active_object
+        return (
+            obj and obj.type == 'ARMATURE'
+            and get_smpl_preview() is not None
+        )
+
+    def execute(self, context):
+        from .ml.retarget_preview import (
+            is_link_active,
+            link_preview_to_user,
+            unlink_preview_from_user,
+        )
+
+        if is_link_active():
+            unlink_preview_from_user()
+            self.report({'INFO'}, "Unlinked SMPL preview from user armature")
+        else:
+            arm_obj = context.active_object
+            if link_preview_to_user(arm_obj):
+                self.report(
+                    {'INFO'},
+                    "Linked — pose SMPL bones to see retarget result",
+                )
+            else:
+                self.report(
+                    {'WARNING'},
+                    "Could not link — ensure armature has scan + wrap rig",
+                )
+        return {'FINISHED'}
+
+
+class BT_OT_DebugRetargetFrame(bpy.types.Operator):
+    """Generate motion and compare model output vs SMPL preview bone values."""
+
+    bl_idname = "bt.debug_retarget_frame"
+    bl_label = "Debug SMPL Frame"
+    bl_description = (
+        "Generate a short clip, apply to SMPL preview, then print "
+        "model output vs actual bone rotation for every joint"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    prompt: bpy.props.StringProperty(
+        name="Prompt",
+        default="a person walking forward",
+    )
+    frame_index: bpy.props.IntProperty(
+        name="Frame to inspect",
+        description="Which frame of the generated motion to inspect (0-based)",
+        default=0,
+        min=0,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        from .ml.retarget_preview import get_smpl_preview
+        obj = context.active_object
+        if not obj or obj.type != 'ARMATURE':
+            return False
+        if get_smpl_preview() is None:
+            return False
+        from .retarget import has_wrap_rig
+        return has_wrap_rig(obj)
+
+    def execute(self, context):
+        import math
+
+        import numpy as np
+
+        from .ml import smpl_skeleton
+        from .ml.retarget_map import _euler_to_matrix, _matrix_to_euler_xyz
+        from .ml.retarget_preview import apply_preview_motion, get_smpl_preview
+
+        arm_obj = context.active_object
+        smpl_arm = get_smpl_preview()
+        if smpl_arm is None:
+            self.report({'ERROR'}, "No SMPL preview — create one first")
+            return {'CANCELLED'}
+
+        # ── 1. Generate a short clip ──
+        # Select adapter directly (can't use _select_adapter — it's
+        # an instance method on BT_OT_AIGenerateMotion that reads self.model)
+        from ..core.ml import model_manager
+
+        adapter = None
+        if model_manager.is_model_installed("motionlcm"):
+            from .ml.motionlcm_adapter import MotionLCMAdapter
+            adapter = MotionLCMAdapter.get_instance()
+        elif model_manager.is_model_installed("anytop"):
+            from .ml.anytop_adapter import AnyTopAdapter
+            adapter = AnyTopAdapter.get_instance()
+
+        if adapter is None:
+            self.report({'ERROR'}, "No motion model installed")
+            return {'CANCELLED'}
+
+        try:
+            motion_data = adapter.generate(
+                arm_obj, self.prompt, num_frames=30,
+            )
+        except Exception as e:
+            self.report({'ERROR'}, f"Generation failed: {e}")
+            return {'CANCELLED'}
+
+        # Get SMPL rotations (MotionLCM stores them in _smpl_rotations)
+        smpl_rots = (
+            motion_data.get('_smpl_rotations')
+            or motion_data.get('rotations')
+        )
+        smpl_root_pos = (
+            motion_data.get('_smpl_root_positions')
+            or motion_data.get('root_positions')
+        )
+
+        if not smpl_rots:
+            self.report({'ERROR'}, "No rotation data in model output")
+            return {'CANCELLED'}
+
+        fi = min(self.frame_index, len(smpl_rots) - 1)
+        n_joints = min(len(smpl_rots[fi]), smpl_skeleton.NUM_JOINTS)
+
+        # ── 2. Apply animation to SMPL preview ──
+        smpl_data = {
+            'rotations': smpl_rots,
+            'root_positions': smpl_root_pos or [[0, 0, 0]] * len(smpl_rots),
+        }
+        apply_preview_motion(smpl_data, user_armature=arm_obj, frame_start=1)
+
+        # Set to the target frame so bone eulers are evaluated
+        context.scene.frame_set(1 + fi)
+        context.view_layer.update()
+
+        # ── 3. Compute expected values (same math as apply_preview_motion) ──
+        # Use parent-relative rest orientation for conjugation
+        rest_rots_rel = {}
+        for j in range(n_joints):
+            bone = smpl_arm.data.bones.get(smpl_skeleton.JOINT_NAMES[j])
+            if bone is None:
+                rest_rots_rel[j] = np.eye(3)
+                continue
+            M_j = np.array([
+                [bone.matrix_local[r][c] for c in range(3)]
+                for r in range(3)
+            ])
+            p_idx = int(smpl_skeleton.PARENTS[j])
+            if p_idx >= 0:
+                parent_bone = smpl_arm.data.bones.get(
+                    smpl_skeleton.JOINT_NAMES[p_idx])
+                if parent_bone:
+                    M_p = np.array([
+                        [parent_bone.matrix_local[r][c] for c in range(3)]
+                        for r in range(3)
+                    ])
+                    rest_rots_rel[j] = M_p.T @ M_j
+                else:
+                    rest_rots_rel[j] = M_j
+            else:
+                rest_rots_rel[j] = M_j
+
+        # ── 4. Print comparison table ──
+        print("\n" + "=" * 100)
+        print(f"DEBUG SMPL PREVIEW — frame {fi} — '{self.prompt}'")
+        print("=" * 100)
+        print(
+            f"{'Joint':<16} "
+            f"{'Model Output (deg)':<28} "
+            f"{'Expected Conjugated (deg)':<28} "
+            f"{'Actual Bone Euler (deg)':<28}"
+        )
+        print("-" * 100)
+
+        for j in range(n_joints):
+            name = smpl_skeleton.JOINT_NAMES[j]
+            # Model raw output
+            rx, ry, rz = smpl_rots[fi][j]
+            raw_deg = (math.degrees(rx), math.degrees(ry), math.degrees(rz))
+
+            # Expected: R_pose = M_rel.T @ R_smpl @ M_rel
+            M_rel = rest_rots_rel[j]
+            R_smpl = _euler_to_matrix(rx, ry, rz)
+            R_pose = M_rel.T @ R_smpl @ M_rel
+            exp_euler = _matrix_to_euler_xyz(R_pose)
+            exp_deg = tuple(math.degrees(e) for e in exp_euler)
+
+            # Actual bone rotation_euler
+            pbone = smpl_arm.pose.bones.get(name)
+            if pbone:
+                act_deg = tuple(math.degrees(pbone.rotation_euler[a]) for a in range(3))
+            else:
+                act_deg = (0.0, 0.0, 0.0)
+
+            # Check match between expected and actual
+            match_ok = all(
+                abs(exp_deg[a] - act_deg[a]) < 0.1 for a in range(3)
+            )
+            status = "OK" if match_ok else "MISMATCH"
+
+            raw_s = f"({raw_deg[0]:+7.1f},{raw_deg[1]:+7.1f},{raw_deg[2]:+7.1f})"
+            exp_s = f"({exp_deg[0]:+7.1f},{exp_deg[1]:+7.1f},{exp_deg[2]:+7.1f})"
+            act_s = f"({act_deg[0]:+7.1f},{act_deg[1]:+7.1f},{act_deg[2]:+7.1f})"
+            print(f"{name:<16} {raw_s:<28} {exp_s:<28} {act_s:<28} {status}")
+
+        # ── 5. Pelvis height info ──
+        # Adapter-side: pelvis_height from SMPL offsets in Y-up
+        offsets_yup = smpl_skeleton._OFFSETS_YUP
+        parents = smpl_skeleton.PARENTS
+        rest_pos_yup = np.zeros((smpl_skeleton.NUM_JOINTS, 3))
+        for i in range(smpl_skeleton.NUM_JOINTS):
+            p = int(parents[i])
+            if p >= 0:
+                rest_pos_yup[i] = rest_pos_yup[p] + offsets_yup[i]
+        adapter_pelvis_height = -float(rest_pos_yup[:, 1].min())
+
+        # Preview-side: ground_offset from Z-up tpose
+        from .ml.retarget_preview import _compute_tpose_positions, _get_armature_height
+        user_height = _get_armature_height(arm_obj)
+        smpl_height = smpl_skeleton.SKELETON_HEIGHT
+        scale = user_height / smpl_height if smpl_height > 1e-6 else 1.0
+        tpose = _compute_tpose_positions(scale)
+        ground_offset = float(tpose[:, 2].min())
+        rest_root_pos = tpose[0].copy()
+        rest_root_pos[2] -= ground_offset
+
+        print(f"\n{'─' * 60}")
+        print(f"  Adapter pelvis_height (Y-up):  {adapter_pelvis_height:.4f}")
+        print(f"  SMPL SKELETON_HEIGHT:          {smpl_height:.4f}")
+        print(f"  User armature height:          {user_height:.4f}")
+        print(f"  Scale (user/smpl):             {scale:.4f}")
+        print(f"  Preview ground_offset (Z-up):  {ground_offset:.4f}")
+        print(f"  Preview rest_root_pos:         ({rest_root_pos[0]:+.4f}, {rest_root_pos[1]:+.4f}, {rest_root_pos[2]:+.4f})")
+        print(f"{'─' * 60}")
+
+        # Root position
+        if smpl_root_pos and fi < len(smpl_root_pos):
+            rp = smpl_root_pos[fi]
+            pbone = smpl_arm.pose.bones.get(smpl_skeleton.JOINT_NAMES[0])
+            if pbone:
+                print(f"  Root position (model):  "
+                      f"({rp[0]:+.4f}, {rp[1]:+.4f}, {rp[2]:+.4f})")
+                rp_scaled = np.array(rp) * scale
+                rp_scaled[2] -= ground_offset
+                delta = rp_scaled - rest_root_pos
+                print(f"  Root scaled+grounded:   "
+                      f"({rp_scaled[0]:+.4f}, {rp_scaled[1]:+.4f}, {rp_scaled[2]:+.4f})")
+                print(f"  Root delta from rest:   "
+                      f"({delta[0]:+.4f}, {delta[1]:+.4f}, {delta[2]:+.4f})")
+                print(f"  Actual bone location:   "
+                      f"({pbone.location[0]:+.4f}, "
+                      f"{pbone.location[1]:+.4f}, "
+                      f"{pbone.location[2]:+.4f})")
+
+        print("=" * 100 + "\n")
+
+        self.report(
+            {'INFO'},
+            f"Debug: frame {fi} applied to SMPL preview — see System Console",
+        )
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=400)
+
+
 class BT_OT_RetargetActionToFK(bpy.types.Operator):
     bl_idname = "bt.retarget_action_to_fk"
     bl_label = "Retarget Action to FK Controls"
@@ -584,7 +984,10 @@ classes = (
     BT_OT_AIGenerateMotion,
     BT_OT_AIStyleTransfer,
     BT_OT_AIInbetween,
+    BT_OT_RetargetPreview,
+    BT_OT_LinkSMPLPreview,
     BT_OT_RetargetActionToFK,
+    BT_OT_DebugRetargetFrame,
 )
 
 

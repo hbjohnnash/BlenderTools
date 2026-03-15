@@ -293,13 +293,22 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
             if not mch_pbone:
                 continue
             in_ik_range = mch_name in ik_bone_set
+            # End-effector bones (hand/foot) have COPY_ROTATION from IK target.
+            # Their FK COPY_TRANSFORMS must also be toggled even though they
+            # are outside the IK chain range.
+            has_ik_rot = any(
+                c.type == 'COPY_ROTATION' and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
+                for c in mch_pbone.constraints
+            )
             for con in mch_pbone.constraints:
                 if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
                     continue
                 if con.type == 'COPY_TRANSFORMS':
-                    if in_ik_range:
+                    if in_ik_range or has_ik_rot:
                         con.influence = 0.0 if use_ik else 1.0
                 elif con.type in ('IK', 'SPLINE_IK'):
+                    con.influence = 1.0 if use_ik else 0.0
+                elif con.type == 'COPY_ROTATION':
                     con.influence = 1.0 if use_ik else 0.0
 
         # Restore per-bone limit states (preserves user customizations)

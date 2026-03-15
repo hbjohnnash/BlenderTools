@@ -430,12 +430,14 @@ def _create_arm_controls(edit_bones, chain_id, chain_bones, bones_info,
         if orig_hand and orig_lower and orig_upper:
             bone_len = max((orig_lower.tail - orig_lower.head).length * 0.3, 0.5)
 
-            # IK target at hand
+            # IK target at hand — oriented to match hand bone so that
+            # COPY_ROTATION produces correct rest-pose orientation.
             ik_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
             ik_bone = edit_bones.new(ik_name)
             ik_bone.head = orig_hand.head.copy()
-            ik_bone.tail = orig_hand.head + Vector((0, -bone_len, 0))
-            ik_bone.roll = 0
+            hand_dir = (orig_hand.tail - orig_hand.head).normalized()
+            ik_bone.tail = orig_hand.head + hand_dir * bone_len
+            ik_bone.roll = orig_hand.roll
             created.append(ik_name)
 
             # IK pole at elbow
@@ -493,6 +495,22 @@ def _constrain_arm(armature_obj, chain_id, chain_bones, bones_info):
                 con.pole_target = armature_obj
                 con.pole_subtarget = ik_pole
 
+    # Hand rotation from IK target (end-effector control).
+    # When IK is active, the hand orientation follows the IK target bone.
+    # Influence starts at 0.0 (FK mode) and is toggled by BT_OT_ToggleFKIK.
+    hand_bone = {bones_info.get(b, {}).get("role", ""): b for b in chain_bones}.get("hand")
+    if hand_bone:
+        hand_role = bones_info.get(hand_bone, {}).get("role", hand_bone)
+        hand_mch = f"{WRAP_MCH_PREFIX}{chain_id}_{hand_role}"
+        ik_target = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
+        hand_pbone = armature_obj.pose.bones.get(hand_mch)
+        if hand_pbone and armature_obj.pose.bones.get(ik_target):
+            con = hand_pbone.constraints.new('COPY_ROTATION')
+            con.name = f"{WRAP_CONSTRAINT_PREFIX}IK_Rot"
+            con.target = armature_obj
+            con.subtarget = ik_target
+            con.influence = 0.0  # Start with FK
+
 
 # --- Leg Controls ---
 
@@ -515,12 +533,14 @@ def _create_leg_controls(edit_bones, chain_id, chain_bones, bones_info,
         if orig_foot and orig_lower and orig_upper:
             bone_len = max((orig_lower.tail - orig_lower.head).length * 0.3, 0.5)
 
-            # IK target at foot
+            # IK target at foot — oriented to match foot bone so that
+            # COPY_ROTATION produces correct rest-pose orientation.
             ik_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
             ik_bone = edit_bones.new(ik_name)
             ik_bone.head = orig_foot.head.copy()
-            ik_bone.tail = orig_foot.head + Vector((0, -bone_len, 0))
-            ik_bone.roll = 0
+            foot_dir = (orig_foot.tail - orig_foot.head).normalized()
+            ik_bone.tail = orig_foot.head + foot_dir * bone_len
+            ik_bone.roll = orig_foot.roll
             created.append(ik_name)
 
             # IK pole at knee
@@ -584,6 +604,22 @@ def _constrain_leg(armature_obj, chain_id, chain_bones, bones_info):
             if armature_obj.pose.bones.get(ik_pole):
                 con.pole_target = armature_obj
                 con.pole_subtarget = ik_pole
+
+    # Foot rotation from IK target (end-effector control).
+    # When IK is active, the foot orientation follows the IK target bone.
+    # Influence starts at 0.0 (FK mode) and is toggled by BT_OT_ToggleFKIK.
+    foot_bone = roles.get("foot")
+    if foot_bone:
+        foot_role = bones_info.get(foot_bone, {}).get("role", foot_bone)
+        foot_mch = f"{WRAP_MCH_PREFIX}{chain_id}_{foot_role}"
+        ik_target = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
+        foot_pbone = armature_obj.pose.bones.get(foot_mch)
+        if foot_pbone and armature_obj.pose.bones.get(ik_target):
+            con = foot_pbone.constraints.new('COPY_ROTATION')
+            con.name = f"{WRAP_CONSTRAINT_PREFIX}IK_Rot"
+            con.target = armature_obj
+            con.subtarget = ik_target
+            con.influence = 0.0  # Start with FK
 
 
 # --- Helpers ---
@@ -694,19 +730,62 @@ def snap_fk_to_ik(armature_obj, chain_id):
     Call before switching from IK to FK so the pose is preserved.
     Reads the MCH bone matrices (driven by IK solver) and applies
     them to the CTRL-FK bones.
+
+    Three-phase approach for high precision:
+      1. Read all MCH world matrices (prevents constraint feedback).
+      2. Initial matrix assignment, parent-first with per-bone update.
+      3. Iterative Newton correction with per-bone updates — converges
+         quadratically, eliminating visible drift even across keyframes.
     """
     sd = armature_obj.bt_scan
     chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
 
+    # Phase 1: Read ALL MCH world matrices before modifying anything.
+    # Prevents constraint feedback from corrupting later reads when
+    # view_layer.update() triggers re-evaluation of the chain.
+    snap_pairs = []
     for bone_item in chain_bones:
         mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
         ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{bone_item.role}"
         mch_pb = armature_obj.pose.bones.get(mch_name)
         ctrl_pb = armature_obj.pose.bones.get(ctrl_name)
         if mch_pb and ctrl_pb:
-            ctrl_pb.matrix = mch_pb.matrix.copy()
-            # Update after each bone so children compute correctly
+            snap_pairs.append((ctrl_pb, mch_pb.matrix.copy()))
+
+    # Phase 2: Apply transforms parent-first with per-bone update.
+    for ctrl_pb, target_matrix in snap_pairs:
+        ctrl_pb.matrix = target_matrix
+        bpy.context.view_layer.update()
+
+    # Phase 3: Iterative correction — compensate for world-to-local
+    # decomposition drift.  The roundtrip set_matrix → evaluate →
+    # read_matrix is lossy (matrix ↔ loc/rot/scale decomposition).
+    # Each pass applies the residual as a multiplicative Newton
+    # correction, converging quadratically.  Per-bone updates ensure
+    # that parent corrections propagate to children within the same
+    # pass, preventing compounding chain errors.
+    _POS_TOL_SQ = 1e-16   # ~0.1 nanometer squared
+    _ROT_TOL = 1e-12      # quaternion dot threshold (1 − dot)
+    _MAX_ITER = 4
+
+    for _ in range(_MAX_ITER):
+        any_corrected = False
+        for ctrl_pb, target_matrix in snap_pairs:
+            actual = ctrl_pb.matrix
+            pos_err = target_matrix.translation - actual.translation
+            tgt_q = target_matrix.to_quaternion()
+            act_q = actual.to_quaternion()
+            rot_dot = abs(tgt_q.dot(act_q))
+            if pos_err.length_squared < _POS_TOL_SQ and rot_dot > (1.0 - _ROT_TOL):
+                continue
+            # Newton step: corrected = target @ actual⁻¹ @ target
+            delta = target_matrix @ actual.inverted()
+            ctrl_pb.matrix = delta @ target_matrix
+            # Per-bone update so child bones see corrected parent
             bpy.context.view_layer.update()
+            any_corrected = True
+        if not any_corrected:
+            break
 
 
 def snap_ik_to_fk(armature_obj, chain_id):
@@ -773,12 +852,37 @@ def snap_ik_to_fk(armature_obj, chain_id):
         def mid_point_getter():
             return mid_pb.head.copy()
 
-    # Snap IK target to the chain tip (tail of the IK bone = foot/hand)
+    # Snap IK target to the chain tip (tail of the IK bone = foot/hand).
+    # Also snap rotation to match the FK-posed end effector (hand/foot).
     ik_target_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
     ik_target_pb = armature_obj.pose.bones.get(ik_target_name)
     if ik_target_pb:
         fk_tip = ik_mch.tail.copy()
-        mat = Matrix.Translation(fk_tip)
+
+        # Find the end-effector MCH bone (has COPY_ROTATION from IK target)
+        effector_pb = None
+        for bone_item in chain_bones:
+            eff_mch = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+            eff_pb = armature_obj.pose.bones.get(eff_mch)
+            if not eff_pb:
+                continue
+            for c in eff_pb.constraints:
+                if (c.type == 'COPY_ROTATION'
+                        and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
+                        and c.subtarget == ik_target_name):
+                    effector_pb = eff_pb
+                    break
+            if effector_pb:
+                break
+
+        if effector_pb:
+            # Build matrix with position at chain tip + rotation from effector
+            rot = effector_pb.matrix.to_3x3()
+            mat = rot.to_4x4()
+            mat.translation = fk_tip
+        else:
+            mat = Matrix.Translation(fk_tip)
+
         ik_target_pb.matrix = mat
         bpy.context.view_layer.update()
 
@@ -1045,6 +1149,23 @@ def _constrain_ik_chain(armature_obj, chain_id, chain_bones, bones_info,
         con.pole_target = armature_obj
         con.pole_subtarget = ik_pole
         # pole_angle is set later by _calibrate_pole_angles()
+
+    # End-effector rotation from IK target.
+    # When IK is active, the tip bone orientation follows the IK target.
+    # Influence starts at 0.0 (FK mode) and is toggled by BT_OT_ToggleFKIK.
+    # For chains where IK doesn't cover the last bone (ik_snap / chain_count < len),
+    # add COPY_ROTATION so the end effector tracks the IK target rotation.
+    if chain_count < len(chain_bones):
+        tip_bone_name = chain_bones[-1]
+        tip_role = bones_info.get(tip_bone_name, {}).get("role", tip_bone_name)
+        tip_mch = f"{WRAP_MCH_PREFIX}{chain_id}_{tip_role}"
+        tip_pbone = armature_obj.pose.bones.get(tip_mch)
+        if tip_pbone and armature_obj.pose.bones.get(ik_target):
+            rot_con = tip_pbone.constraints.new('COPY_ROTATION')
+            rot_con.name = f"{WRAP_CONSTRAINT_PREFIX}IK_Rot"
+            rot_con.target = armature_obj
+            rot_con.subtarget = ik_target
+            rot_con.influence = 0.0  # Start with FK
 
 
 # --- Spline IK Chain ---

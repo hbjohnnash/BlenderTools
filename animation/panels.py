@@ -63,6 +63,7 @@ class BT_PT_AnimationMain(bpy.types.Panel):
 
         wm = context.window_manager
         from ..core.ml import model_manager
+        from ..core.ml.dependencies import check_torch_available
 
         if wm.bt_ml_busy and wm.bt_ml_status:
             box.label(text=wm.bt_ml_status, icon='SORTTIME')
@@ -70,24 +71,65 @@ class BT_PT_AnimationMain(bpy.types.Panel):
             col.scale_y = 0.5
             col.prop(wm, "bt_ml_progress", text="", slider=True)
         else:
-            anytop_ready = model_manager.is_model_installed("anytop")
-            sinmdm_ready = model_manager.is_model_installed("sinmdm")
+            torch_ok = check_torch_available()
+            anytop_ready = (torch_ok
+                            and model_manager.is_model_installed("anytop"))
+            sinmdm_ready = (torch_ok
+                            and model_manager.is_model_installed("sinmdm"))
 
             if anytop_ready or sinmdm_ready:
-                # AnyTop — Text-to-Motion
-                if anytop_ready:
+                lcm_ready = (torch_ok
+                             and model_manager.is_model_installed("motionlcm"))
+                # SMPL Reference toggle (may fail if numpy not yet installed)
+                try:
+                    from ..animation.ml.retarget_preview import (
+                        get_smpl_preview,
+                        is_link_active,
+                    )
+                    has_preview = get_smpl_preview() is not None
+                except Exception:
+                    has_preview = False
+                    is_link_active = lambda: False
+                row = box.row(align=True)
+                row.operator(
+                    "bt.retarget_preview",
+                    text="Hide SMPL Reference" if has_preview
+                         else "Show SMPL Reference",
+                    icon='ARMATURE_DATA',
+                    depress=has_preview,
+                )
+                if has_preview:
+                    linked = is_link_active()
+                    row.operator(
+                        "bt.link_smpl_preview",
+                        text="Unlink" if linked else "Link",
+                        icon='LINKED' if linked else 'UNLINKED',
+                        depress=linked,
+                    )
+
+                # Text-to-Motion (auto-selects model)
+                if lcm_ready or anytop_ready:
                     sub = box.box()
-                    sub.label(text="Text-to-Motion (AnyTop)", icon='CHECKMARK')
+                    models = []
+                    if lcm_ready:
+                        models.append("MotionLCM")
+                    if anytop_ready:
+                        models.append("AnyTop")
+                    sub.label(
+                        text=f"Text-to-Motion ({' + '.join(models)})",
+                        icon='CHECKMARK',
+                    )
                     col = sub.column(align=True)
-                    col.enabled = is_armature
                     col.operator("bt.ai_generate_motion", icon='PLAY')
+                    col.operator(
+                        "bt.debug_retarget_frame", icon='VIEWZOOM',
+                    )
 
                 # SinMDM — Style & In-Between
                 if sinmdm_ready:
                     sub = box.box()
                     sub.label(text="Style & In-Between (SinMDM)", icon='CHECKMARK')
                     col = sub.column(align=True)
-                    col.enabled = is_armature
                     col.operator("bt.ai_style_transfer", icon='BRUSHES_ALL')
                     col.operator("bt.ai_inbetween", icon='IPO_BEZIER')
 

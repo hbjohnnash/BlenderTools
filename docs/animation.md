@@ -2,216 +2,91 @@
 
 ## Mechanical Animation
 
-Three types of mechanical animation for rigged mechanical parts:
-- **Piston** — Linear stroke cycle along the bone's axis
+- **Piston** — Linear stroke cycle along bone axis
 - **Gear** — Continuous rotation with configurable ratio
 - **Conveyor** — Repeating linear offset
 
 ## Path & Camera
 
-### Follow Path
-Attach any object to follow a curve path.
-1. Select object + curve
-2. Set duration and banking
-3. Object follows curve over specified frames
-
-### Orbit Camera
-Creates a new camera that orbits around the 3D cursor.
-- Automatically creates a target empty
-- Track-To constraint for look-at
-
-### Camera Shake
-Adds procedural noise-based shake to a camera.
-- Intensity and frequency controls
-- Seed for reproducible results
-
-### Focus Pull
-Animate depth of field focus distance (requires DOF enabled).
+- **Follow Path** — Attach object to curve, set duration/banking
+- **Orbit Camera** — Creates camera orbiting 3D cursor with Track-To
+- **Camera Shake** — Procedural noise (intensity, frequency, seed)
+- **Focus Pull** — Animate DOF focus distance
 
 ## Cycle & NLA
 
-### Match Cycle Start/End
-Sets the last keyframe of each FCurve to match the first — essential for seamless loops.
-
-### Push to NLA
-Converts the active action into an NLA strip with optional repeat count.
+- **Match Cycle Start/End** — Last keyframe matches first for seamless loops
+- **Push to NLA** — Active action to NLA strip with optional repeat count
 
 ## Root Motion Extraction
 
-One-click workflow for extracting root motion from animations, based on the reference-object pinning method.
+Pin controllers (IK targets, spine FK) to baked reference empties, freeing the root bone for motion extraction. Source bone's XY translation + Z rotation extracted to root.
 
-**Concept:** Pin key controllers (IK targets, spine FK) to baked reference empties, freeing the root bone for motion extraction. After animating root movement, finalize bakes controllers with visual keying and cleans up.
+- **Source bone** — COG/hips/torso. Auto-detected from lowest spine FK or name heuristic
+- **Root bone** — Receives locomotion data. For wrap rigs, uses CTRL wrap bone. Created at origin if missing
+- **Pinned bones** — All controllers holding world-space position. Each gets reference empty + COPY_TRANSFORMS back
 
-**Key concepts:**
-- **Pinned bones** — All controllers that must hold their world-space position when the root moves. Each gets a reference empty baked to its current motion, then a COPY_TRANSFORMS constraint back to that empty. Typically IK targets (hands/feet) + the COG/torso. The source bone is always included.
-- **Source bone** — One of the pinned bones (the COG/hips/torso) whose XY translation and Z rotation are additionally extracted to the root bone. This defines the character's travel path. Auto-detected from the lowest spine FK controller or by name heuristic (Hips, pelvis, mixamorig:Hips, etc.)
-- **Root bone** — The bone that receives the extracted locomotion data. For wrap rigs, auto-detect selects the CTRL wrap bone (e.g. `CTRL-Wrap_generic_C_FK_1_01`), not the original/DEF bone, to avoid constraint conflicts with the wrap rig. Created at origin if missing, with all top-level bones reparented to it.
+Workflow: Auto-detect > Setup > (polish root curves) > Finalize (bakes + cleanup) or Cancel.
 
-**Workflow:**
-1. Select armature with animation
-2. Open Animation > Root Motion panel
-3. Auto-detect (or manually configure) source bone, root bone, and pinned bones
-4. Click **Setup** — creates reference empties, pins controllers, creates/reparents root bone
-5. Optionally polish root curves in the Graph Editor
-6. Click **Finalize** — bakes all controllers, removes empties and constraints
-7. Or click **Cancel** to restore the original state
-
-**Operators:**
-- `bt.rm_auto_detect` — Auto-detect source/root/pinned bones from scan data or heuristics
-- `bt.rm_add_selected` / `bt.rm_remove_bone` — Manually manage pinned bone list
-- `bt.rm_setup` — Create empties + pin controllers
-- `bt.rm_finalize` — Bake controllers with visual keying + cleanup
-- `bt.rm_cancel` — Undo setup, restore original state
-
-**Options:**
-- `extract_xy` — Extract XY translation to root (default: true)
-- `extract_z_rot` — Extract Z rotation (yaw) to root (default: true)
+Options: `extract_xy` (default true), `extract_z_rot` (default true).
 
 ## Bone Trajectory
 
-Interactive 3D visualization and editing of bone trajectories. Inspired by Cascadeur's trajectory system.
+Interactive 3D trajectory visualization and editing for any bone with keyframes.
 
-**How it works:**
-- Works for **all bone types** — any bone with keyframes (rotation, location, scale) gets a trajectory
-- Evaluates selected bone's world-space position at each keyframe and intermediate frames
-- Draws a smooth curve through the positions (past=blue, future=green)
-- Non-keyframe positions shown as small gray dots
+Dot colors: **yellow** = directly editable (location keys), **cyan** = IK-assisted (FK bone with IK available), **gray** = read-only, **white** = current frame.
 
-**Dot colors:**
-- **Yellow** — directly editable (bone has location keyframes with unlocked location)
-- **Cyan** — IK-assisted editing available (FK bone whose chain has IK enabled)
-- **Dim gray** — read-only (rotation/scale-only keyframes, no editing path)
-- **White** — current frame marker
+- Yellow dots: click-drag moves bone, FCurves update in real-time
+- Cyan dots: temporary IK enabled, drag IK target, on release FK snaps + keys rotations
 
-**Editing — direct (yellow dots):**
-- Click a yellow keyframe dot to grab it, drag to move
-- World-space delta is inverse-transformed to bone-local location using the bone's location-space matrix (accounts for parent chain + rest pose)
-- FCurve values update in real-time during drag
-
-**Editing — IK-assisted (cyan dots):**
-1. Click a cyan dot on an FK bone
-2. System snaps the IK target/pole to match the current FK pose
-3. IK constraints are temporarily enabled on the chain
-4. Drag the IK target — the FK chain follows via the IK solver in real-time
-5. On mouse release: FK bones are snapped to match the IK-solved pose, FK rotations are keyed at that frame, and constraints are restored to their original state
-
-**Header hint** updates dynamically based on available edit modes (direct drag, IK-assisted, or view-only).
-
-**Operators:** `bt.trajectory` (modal toggle, ESC to exit or cancel drag)
+Operator: `bt.trajectory` (modal, ESC to exit)
 
 ## Onion Skinning
 
-Camera-independent ghost frame display for armatures with child meshes.
+Ghost frames for armatures with child meshes. Past=blue, future=orange. GPU-batched, cache rebuilds on frame change.
 
-**How it works:**
-- Evaluates child meshes at past/future frames via depsgraph
-- Caches GPU batches in world space — drawing is just `batch.draw()` (very fast)
-- Past ghosts: blue tint with decreasing opacity
-- Future ghosts: orange tint with decreasing opacity
-- Cache rebuilds only on frame change (survives viewport rotation)
+**Proxy LOD**: Decimated proxies per child mesh, stored in hidden `BT_OnionSkin_Proxy` collection. Ratio 0.05-1.0.
 
-**Proxy LOD system:**
-- On activation, decimated proxy meshes are created for each child mesh to speed up per-frame ghost evaluation
-- Uses a Decimate modifier (COLLAPSE mode) to bake low-poly geometry, then replaces it with an Armature modifier so the proxy deforms with the rig
-- Vertex groups are preserved through decimation so skinning remains correct
-- Proxy ratio controls detail level: lower values = faster evaluation, `1.0` = full quality (no proxies created)
-- Proxies are stored in a hidden `BT_OnionSkin_Proxy` collection and destroyed when onion skin is disabled
+**Keyframes Only**: Ghosts at keyframe positions instead of fixed intervals.
 
-**Keyframes Only mode:**
-- When `bt_onion_use_keyframes` is enabled, ghosts appear at actual keyframe positions instead of fixed frame intervals
-- Selects the nearest N keyframes before/after the current frame (respecting `bt_onion_before`/`bt_onion_after` counts)
-- Keyframes are collected from all FCurves in the armature's action
+Settings: `bt_onion_before/after` (3), `bt_onion_step` (1), `bt_onion_opacity` (0.25), `bt_onion_use_keyframes`, `bt_onion_proxy_ratio` (0.25).
 
-**Settings (Scene properties):**
-- `bt_onion_before` — Ghost count before current frame (default 3)
-- `bt_onion_after` — Ghost count after current frame (default 3)
-- `bt_onion_step` — Frame interval between ghosts (default 1)
-- `bt_onion_opacity` — Base opacity (default 0.25)
-- `bt_onion_use_keyframes` — Show ghosts at keyframes instead of fixed intervals (default false)
-- `bt_onion_proxy_ratio` — Proxy mesh detail level, 0.05–1.0 (default 0.25, `FACTOR` subtype)
+Operators: `bt.onion_skin` (toggle), `bt.onion_skin_refresh` (rebuild proxies/cache)
 
-**Operators:**
-- `bt.onion_skin` — Toggle onion skinning on/off (creates/destroys proxy meshes)
-- `bt.onion_skin_refresh` — Force rebuild proxy meshes and recache ghost frames
+## Smart Keyframe (I key override)
 
-## Smart Keyframe
+IK bones never keyed directly. Per-bone behavior:
+- **IK bone + IK mode**: snap FK from IK, key FK rotations for chain
+- **FK bone**: key rotation
+- **COG/root**: key location + rotation
+- **Non-wrap bones**: key rotation + location if unlocked
+- **IK bone + FK mode**: skipped
 
-Intelligent keyframe insertion for wrap rigs. Overrides the **I** key in Pose mode.
-
-**Core rule:** IK bones are never keyed directly. Instead, FK rotations are always the keyed data — ensuring clean curves and predictable playback.
-
-**Per-bone behavior:**
-- **IK bone selected** (target, pole, or spline hook) + chain is in IK mode: snaps FK bones to match the current IK-solved pose, then keys FK rotations for the entire chain
-- **FK bone selected**: keys rotation (respects the bone's rotation mode — euler, quaternion, or axis-angle)
-- **COG / root bone** (has unlocked location channels): keys location + rotation
-- **Non-wrap bones** (original skeleton, custom bones): keys rotation, plus location if any location channel is unlocked
-- **IK bone selected but chain is in FK mode**: skipped with an info message
-
-**Fallback:** If no wrap rig is detected on the armature, all selected bones are keyed with rotation + location (when unlocked) — standard Blender behavior.
-
-**Operator:** `bt.smart_keyframe`
+Fallback (no wrap rig): all selected keyed with rotation + location. Operator: `bt.smart_keyframe`
 
 ## AI Motion Generation
 
-### Text-to-Motion (AnyTop)
-Generate animation from a text prompt for **any skeleton topology** (human, animal, robot).
+### AnyTop (text-to-motion, SIGGRAPH 2025)
+Any skeleton topology. Extracts topology from armature, sends to model, outputs 6D joint rotations, converts to Euler via Gram-Schmidt, applies as keyframes. HF: `inbar2344/AnyTop`.
 
-**Requirements:** Click "Initialize AI Motion" first (downloads PyTorch + AnyTop + SinMDM).
+### SinMDM (style transfer)
+Tasks: style transfer, inbetween, expand. Single-motion diffusion, MIT license, generic BVH input.
 
-**How it works:**
-1. Extracts skeleton topology from Blender armature (joint offsets + text descriptions)
-2. Sends skeleton + text prompt to AnyTop model
-3. Model outputs 6D joint rotations per frame
-4. Rotations are converted to Euler angles via Gram-Schmidt orthonormalization
-5. Applied as keyframes on the armature using Blender 5.0 channelbag API
-6. Falls back to simple procedural oscillation if model inference fails
+Operators: `bt.init_anim_ai`, `bt.remove_anim_ai`, `bt.ai_generate_motion`, `bt.ai_style_transfer`, `bt.ai_inbetween`
 
-**Model:** AnyTop (SIGGRAPH 2025, topology-agnostic, HuggingFace: `inbar2344/AnyTop`)
-
-### Style Transfer (SinMDM)
-Learn motion style from a single example animation and generate variations.
-
-**Tasks:**
-- **Style Transfer** — Apply the style of the current animation to new motion
-- **Inbetween** — Fill gaps between keyframes with learned motion patterns
-- **Expand** — Extend a short animation into a longer sequence
-
-**Model:** SinMDM (MIT license, single-motion diffusion, generic BVH input)
-
-**Operators:**
-- `bt.init_anim_ai` — Download PyTorch + AnyTop (HuggingFace) + SinMDM (Google Drive)
-- `bt.remove_anim_ai` — Delete cached models
-- `bt.ai_generate_motion` — Text prompt → motion (AnyTop)
-- `bt.ai_style_transfer` — Style transfer from current animation (SinMDM)
-- `bt.ai_inbetween` — Fill between keyframes (SinMDM)
-
-### Model Management
-- Models cached at `~/.blendertools/models/<model_id>/`
-- Persist across Blender restarts
-- "Remove" buttons free disk space
-- Adapter pattern allows swapping models (e.g. when SeamGPT releases weights)
+Models cached at `~/.blendertools/models/<model_id>/`.
 
 ## Animation Data Flow
 
-All animation output uses the `create_fcurve` helper in `core/utils.py` which handles Blender 5.0's channelbag API:
+Uses `create_fcurve` helper (in `core/utils.py`) for Blender 5.0 channelbag API: Action > Slot > Channelbag > FCurve > Keyframes. Reading: `action.layers[].strips[].channelbags[].fcurves`.
 
-1. Get/create Action
-2. Get/create Slot for the object (`slots.new(name=obj.name, id_type='OBJECT')`)
-3. Ensure Channelbag for the slot (`action_ensure_channelbag_for_slot(action, slot)`)
-4. Create FCurve in the channelbag
-5. Insert keyframe points
-
-When reading FCurves (e.g. trajectory, onion skin keyframe detection), the access path is `action.layers[].strips[].channelbags[].fcurves` — not `slot.channelbags`.
-
-**Channel groups:** After `nla.bake`, FCurves are ungrouped by default. Call `assign_channel_groups(armature_obj)` (from `core/utils.py`) to assign each FCurve to a bone-named channel group via `channelbag.groups`. This is done automatically by root motion setup/finalize and bake-to-DEF.
+Channel groups: `assign_channel_groups(armature_obj)` after `nla.bake` (auto-called by root motion and bake-to-DEF).
 
 ## Bridge API
 
 ```bash
-python blender_api.py mechanical --object Piston --type piston_cycle
-
-# Root motion extraction
-python blender_api.py root-motion-setup --armature Armature
-python blender_api.py root-motion-finalize --armature Armature
-python blender_api.py root-motion-cancel --armature Armature
+mechanical --object X --type piston_cycle|gear_rotation|conveyor
+root-motion-setup --armature X
+root-motion-finalize --armature X
+root-motion-cancel --armature X
 ```

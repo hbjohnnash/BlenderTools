@@ -27,8 +27,12 @@ def scale_rig(armature_obj, factor):
 
     # 1. Scale armature object and apply
     armature_obj.scale *= factor
+    prev_mode = bpy.context.mode
+    if prev_mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    for obj in bpy.context.selected_objects:
+        obj.select_set(False)
     bpy.context.view_layer.objects.active = armature_obj
-    bpy.ops.object.select_all(action='DESELECT')
     armature_obj.select_set(True)
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     stats["bones_scaled"] = len(armature_obj.data.bones)
@@ -46,6 +50,12 @@ def scale_rig(armature_obj, factor):
 
     # 5. Update bt_rig_config custom property
     stats["config_updated"] = _scale_rig_config(armature_obj, factor)
+
+    # Restore original mode
+    if prev_mode == 'POSE':
+        bpy.ops.object.mode_set(mode='POSE')
+    elif prev_mode.startswith('EDIT'):
+        bpy.ops.object.mode_set(mode='EDIT')
 
     return stats
 
@@ -191,16 +201,17 @@ def _scale_child_meshes(armature_obj, factor):
         if child.type != 'MESH':
             continue
 
-        # Scale the mesh data directly in edit mode for clean results
         child.scale = (factor, factor, factor)
-        bpy.ops.object.select_all(action='DESELECT')
+        for obj in bpy.context.selected_objects:
+            obj.select_set(False)
         child.select_set(True)
         bpy.context.view_layer.objects.active = child
         bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
         count += 1
 
     # Restore armature as active
-    bpy.ops.object.select_all(action='DESELECT')
+    for obj in bpy.context.selected_objects:
+        obj.select_set(False)
     armature_obj.select_set(True)
     bpy.context.view_layer.objects.active = armature_obj
 

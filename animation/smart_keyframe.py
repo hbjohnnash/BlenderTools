@@ -37,6 +37,17 @@ def _get_chain_fk_pbones(armature_obj, sd, chain_id):
     return fk_bones
 
 
+def _get_chain_ik_pbones(armature_obj, chain_id):
+    """Return IK control pose bones (target and/or pole) for a chain."""
+    ik_bones = []
+    for suffix in ("_IK_target", "_IK_pole"):
+        name = f"{WRAP_CTRL_PREFIX}{chain_id}{suffix}"
+        pb = armature_obj.pose.bones.get(name)
+        if pb:
+            ik_bones.append(pb)
+    return ik_bones
+
+
 def _key_rotation(pbone, frame):
     """Insert rotation keyframe respecting the bone's rotation mode."""
     if pbone.rotation_mode == 'QUATERNION':

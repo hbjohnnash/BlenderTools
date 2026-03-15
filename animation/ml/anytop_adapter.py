@@ -34,6 +34,10 @@ _CODE_URL = (
 # Contains checkpoints/ and dataset/ directories.
 _HF_REPO = "inbar2344/AnyTop"
 
+# AnyTop uses generic top-level package names that conflict with other
+# modules in Blender's Python environment.  We need to isolate imports.
+_ANYTOP_PKGS = ("model", "utils", "diffusion", "data_loaders")
+
 
 class AnyTopAdapter(BaseModelAdapter):
     MODEL_ID = "anytop"
@@ -47,6 +51,91 @@ class AnyTopAdapter(BaseModelAdapter):
     # WEIGHT_URLS left empty; download_weights is overridden to use HF.
     WEIGHT_URLS = {}
     EXTRA_DEPS = ["einops", "tqdm", "huggingface_hub", "transformers"]
+
+    # ── High-level generation API ──
+
+    def generate(self, armature_obj, prompt, num_frames=120):
+        """Generate motion for *armature_obj*, retargeting when possible.
+
+        When a wrap rig with scan data exists, generates on the
+        standard SMPL skeleton and retargets via an influence map.
+        Falls back to direct generation on the user's skeleton
+        otherwise.
+
+        Args:
+            armature_obj: Blender armature.
+            prompt: Text description (e.g. "a person walking").
+            num_frames: Number of frames to generate.
+
+        Returns:
+            Motion data dict — either retargeted format (with
+            ``is_retargeted=True``) or legacy format.
+        """
+        from ..retarget import has_wrap_rig
+        from . import smpl_skeleton
+        from .retarget_map import apply_retarget, build_default_influence_map
+
+        scan_data = getattr(armature_obj, 'bt_scan', None)
+        use_retarget = (
+            scan_data
+            and getattr(scan_data, 'has_wrap_rig', False)
+            and has_wrap_rig(armature_obj)
+        )
+
+        if use_retarget:
+            # Generate on standard SMPL skeleton
+            smpl_skel = smpl_skeleton.get_skeleton()
+            motion_data = self.predict(smpl_skel, prompt, num_frames)
+
+            # Build influence map from wrap rig scan data
+            imap = build_default_influence_map(scan_data, armature_obj)
+            if imap and not imap.is_empty():
+                # Run any registered refiners
+                imap.apply_refiners({
+                    'armature_obj': armature_obj,
+                    'scan_data': scan_data,
+                })
+
+                # Scale root positions to user skeleton size
+                user_height = self._get_armature_height(armature_obj)
+                smpl_height = smpl_skeleton.SKELETON_HEIGHT
+                pos_scale = (user_height / smpl_height
+                             if smpl_height > 1e-6 else 1.0)
+
+                # Root positions: Y↔Z swap gives +Y forward, negate
+                # X and Y to get Blender -Y forward convention.
+                # Rotations already face -Y (proper rotation conversion).
+                pos_corrected = [
+                    (-x, -y, z)
+                    for x, y, z in motion_data['root_positions']
+                ]
+
+                retargeted = apply_retarget(
+                    motion_data['rotations'],
+                    pos_corrected,
+                    imap,
+                    armature_obj=armature_obj,
+                    position_scale=pos_scale,
+                )
+                # Preserve raw SMPL data for preview animation
+                retargeted['_smpl_rotations'] = motion_data['rotations']
+                retargeted['_smpl_root_positions'] = motion_data[
+                    'root_positions'
+                ]
+                return retargeted
+
+        # Fallback: direct generation on user's skeleton
+        skeleton = self.extract_skeleton(armature_obj)
+        return self.predict(skeleton, prompt, num_frames)
+
+    @staticmethod
+    def _get_armature_height(armature_obj):
+        """Compute armature height from bone positions (Z-up)."""
+        z_vals = []
+        for bone in armature_obj.data.bones:
+            z_vals.append(bone.head_local.z)
+            z_vals.append(bone.tail_local.z)
+        return (max(z_vals) - min(z_vals)) if z_vals else 1.8
 
     # ── Skeleton extraction ──
 
@@ -187,6 +276,47 @@ class AnyTopAdapter(BaseModelAdapter):
         if progress_callback:
             progress_callback(1.0, "AnyTop weights downloaded")
 
+    # ── Import isolation ──
+
+    @staticmethod
+    def _ensure_anytop_packages(repo_root):
+        """Create missing ``__init__.py`` in AnyTop repo directories.
+
+        AnyTop ships without ``__init__.py`` in ``model/``, ``diffusion/``,
+        and ``data_loaders/``, relying on implicit-namespace-package
+        semantics.  This fails when Blender's Python already has
+        cached modules with those generic names.  Creating the files
+        converts them to proper packages whose location is unambiguous.
+        """
+        for pkg in ("model", "diffusion", "data_loaders"):
+            init = repo_root / pkg / "__init__.py"
+            if not init.exists() and init.parent.exists():
+                init.touch()
+
+    @staticmethod
+    def _setup_anytop_imports(repo_root):
+        """Clear conflicting ``sys.modules`` entries and fix ``sys.path``.
+
+        Returns a dict of evicted modules (kept for diagnostics only —
+        we intentionally do **not** restore them because the AnyTop
+        model object holds live references to its own module classes).
+        """
+        repo_str = str(repo_root)
+
+        evicted = {}
+        for name in list(sys.modules.keys()):
+            for pkg in _ANYTOP_PKGS:
+                if name == pkg or name.startswith(pkg + "."):
+                    evicted[name] = sys.modules.pop(name)
+                    break
+
+        # Ensure repo is *first* so Python finds AnyTop's packages
+        if repo_str in sys.path:
+            sys.path.remove(repo_str)
+        sys.path.insert(0, repo_str)
+
+        return evicted
+
     # ── Model loading ──
 
     def _get_repo_root(self):
@@ -218,9 +348,12 @@ class AnyTopAdapter(BaseModelAdapter):
         import torch
 
         repo_root = self._get_repo_root()
-        repo_str = str(repo_root)
-        if repo_str not in sys.path:
-            sys.path.insert(0, repo_str)
+
+        # AnyTop uses generic package names (model, utils, diffusion,
+        # data_loaders) that collide with other modules in Blender's
+        # Python.  Create missing __init__.py and isolate sys.modules.
+        self._ensure_anytop_packages(repo_root)
+        self._setup_anytop_imports(repo_root)
 
         # Find checkpoint and load args
         ckpt_path = self._find_checkpoint()
@@ -242,6 +375,12 @@ class AnyTopAdapter(BaseModelAdapter):
             args,
         )
 
+        if model_net is None:
+            raise RuntimeError(
+                "AnyTop model constructor returned None — check "
+                "that the checkpoint args.json matches the model code."
+            )
+
         # Load trained weights
         state_dict = torch.load(
             ckpt_path, map_location="cpu", weights_only=False,
@@ -249,8 +388,10 @@ class AnyTopAdapter(BaseModelAdapter):
         load_weights(model_net, state_dict)
 
         # Set device and eval mode
+        # NOTE: AnyTop's _apply() override forgets to return self,
+        # so .to() returns None.  Call without reassignment.
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        model_net = model_net.to(device)
+        model_net.to(device)
         model_net.eval()
 
         # Initialize dist_util for any internal device lookups
@@ -271,6 +412,14 @@ class AnyTopAdapter(BaseModelAdapter):
         _t5_cache.clear()
         self._model = None
         self._repo_root = None
+
+        # Remove AnyTop's generic-named modules so they don't linger
+        for name in list(sys.modules.keys()):
+            for pkg in _ANYTOP_PKGS:
+                if name == pkg or name.startswith(pkg + "."):
+                    del sys.modules[name]
+                    break
+
         import gc
         gc.collect()
         try:
@@ -286,10 +435,12 @@ class AnyTopAdapter(BaseModelAdapter):
         """Generate motion from text prompt for the given skeleton.
 
         Uses the full AnyTop diffusion pipeline:
-            1. Build conditioning from skeleton topology
-            2. Encode joint names via T5
-            3. Run 100-step denoising diffusion
-            4. Recover rotations and root position from features
+            1. Scale skeleton to training space (HML_AVG_BONELEN)
+            2. Build conditioning from skeleton topology
+            3. Encode joint names via T5
+            4. Run 100-step denoising diffusion
+            5. Recover rotations and root position from features
+            6. Scale output positions back to Blender units
 
         Falls back to procedural motion on any failure.
 
@@ -313,10 +464,8 @@ class AnyTopAdapter(BaseModelAdapter):
             device = self._model["device"]
             temporal_window = self._model["temporal_window"]
 
-            # Ensure AnyTop repo is on path for imports
-            repo_str = str(self._repo_root)
-            if repo_str not in sys.path:
-                sys.path.insert(0, repo_str)
+            # Ensure AnyTop repo is on path for data_loaders import
+            self._setup_anytop_imports(self._repo_root)
 
             from .anytop_conditioning import (
                 FEATURE_LEN,
@@ -324,17 +473,33 @@ class AnyTopAdapter(BaseModelAdapter):
                 build_cond_dict,
                 create_temporal_mask,
                 encode_joint_names_t5,
+                scale_and_ground_skeleton,
             )
 
-            # 1. Build conditioning from skeleton
+            # 1. Convert Blender Z-up → AnyTop Y-up: swap Y ↔ Z
+            joints_yup = [
+                {**j, "offset": [j["offset"][0], j["offset"][2],
+                                 j["offset"][1]]}
+                for j in joints
+            ]
+
+            # 2. Scale to training space + ground (min Y = 0)
+            scaled_joints, scale_factor = scale_and_ground_skeleton(
+                joints_yup,
+            )
+            skeleton_scaled = {"joints": scaled_joints}
+
+            # 3. Build conditioning from scaled skeleton
             object_type = "blender_skeleton"
-            cond_dict = build_cond_dict(skeleton, object_type)
+            cond_dict = build_cond_dict(skeleton_scaled, object_type)
             cond = cond_dict[object_type]
 
-            # 2. Encode joint names via T5
+            # 4. Encode joint names via T5
+            # truebones_batch_collate expects (n_joints, 768) — it handles
+            # padding to MAX_JOINTS internally.  Slice off the padding.
             joint_names_embs = encode_joint_names_t5(
                 cond["joints_names"], device=device,
-            ).detach().cpu().numpy()
+            )[:num_joints].detach().cpu().numpy()
 
             # Normalize T-pose for model input
             tpose_norm = (
@@ -343,7 +508,7 @@ class AnyTopAdapter(BaseModelAdapter):
             )
             tpose_norm = np.nan_to_num(tpose_norm)
 
-            # 3. Build batch in the format expected by truebones_batch_collate
+            # 5. Build batch in the format expected by truebones_batch_collate
             temporal_mask = create_temporal_mask(temporal_window, num_frames)
             batch = [
                 np.zeros((num_frames, num_joints, FEATURE_LEN)),
@@ -370,7 +535,7 @@ class AnyTopAdapter(BaseModelAdapter):
                 if isinstance(v, torch.Tensor):
                     model_kwargs["y"][k] = v.to(device)
 
-            # 4. Run diffusion sampling (100 denoising steps)
+            # 6. Run diffusion sampling (100 denoising steps)
             sample = diffusion.p_sample_loop(
                 model_net,
                 (1, MAX_JOINTS, model_net.feature_len, num_frames),
@@ -384,16 +549,16 @@ class AnyTopAdapter(BaseModelAdapter):
                 const_noise=False,
             )
 
-            # 5. Extract and denormalize
+            # 7. Extract and denormalize
             motion = sample[0, :num_joints]  # trim joint padding
             motion = motion.cpu().permute(2, 0, 1).numpy()  # → (F, J, 13)
             mean = cond["mean"][np.newaxis, :]
             std = cond["std"][np.newaxis, :]
             motion = motion * std + mean
 
-            # 6. Recover rotations and root position
+            # 8. Recover rotations and root position
             rotations_euler, root_positions = self._recover_motion(
-                motion, num_joints, skeleton.get("height", 1.8),
+                motion, num_joints, skeleton, scale_factor,
             )
 
         except Exception:
@@ -411,56 +576,92 @@ class AnyTopAdapter(BaseModelAdapter):
 
     # ── Motion recovery from 13D features ──
 
-    def _recover_motion(self, motion, num_joints, height=1.8):
-        """Convert denormalized 13D features to Euler rotations + root pos.
+    def _recover_motion(self, motion, num_joints, skeleton, scale_factor):
+        """Recover Euler rotations and root position from denormalized features.
 
-        Extracts 6D rotations (features [3:9]) and converts to Euler XYZ.
-        Recovers root position by integrating XZ velocity and using
-        absolute Y height from features.
+        Pipeline:
+          1. Extract root rotation from 6D features at joint 0
+          2. Integrate local-frame velocity to get root world position
+          3. Extract local rotations from 6D features for ALL joints
+          4. Convert rotations from AnyTop Y-up to Blender Z-up
+          5. Un-scale root positions back to original skeleton units
 
         Args:
-            motion: ``(n_frames, n_joints, 13)`` denormalized features.
+            motion: ``(n_frames, n_joints, 13)`` denormalized features
+                    in AnyTop training-space (Y-up, HML_AVG_BONELEN).
             num_joints: actual joint count (unpadded).
-            height: skeleton height for position scaling.
+            skeleton: dict from ``extract_skeleton()`` (Blender Z-up).
+            scale_factor: from ``scale_and_ground_skeleton`` — multiply
+                          training-space positions by ``1/scale_factor``
+                          to get original Blender units.
 
         Returns:
             ``(rotations_euler, root_positions)`` — per-frame lists.
         """
         n_frames = motion.shape[0]
 
-        # Root rotation matrices for velocity rotation
+        # ── 1. Root rotation from 6D features (Y-up space) ──
         root_6d = motion[:, 0, 3:9]
         root_rot = self._rotation_6d_to_matrix_batch(root_6d)
 
-        # Recover root world-space position from local-frame velocity
+        # ── 2. Root position from velocity integration (Y-up) ──
         root_pos = np.zeros((n_frames, 3))
-        root_pos[1:, 0] = motion[:-1, 0, 9]   # X velocity
-        root_pos[1:, 2] = motion[:-1, 0, 11]  # Z velocity
-
-        # Rotate from root local frame to world frame (R^T for inverse)
+        root_pos[1:, 0] = motion[:-1, 0, 9]   # X velocity (local)
+        root_pos[1:, 2] = motion[:-1, 0, 11]  # Z velocity (local)
         for f in range(n_frames):
-            root_pos[f] = root_rot[f].T @ root_pos[f]
-
+            root_pos[f] = root_rot[f] @ root_pos[f]
         root_pos = np.cumsum(root_pos, axis=0)
-        root_pos[:, 1] = motion[:, 0, 1]  # Y is absolute height
+        root_pos[:, 1] = motion[:, 0, 1]  # Y = absolute height
 
-        # Scale root position by skeleton height
-        scale = height / 1.8
-        root_pos[:, 0] *= scale
-        root_pos[:, 2] *= scale
+        # Un-scale and convert Y-up → Z-up for root positions
+        root_pos /= scale_factor
+        root_positions = [
+            (float(root_pos[f, 0]),
+             float(root_pos[f, 2]),   # Blender Y = AnyTop Z
+             float(root_pos[f, 1]))   # Blender Z = AnyTop Y
+            for f in range(n_frames)
+        ]
 
-        # Extract per-joint Euler rotations from 6D features
+        # ── 3. Extract local rotations from 6D features (all joints) ──
+        # The 6D rotation at indices [3:9] encodes the local rotation
+        # of each joint relative to its parent.  Using these directly
+        # preserves all 3 DOF including twist, unlike position-based
+        # reconstruction which loses the bone-axis rotation.
+        all_6d = motion[:, :num_joints, 3:9].reshape(-1, 6)
+        all_R_yup = self._rotation_6d_to_matrix_batch(all_6d)
+        all_R_yup = all_R_yup.reshape(n_frames, num_joints, 3, 3)
+
+        # ── 4. Convert rotations Y-up → Z-up ──
+        # Use proper rotation (det=+1): Rot(X, -90°) maps Y→Z, Z→-Y.
+        # Preserves rotation directions (no axis inversions).
+        _C = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=np.float64)
+        all_R_zup = _C @ all_R_yup @ _C
+
+        # Convert to Euler XYZ
         rotations_euler = []
         for f in range(n_frames):
-            frame_rots = []
+            frame_euler = []
             for j in range(num_joints):
-                r6d = motion[f, j, 3:9]
-                euler = self._rotation_6d_to_euler(r6d)
-                frame_rots.append(euler)
-            rotations_euler.append(frame_rots)
+                frame_euler.append(
+                    self._matrix_to_euler_xyz(all_R_zup[f, j]),
+                )
+            rotations_euler.append(frame_euler)
 
-        root_positions = [tuple(root_pos[f]) for f in range(n_frames)]
         return rotations_euler, root_positions
+
+    @staticmethod
+    def _matrix_to_euler_xyz(R):
+        """Convert 3×3 rotation matrix to Euler XYZ angles (radians)."""
+        sy = (R[0, 0] ** 2 + R[1, 0] ** 2) ** 0.5
+        if sy > 1e-6:
+            x = atan2(R[2, 1], R[2, 2])
+            y = atan2(-R[2, 0], sy)
+            z = atan2(R[1, 0], R[0, 0])
+        else:
+            x = atan2(-R[1, 2], R[1, 1])
+            y = atan2(-R[2, 0], sy)
+            z = 0.0
+        return (x, y, z)
 
     # ── Apply motion to Blender ──
 
@@ -468,14 +669,85 @@ class AnyTopAdapter(BaseModelAdapter):
                      frame_start=1):
         """Apply generated motion data to a Blender armature.
 
-        Automatically detects whether a wrap rig is present and writes
-        keyframes to the appropriate bones (CTRL FK when wrap rig exists,
-        deform bones otherwise).  Sets target bones to Euler rotation
-        mode for intuitive editing.
+        Handles both retargeted format (``is_retargeted=True``, with
+        ``bone_rotations`` dict) and legacy format (``rotations``
+        list + ``joint_names``).
 
         Returns:
             The created Action.
         """
+        if motion_data.get('is_retargeted'):
+            return self._apply_retargeted_motion(
+                armature_obj, motion_data, action_name, frame_start,
+            )
+        return self._apply_direct_motion(
+            armature_obj, motion_data, action_name, frame_start,
+        )
+
+    def _apply_retargeted_motion(self, armature_obj, motion_data,
+                                 action_name=None, frame_start=1):
+        """Apply retargeted motion — bone_rotations dict format."""
+        from bpy_extras.anim_utils import action_ensure_channelbag_for_slot
+
+        from ...core.utils import assign_channel_groups
+
+        if not action_name:
+            action_name = f"{armature_obj.name}_AnyTop"
+
+        self._ensure_fk_mode(armature_obj)
+
+        action = bpy.data.actions.new(name=action_name)
+        if not armature_obj.animation_data:
+            armature_obj.animation_data_create()
+
+        armature_obj.animation_data.action = action
+        slot = action.slots.new(name=armature_obj.name, id_type='OBJECT')
+        armature_obj.animation_data.action_slot = slot
+        cb = action_ensure_channelbag_for_slot(action, slot)
+
+        bone_rotations = motion_data['bone_rotations']
+        root_positions = motion_data.get('root_positions', [])
+        root_bone = motion_data.get('root_bone')
+
+        for bone_name, frame_rots in bone_rotations.items():
+            pbone = armature_obj.pose.bones.get(bone_name)
+            if pbone is None:
+                continue
+            pbone.rotation_mode = 'XYZ'
+
+            num_frames = len(frame_rots)
+            for axis in range(3):
+                dp = f'pose.bones["{bone_name}"].rotation_euler'
+                fc = cb.fcurves.new(dp, index=axis)
+                fc.keyframe_points.add(num_frames)
+                for fi in range(num_frames):
+                    kf = fc.keyframe_points[fi]
+                    kf.co = (frame_start + fi, frame_rots[fi][axis])
+                    kf.interpolation = 'BEZIER'
+                fc.update()
+
+        # Root position keyframes
+        if root_bone and root_positions:
+            pbone = armature_obj.pose.bones.get(root_bone)
+            if pbone:
+                num_frames = len(root_positions)
+                for axis in range(3):
+                    dp = f'pose.bones["{root_bone}"].location'
+                    fc = cb.fcurves.new(dp, index=axis)
+                    fc.keyframe_points.add(num_frames)
+                    for fi in range(num_frames):
+                        kf = fc.keyframe_points[fi]
+                        kf.co = (frame_start + fi,
+                                 root_positions[fi][axis])
+                        kf.interpolation = 'BEZIER'
+                    fc.update()
+
+        assign_channel_groups(armature_obj)
+        return action
+
+    def _apply_direct_motion(self, armature_obj, motion_data,
+                             action_name=None, frame_start=1):
+        """Apply direct (legacy) motion — joint_names + rotations list."""
         from bpy_extras.anim_utils import action_ensure_channelbag_for_slot
 
         from ...core.utils import assign_channel_groups

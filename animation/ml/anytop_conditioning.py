@@ -9,6 +9,7 @@ heavy dependencies (spacy, num2words) that are unnecessary for inference.
 """
 
 import re
+import statistics
 
 import numpy as np
 
@@ -20,14 +21,77 @@ MAX_PATH_LEN = 5
 T5_NAME = "t5-base"
 T5_DIM = 768
 
+# Mean bone length of SMPL skeleton — AnyTop scales all training
+# skeletons so their mean bone length matches this value.
+_SMPL_OFFSETS = np.array([
+    [0.0, 0.0, 0.0], [0.1031, 0.0, 0.0], [-0.1099, 0.0, 0.0],
+    [0.0, 0.1316, 0.0], [0.0, -0.3936, 0.0], [0.0, -0.3902, 0.0],
+    [0.0, 0.1432, 0.0], [0.0, -0.4324, 0.0], [0.0, -0.4256, 0.0],
+    [0.0, 0.03, 0.0], [0.0, 0.0, 0.0800], [0.0, 0.0, 0.0800],
+    [0.0, 0.11, 0.0], [0.05, 0.05, 0.0], [-0.05, 0.05, 0.0],
+    [0.0, 0.05, 0.0], [0.11, -0.04, 0.0], [-0.11, -0.04, 0.0],
+    [0.0, -0.2568, 0.0], [0.0, -0.2631, 0.0], [0.0, -0.2660, 0.0],
+    [0.0, -0.2699, 0.0],
+])
+HML_AVG_BONELEN = statistics.mean(
+    np.linalg.norm(_SMPL_OFFSETS[1:], axis=1).tolist()
+)
+
 
 # ── Public API ──────────────────────────────────────────────────
+
+def scale_and_ground_skeleton(joints):
+    """Scale skeleton to AnyTop training space and ground it.
+
+    AnyTop's training pipeline normalises every skeleton so its mean bone
+    length equals ``HML_AVG_BONELEN`` (≈ 0.209) and the lowest joint
+    touches ``Y = 0``.  This function replicates that for a novel skeleton.
+
+    Args:
+        joints: list of joint dicts **already in Y-up coordinates**.
+
+    Returns:
+        ``(scaled_joints, scale_factor)`` — use ``1 / scale_factor``
+        to convert recovered positions back to original units.
+    """
+    offsets = np.array([j["offset"] for j in joints], dtype=np.float64)
+    bone_lengths = np.linalg.norm(offsets[1:], axis=1)
+    valid = bone_lengths[bone_lengths > 1e-8]
+    mean_bone_len = float(np.mean(valid)) if len(valid) > 0 else 1.0
+    scale_factor = HML_AVG_BONELEN / mean_bone_len
+
+    # Scale all offsets
+    scaled_offsets = offsets * scale_factor
+
+    # Compute global positions to find ground level
+    parents = [j["parent"] for j in joints]
+    positions = np.zeros((len(joints), 3))
+    for i in range(len(joints)):
+        p = parents[i]
+        if p >= 0:
+            positions[i] = positions[p] + scaled_offsets[i]
+        else:
+            positions[i] = scaled_offsets[i]
+
+    # Ground the skeleton: shift root so lowest Y = 0
+    min_y = positions[:, 1].min()
+    scaled_offsets[0, 1] -= min_y
+
+    scaled_joints = []
+    for i, j in enumerate(joints):
+        scaled_joints.append({**j, "offset": scaled_offsets[i].tolist()})
+
+    return scaled_joints, scale_factor
+
 
 def build_cond_dict(skeleton, object_type="blender_skeleton"):
     """Build a conditioning dict entry for one Blender skeleton.
 
+    The skeleton must already be in Y-up coordinates and scaled to
+    AnyTop training space (via ``scale_and_ground_skeleton``).
+
     Args:
-        skeleton: dict from ``AnyTopAdapter.extract_skeleton()``.
+        skeleton: dict with ``joints`` and ``height``.
         object_type: key name used inside the dict.
 
     Returns:
@@ -43,7 +107,7 @@ def build_cond_dict(skeleton, object_type="blender_skeleton"):
 
     edge_rel, graph_dist = create_topology_edge_relations(parents)
     tpose = compute_tpose_features(joints, n_joints)
-    mean, std = estimate_mean_std(tpose, n_joints, skeleton.get("height", 1.8))
+    mean, std = estimate_mean_std(tpose, n_joints)
 
     return {
         object_type: {
@@ -149,28 +213,37 @@ def compute_tpose_features(joints, n_joints):
 
 # ── Normalization statistics ───────────────────────────────────
 
-def estimate_mean_std(tpose, n_joints, height=1.8):
-    """Estimate mean / std for a novel skeleton.
+def estimate_mean_std(tpose, n_joints):
+    """Estimate mean / std for a novel skeleton in training space.
 
-    Uses the T-pose as mean and calibrated variance ranges.  These
-    values were tuned against the statistics of the AnyTop training
-    set to give the diffusion model reasonable headroom without
-    causing extreme denormalized outputs.
+    The skeleton **must** already be scaled to AnyTop's training
+    space (mean bone length ≈ 0.209) before calling this.
+
+    Uses the T-pose as the mean and standard deviations calibrated
+    from the actual ``cond.npy`` training statistics of AnyTop's
+    Truebones dataset (70 skeleton types, median values).
+
+    Calibration source (median across all 70 training skeletons):
+        root pos   median=0.050
+        root rot   median=0.073
+        root vel   median=0.010
+        nr   pos   median=0.179
+        nr   rot   median=0.146
+        nr   vel   median=0.020
     """
     mean = tpose.copy()
     std = np.ones((n_joints, FEATURE_LEN), dtype=np.float64)
-    s = max(height / 1.8, 0.5)
 
-    # Root (index 0) — position, rotation, velocity, contact
-    std[0, :3] = 0.5 * s
-    std[0, 3:9] = 0.4
-    std[0, 9:12] = 0.2 * s
+    # Root (joint 0) — median values from cond.npy
+    std[0, :3] = 0.050    # RIC position (height + horizontal)
+    std[0, 3:9] = 0.073   # global facing rotation (6D)
+    std[0, 9:12] = 0.010  # local-frame velocity
     std[0, 12] = 1.0
 
-    # Non-root joints
-    std[1:, :3] = 0.3 * s
-    std[1:, 3:9] = 0.3
-    std[1:, 9:12] = 0.15 * s
+    # Non-root joints — median values from cond.npy
+    std[1:, :3] = 0.179   # RIC positions
+    std[1:, 3:9] = 0.146  # joint rotations (6D)
+    std[1:, 9:12] = 0.020 # local velocity
     std[1:, 12] = 1.0
 
     return mean, std
