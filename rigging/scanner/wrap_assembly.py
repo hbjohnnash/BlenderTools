@@ -153,9 +153,15 @@ def assemble_wrap_rig(armature_obj, scan_data):
             else:
                 _constrain_fk_chain(armature_obj, chain_id, chain_bones, bones_info)
 
-            # Apply IK limits if requested
-            if chain_info.get("ik_limits") and ik_enabled:
+            # Always write limit values so they're ready to toggle on.
+            # IK limits go on MCH bones, FK limits go on CTRL-FK bones.
+            if ik_enabled:
                 apply_ik_limits(armature_obj, chain_id, chain_bones, bones_info, module_type)
+            apply_fk_limits(armature_obj, chain_id, chain_bones, bones_info, module_type)
+
+            # If the user had limits enabled in the scan config, activate them now
+            if chain_info.get("ik_limits"):
+                toggle_joint_limits(armature_obj, chain_id, True)
 
         # Calibrate all IK pole angles using the depsgraph
         _calibrate_pole_angles(armature_obj)
@@ -489,6 +495,7 @@ def _constrain_arm(armature_obj, chain_id, chain_bones, bones_info):
             con.target = armature_obj
             con.subtarget = ik_target
             con.chain_count = chain_count
+            con.use_stretch = False
             con.influence = 0.0  # Start with FK, user toggles IK
 
             if armature_obj.pose.bones.get(ik_pole):
@@ -599,6 +606,7 @@ def _constrain_leg(armature_obj, chain_id, chain_bones, bones_info):
             con.target = armature_obj
             con.subtarget = ik_target
             con.chain_count = chain_count
+            con.use_stretch = False
             con.influence = 0.0  # Start with FK
 
             if armature_obj.pose.bones.get(ik_pole):
@@ -740,6 +748,20 @@ def snap_fk_to_ik(armature_obj, chain_id):
     sd = armature_obj.bt_scan
     chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
 
+    # Temporarily disable FK LIMIT_ROTATION constraints so they don't
+    # clamp the matrix assignments during snap.
+    _saved_fk_limits = []
+    for bone_item in chain_bones:
+        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{bone_item.role}"
+        ctrl_pb = armature_obj.pose.bones.get(ctrl_name)
+        if not ctrl_pb:
+            continue
+        for c in ctrl_pb.constraints:
+            if (c.type == 'LIMIT_ROTATION'
+                    and c.name.startswith(WRAP_CONSTRAINT_PREFIX)):
+                _saved_fk_limits.append((c, c.influence))
+                c.influence = 0.0
+
     # Phase 1: Read ALL MCH world matrices before modifying anything.
     # Prevents constraint feedback from corrupting later reads when
     # view_layer.update() triggers re-evaluation of the chain.
@@ -786,6 +808,10 @@ def snap_fk_to_ik(armature_obj, chain_id):
             any_corrected = True
         if not any_corrected:
             break
+
+    # Restore FK limit constraints
+    for c, inf in _saved_fk_limits:
+        c.influence = inf
 
 
 def snap_ik_to_fk(armature_obj, chain_id):
@@ -886,14 +912,33 @@ def snap_ik_to_fk(armature_obj, chain_id):
         ik_target_pb.matrix = mat
         bpy.context.view_layer.update()
 
-    # Reset pole to rest position
+    # Position pole at the FK bend direction so it visually tracks the bend
+    # and gives the IK solver an accurate spatial hint (reduces drift).
     ik_pole_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_pole"
     ik_pole_pb = armature_obj.pose.bones.get(ik_pole_name)
     if ik_pole_pb:
-        ik_pole_pb.location = Vector((0, 0, 0))
-        ik_pole_pb.rotation_quaternion = (1, 0, 0, 0)
-        ik_pole_pb.rotation_euler = (0, 0, 0)
-        ik_pole_pb.scale = (1, 1, 1)
+        fk_root_pos = upper_pb.head.copy()
+        fk_mid_pos = mid_point_getter()
+        fk_tip_pos = ik_mch.tail.copy()
+        fk_axis = fk_tip_pos - fk_root_pos
+        pole_placed = False
+        if fk_axis.length > 0.0001:
+            fk_axis_n = fk_axis.normalized()
+            proj = fk_root_pos + fk_axis_n * (fk_mid_pos - fk_root_pos).dot(fk_axis_n)
+            bend_dir = fk_mid_pos - proj
+            if bend_dir.length > 0.0001:
+                bend_dir.normalize()
+                chain_length = fk_axis.length
+                pole_pos = fk_mid_pos + bend_dir * chain_length * 0.5
+                ik_pole_pb.matrix = Matrix.Translation(pole_pos)
+                bpy.context.view_layer.update()
+                pole_placed = True
+        if not pole_placed:
+            # Chain is nearly straight — fall back to rest position
+            ik_pole_pb.location = Vector((0, 0, 0))
+            ik_pole_pb.rotation_quaternion = (1, 0, 0, 0)
+            ik_pole_pb.rotation_euler = (0, 0, 0)
+            ik_pole_pb.scale = (1, 1, 1)
 
     # Calibrate pole_angle so IK bend plane matches FK bend plane.
     # Works for all chain counts: measures the displacement of the mid bone
@@ -950,6 +995,47 @@ def snap_ik_to_fk(armature_obj, chain_id):
                 for c, inf in saved_fk:
                     c.influence = inf
                 bpy.context.view_layer.update()
+
+    # --- Newton correction: pre-compensate IK target for solver residual ---
+    # After pole positioning + angle calibration, temporarily enable IK and
+    # verify the chain tip actually reaches the desired position.  If the
+    # solver has any residual (IK limits, 3+ bone iterative solving, bone
+    # roll interactions), shift the IK target to cancel the offset.
+    if ik_target_pb and ik_chain_count >= 2:
+        desired_tip = ik_mch.tail.copy()  # FK-posed tip (still in FK mode)
+
+        # Temporarily enable IK
+        _corr_saved_fk = []
+        _walk = ik_mch
+        for _ in range(ik_chain_count):
+            for c in _walk.constraints:
+                if (c.type == 'COPY_TRANSFORMS'
+                        and c.name.startswith(WRAP_CONSTRAINT_PREFIX)):
+                    _corr_saved_fk.append((c, c.influence))
+                    c.influence = 0.0
+            if _walk.parent:
+                _walk = _walk.parent
+
+        _corr_saved_ik = ik_con.influence
+        ik_con.influence = 1.0
+        bpy.context.view_layer.update()
+
+        _POS_TOL_SQ = 1e-16   # ~0.1 nanometre squared
+        for _ in range(4):
+            actual_tip = ik_mch.tail.copy()
+            err = desired_tip - actual_tip
+            if err.length_squared < _POS_TOL_SQ:
+                break
+            cur = ik_target_pb.matrix.copy()
+            cur.translation += err
+            ik_target_pb.matrix = cur
+            bpy.context.view_layer.update()
+
+        # Restore to FK state (toggle operator switches to IK later)
+        ik_con.influence = _corr_saved_ik
+        for c, inf in _corr_saved_fk:
+            c.influence = inf
+        bpy.context.view_layer.update()
 
 
 def snap_spline_to_fk(armature_obj, chain_id):
@@ -1143,6 +1229,7 @@ def _constrain_ik_chain(armature_obj, chain_id, chain_bones, bones_info,
     con.target = armature_obj
     con.subtarget = ik_target
     con.chain_count = chain_count
+    con.use_stretch = False
     con.influence = 0.0  # Start with FK, user toggles IK
 
     if armature_obj.pose.bones.get(ik_pole) and chain_count >= 2:
@@ -1358,94 +1445,112 @@ def _detect_bend_axis(armature_obj, bone_name):
     return axis, (1 if value >= 0 else -1)
 
 
+def _compute_joint_limits(armature_obj, mch_name, role, module_type):
+    """Compute rotation limits for a joint.
+
+    Returns a dict: {axis: (min_rad, max_rad, stiffness)} for X, Y, Z.
+    This is the single source of truth used by both IK limits (on MCH)
+    and FK LIMIT_ROTATION constraints (on CTRL-FK).
+    """
+    limits = {}
+
+    if module_type in ("arm", "leg"):
+        bend_axis, bend_sign = _detect_bend_axis(armature_obj, mch_name)
+        is_mid_joint = role in ("lower_arm", "lower_leg")
+
+        if is_mid_joint:
+            for axis in ('X', 'Y', 'Z'):
+                if axis == bend_axis:
+                    if bend_sign > 0:
+                        limits[axis] = (0.0, math.radians(160), 0.0)
+                    else:
+                        limits[axis] = (math.radians(-160), 0.0, 0.0)
+                else:
+                    limits[axis] = (math.radians(-5), math.radians(5), 0.9)
+        else:
+            for axis in ('X', 'Y', 'Z'):
+                limits[axis] = (math.radians(-120), math.radians(120), 0.0)
+
+    elif module_type == "tail":
+        lim = math.radians(45)
+        for axis in ('X', 'Y', 'Z'):
+            limits[axis] = (-lim, lim, 0.1)
+    elif module_type == "tentacle":
+        lim = math.radians(60)
+        for axis in ('X', 'Y', 'Z'):
+            limits[axis] = (-lim, lim, 0.05)
+    else:
+        lim = math.radians(90)
+        for axis in ('X', 'Y', 'Z'):
+            limits[axis] = (-lim, lim, 0.0)
+
+    return limits
+
+
 def apply_ik_limits(armature_obj, chain_id, chain_bones, bones_info, module_type):
     """Apply IK solver limits to MCH bones based on module type.
 
     Uses bone-local IK limit properties (ik_min_x/max_x etc.) which are
     evaluated INSIDE the IK solver — these work with pole targets, unlike
     LIMIT_ROTATION constraints which are ignored by IK.
+
+    Limits are written but start disabled (use_ik_limit=False) so they
+    are ready to be toggled on by the user.
     """
-    for i, bone_name in enumerate(chain_bones):
+    for bone_name in chain_bones:
         role = bones_info.get(bone_name, {}).get("role", bone_name)
         mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{role}"
         mch_pb = armature_obj.pose.bones.get(mch_name)
         if not mch_pb:
             continue
 
-        if module_type in ("arm", "leg"):
-            _apply_limb_limits(armature_obj, mch_pb, role, module_type)
-        elif module_type in ("tail", "tentacle"):
-            _apply_chain_limits(mch_pb, module_type)
-        else:
-            _apply_chain_limits(mch_pb, "generic")
+        limits = _compute_joint_limits(armature_obj, mch_name, role, module_type)
+        for axis, (lo, hi, stiff) in limits.items():
+            a = axis.lower()
+            setattr(mch_pb, f"ik_min_{a}", lo)
+            setattr(mch_pb, f"ik_max_{a}", hi)
+            setattr(mch_pb, f"ik_stiffness_{a}", stiff)
+            # Start disabled — user toggles on via Joint Limits button
+            setattr(mch_pb, f"use_ik_limit_{a}", False)
 
 
-def _apply_limb_limits(armature_obj, mch_pb, role, module_type):
-    """Apply anatomical IK limits for arm/leg joints."""
-    bend_axis, bend_sign = _detect_bend_axis(armature_obj, mch_pb.name)
+def apply_fk_limits(armature_obj, chain_id, chain_bones, bones_info, module_type):
+    """Add LIMIT_ROTATION constraints to CTRL-FK bones.
 
-    is_mid_joint = role in ("lower_arm", "lower_leg")
+    Uses the same limit values as IK (via _compute_joint_limits) so both
+    modes enforce identical ranges. Constraints start with influence=0
+    (disabled) and are toggled by the Joint Limits button.
+    """
+    for bone_name in chain_bones:
+        role = bones_info.get(bone_name, {}).get("role", bone_name)
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{role}"
+        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{role}"
+        ctrl_pb = armature_obj.pose.bones.get(ctrl_name)
+        if not ctrl_pb:
+            continue
 
-    if is_mid_joint:
-        # Mid-joint (elbow/knee): single-axis bend, no hyperextension
-        for axis in ('X', 'Y', 'Z'):
-            use_attr = f"use_ik_limit_{axis.lower()}"
-            min_attr = f"ik_min_{axis.lower()}"
-            max_attr = f"ik_max_{axis.lower()}"
-            stiff_attr = f"ik_stiffness_{axis.lower()}"
+        limits = _compute_joint_limits(armature_obj, mch_name, role, module_type)
 
-            if axis == bend_axis:
-                setattr(mch_pb, use_attr, True)
-                if bend_sign > 0:
-                    setattr(mch_pb, min_attr, 0.0)
-                    setattr(mch_pb, max_attr, math.radians(160))
-                else:
-                    setattr(mch_pb, min_attr, math.radians(-160))
-                    setattr(mch_pb, max_attr, 0.0)
-                setattr(mch_pb, stiff_attr, 0.0)
-            else:
-                # Lock secondary axes
-                setattr(mch_pb, use_attr, True)
-                setattr(mch_pb, min_attr, math.radians(-5))
-                setattr(mch_pb, max_attr, math.radians(5))
-                setattr(mch_pb, stiff_attr, 0.9)
-    else:
-        # Root/end joints (shoulder/hip, wrist/ankle): moderate limits
-        for axis in ('X', 'Y', 'Z'):
-            use_attr = f"use_ik_limit_{axis.lower()}"
-            min_attr = f"ik_min_{axis.lower()}"
-            max_attr = f"ik_max_{axis.lower()}"
-            stiff_attr = f"ik_stiffness_{axis.lower()}"
-            setattr(mch_pb, use_attr, True)
-            setattr(mch_pb, min_attr, math.radians(-120))
-            setattr(mch_pb, max_attr, math.radians(120))
-            setattr(mch_pb, stiff_attr, 0.0)
+        con = ctrl_pb.constraints.new('LIMIT_ROTATION')
+        con.name = f"{WRAP_CONSTRAINT_PREFIX}FK_limit"
+        con.owner_space = 'LOCAL'
+
+        for axis, (lo, hi, _stiff) in limits.items():
+            a = axis.lower()
+            setattr(con, f"use_limit_{a}", True)
+            setattr(con, f"min_{a}", lo)
+            setattr(con, f"max_{a}", hi)
+
+        # Start disabled — user toggles on via Joint Limits button
+        con.influence = 0.0
 
 
-def _apply_chain_limits(mch_pb, module_type):
-    """Apply IK limits for chain-type modules (tail, tentacle, generic)."""
-    if module_type == "tail":
-        limit = math.radians(45)
-        stiffness = 0.1
-    elif module_type == "tentacle":
-        limit = math.radians(60)
-        stiffness = 0.05
-    else:
-        limit = math.radians(90)
-        stiffness = 0.0
+def toggle_joint_limits(armature_obj, chain_id, enable):
+    """Toggle joint rotation limits on/off for a chain at runtime.
 
-    for axis in ('x', 'y', 'z'):
-        setattr(mch_pb, f"use_ik_limit_{axis}", True)
-        setattr(mch_pb, f"ik_min_{axis}", -limit)
-        setattr(mch_pb, f"ik_max_{axis}", limit)
-        setattr(mch_pb, f"ik_stiffness_{axis}", stiffness)
-
-
-def toggle_ik_limits(armature_obj, chain_id, enable):
-    """Toggle IK rotation limits on/off for a chain at runtime.
-
-    Simply flips the use_ik_limit_x/y/z flags on all MCH bones in the chain.
-    The actual limit values are preserved so re-enabling restores them.
+    Flips both IK limits (use_ik_limit on MCH bones) and FK limits
+    (LIMIT_ROTATION constraint influence on CTRL-FK bones) so both
+    modes are kept in sync by one toggle.
     """
     sd = armature_obj.bt_scan
     chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
@@ -1453,11 +1558,22 @@ def toggle_ik_limits(armature_obj, chain_id, enable):
     for bone_item in chain_bones:
         mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
         mch_pb = armature_obj.pose.bones.get(mch_name)
-        if not mch_pb:
-            continue
-        mch_pb.use_ik_limit_x = enable
-        mch_pb.use_ik_limit_y = enable
-        mch_pb.use_ik_limit_z = enable
+        if mch_pb:
+            mch_pb.use_ik_limit_x = enable
+            mch_pb.use_ik_limit_y = enable
+            mch_pb.use_ik_limit_z = enable
+
+        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{bone_item.role}"
+        ctrl_pb = armature_obj.pose.bones.get(ctrl_name)
+        if ctrl_pb:
+            for c in ctrl_pb.constraints:
+                if (c.type == 'LIMIT_ROTATION'
+                        and c.name.startswith(WRAP_CONSTRAINT_PREFIX)):
+                    c.influence = 1.0 if enable else 0.0
+
+
+# Keep old name as alias for backward compatibility
+toggle_ik_limits = toggle_joint_limits
 
 
 def _find_intra_chain_parent(edit_bones, orig_bone, chain_bone_set, orig_to_name):

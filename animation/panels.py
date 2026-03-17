@@ -5,6 +5,22 @@ import bpy
 from ..core.constants import PANEL_CATEGORY
 
 
+def get_ai_model_readiness():
+    """Check readiness of AI motion models.
+
+    Returns:
+        tuple[bool, bool, bool]: (lcm_ready, anytop_ready, sinmdm_ready)
+    """
+    from ..core.ml import model_manager
+    from ..core.ml.dependencies import check_torch_available
+
+    torch_ok = check_torch_available()
+    lcm_ready = torch_ok and model_manager.is_model_installed("motionlcm")
+    anytop_ready = torch_ok and model_manager.is_model_installed("anytop")
+    sinmdm_ready = torch_ok and model_manager.is_model_installed("sinmdm")
+    return lcm_ready, anytop_ready, sinmdm_ready
+
+
 class BT_PT_AnimationMain(bpy.types.Panel):
     bl_label = "Animation"
     bl_idname = "BT_PT_AnimationMain"
@@ -63,7 +79,6 @@ class BT_PT_AnimationMain(bpy.types.Panel):
 
         wm = context.window_manager
         from ..core.ml import model_manager
-        from ..core.ml.dependencies import check_torch_available
 
         if wm.bt_ml_busy and wm.bt_ml_status:
             box.label(text=wm.bt_ml_status, icon='SORTTIME')
@@ -71,15 +86,9 @@ class BT_PT_AnimationMain(bpy.types.Panel):
             col.scale_y = 0.5
             col.prop(wm, "bt_ml_progress", text="", slider=True)
         else:
-            torch_ok = check_torch_available()
-            anytop_ready = (torch_ok
-                            and model_manager.is_model_installed("anytop"))
-            sinmdm_ready = (torch_ok
-                            and model_manager.is_model_installed("sinmdm"))
+            lcm_ready, anytop_ready, sinmdm_ready = get_ai_model_readiness()
 
             if anytop_ready or sinmdm_ready:
-                lcm_ready = (torch_ok
-                             and model_manager.is_model_installed("motionlcm"))
                 # SMPL Reference toggle (may fail if numpy not yet installed)
                 try:
                     from ..animation.ml.retarget_preview import (

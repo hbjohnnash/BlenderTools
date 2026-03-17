@@ -180,24 +180,105 @@ def _detect_foot_bones(armature_obj):
 
 
 def _get_bos_points(armature_obj, floor_z=0.0):
-    """Get ground-projected contact points from foot bones.
+    """Get ground-projected contact points from mesh vertices skinned to foot bones.
+
+    Uses the deformed (posed) mesh from the depsgraph so vertex positions
+    reflect the current pose.  Only vertices whose Z is within the user's
+    ``bt_bos_threshold`` of ``floor_z`` are included, giving an accurate
+    footprint silhouette.
+
+    Falls back to bone head/tail positions when no skinned mesh is found.
 
     Returns list of (x, y) tuples on the ground plane.
     """
     if not _foot_bones:
         return []
 
-    mat = armature_obj.matrix_world
-    points = []
+    threshold = getattr(armature_obj, 'bt_bos_threshold', 0.15)
+    contact_ceiling = floor_z + threshold
 
+    # --- Try mesh-based detection first ---
+    points = _get_mesh_bos_points(armature_obj, contact_ceiling)
+    if points:
+        return points
+
+    # --- Fallback: bone positions ---
+    mat = armature_obj.matrix_world
     for name in _foot_bones:
         pbone = armature_obj.pose.bones.get(name)
         if not pbone:
             continue
         head = mat @ pbone.head
         tail = mat @ pbone.tail
-        points.append((head.x, head.y))
-        points.append((tail.x, tail.y))
+        lowest = min(head.z, tail.z)
+        if lowest <= contact_ceiling:
+            points.append((head.x, head.y))
+            points.append((tail.x, tail.y))
+
+    return points
+
+
+# Maximum vertices to sample per foot bone group (performance guard).
+_MAX_VERTS_PER_GROUP = 200
+# Minimum vertex group weight to count a vertex as skinned to a bone.
+_MIN_SKIN_WEIGHT = 0.1
+
+
+def _get_mesh_bos_points(armature_obj, contact_ceiling):
+    """Collect ground-contact vertices from meshes skinned to foot bones.
+
+    Reads the evaluated (deformed) mesh so positions match the current pose.
+    """
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+
+    # Find child mesh objects
+    meshes = [
+        child for child in armature_obj.children
+        if child.type == 'MESH' and child.find_armature() == armature_obj
+    ]
+    if not meshes:
+        return []
+
+    foot_set = set(_foot_bones)
+    points = []
+
+    for mesh_obj in meshes:
+        # Build mapping: vertex group index → foot bone name
+        vg_map = {}
+        for vg in mesh_obj.vertex_groups:
+            if vg.name in foot_set:
+                vg_map[vg.index] = vg.name
+
+        if not vg_map:
+            continue
+
+        # Get deformed mesh from depsgraph
+        eval_obj = mesh_obj.evaluated_get(depsgraph)
+        eval_mesh = eval_obj.to_mesh()
+        if not eval_mesh:
+            continue
+
+        mesh_mat = eval_obj.matrix_world
+
+        # Collect vertices per foot-bone group that are near the floor
+        group_verts = {}  # vg_index -> list of (x, y, z) world positions
+        try:
+            for vert in eval_mesh.vertices:
+                for g in vert.groups:
+                    if g.group in vg_map and g.weight >= _MIN_SKIN_WEIGHT:
+                        wpos = mesh_mat @ vert.co
+                        if wpos.z <= contact_ceiling:
+                            group_verts.setdefault(g.group, []).append(
+                                (wpos.x, wpos.y))
+        finally:
+            eval_obj.to_mesh_clear()
+
+        # Subsample large groups to keep the convex hull fast
+        for vg_idx, verts in group_verts.items():
+            if len(verts) > _MAX_VERTS_PER_GROUP:
+                step = len(verts) // _MAX_VERTS_PER_GROUP
+                verts = verts[::step]
+            points.extend(verts)
 
     return points
 
@@ -665,6 +746,7 @@ class BT_PT_CenterOfMass(bpy.types.Panel):
         if _foot_bones:
             box = layout.box()
             box.label(text=f"BoS: {len(_foot_bones)} contact bones", icon='SNAP_FACE')
+            box.prop(obj, "bt_bos_threshold")
 
         # Current CoM position
         com, total = compute_center_of_mass(obj)
@@ -710,6 +792,23 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Object.bt_com_masses = CollectionProperty(type=BT_BoneMassItem)
+    bpy.types.Object.bt_bos_threshold = FloatProperty(
+        name="Ground Threshold",
+        description="Maximum height above floor for a limb to count as grounded",
+        default=0.15,
+        min=0.01,
+        soft_max=1.0,
+        unit='LENGTH',
+        subtype='DISTANCE',
+    )
+    bpy.types.Object.bt_bos_min_weight = FloatProperty(
+        name="Min Skin Weight",
+        description="Minimum vertex group weight for a vertex to count as part of a foot. "
+                    "Raise to exclude loosely-weighted shin/thigh vertices",
+        default=0.3,
+        min=0.01,
+        max=1.0,
+    )
 
 
 def unregister():
@@ -718,6 +817,7 @@ def unregister():
         bpy.types.SpaceView3D.draw_handler_remove(_draw_handle, 'WINDOW')
         _draw_handle = None
     _active = False
+    del bpy.types.Object.bt_bos_threshold
     del bpy.types.Object.bt_com_masses
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

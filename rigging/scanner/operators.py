@@ -51,7 +51,7 @@ def _scan_data_to_props(armature_obj, scan_data):
         item.fk_enabled = True
         item.ik_snap = info["module_type"] in ("arm", "leg", "wing")
         item.ik_type = 'SPLINE' if info["module_type"] in ("tail", "tentacle") else 'STANDARD'
-        item.ik_limits = info["module_type"] in ("arm", "leg", "wing")
+        item.ik_limits = False
 
     sd.unmapped_bones = ",".join(scan_data.get("unmapped_bones", []))
 
@@ -332,6 +332,43 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
         # Toggle floor toe bend constraint if floor contact is active
         if armature.bt_scan.floor_enabled:
             toggle_toe_bend_for_chain(armature, self.chain_id, use_ik)
+
+        # --- Newton correction: eliminate IK solver residual ---
+        # After all constraints are in their final state (IK active, limits
+        # restored), verify the chain tip actually reaches the IK target.
+        # Pre-compensate the IK target position for any solver offset so
+        # the foot stays perfectly planted when the body moves.
+        if use_ik and chain_item.ik_snap:
+            bpy.context.view_layer.update()
+
+            ik_mch = None
+            for bone_item in chain_bones:
+                mch_name = f"{WRAP_MCH_PREFIX}{self.chain_id}_{bone_item.role}"
+                mch_pb = armature.pose.bones.get(mch_name)
+                if mch_pb:
+                    for c in mch_pb.constraints:
+                        if c.type == 'IK' and c.name.startswith(
+                                WRAP_CONSTRAINT_PREFIX):
+                            ik_mch = mch_pb
+                            break
+                if ik_mch:
+                    break
+
+            ik_target_name = f"{WRAP_CTRL_PREFIX}{self.chain_id}_IK_target"
+            ik_target_pb = armature.pose.bones.get(ik_target_name)
+
+            if ik_mch and ik_target_pb:
+                _IK_POS_TOL_SQ = 1e-16   # ~0.1 nanometre squared
+                for _ in range(4):
+                    desired = ik_target_pb.head.copy()
+                    actual = ik_mch.tail.copy()
+                    err = desired - actual
+                    if err.length_squared < _IK_POS_TOL_SQ:
+                        break
+                    mat = ik_target_pb.matrix.copy()
+                    mat.translation += err
+                    ik_target_pb.matrix = mat
+                    bpy.context.view_layer.update()
 
         mode_name = "IK" if use_ik else "FK"
         self.report({'INFO'}, f"{self.chain_id}: switched to {mode_name}")

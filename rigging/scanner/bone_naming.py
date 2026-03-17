@@ -270,6 +270,12 @@ class BT_OT_SetBoneLabel(bpy.types.Operator):
         if was_mode != 'EDIT':
             bpy.ops.object.mode_set(mode=was_mode)
 
+        # Flush bone data and refresh viewport so overlay/panels update
+        bpy.context.view_layer.update()
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+
         return {'FINISHED'}
 
 
