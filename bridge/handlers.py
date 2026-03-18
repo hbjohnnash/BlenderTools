@@ -566,7 +566,6 @@ def _rig_bake_to_def(body):
 
 
 def _rig_floor_contact(body):
-    import math
     arm_name = body.get("armature")
     arm, err = _get_object(arm_name, 'ARMATURE')
     if err:
@@ -584,23 +583,17 @@ def _rig_floor_contact(body):
         return {"success": True, "enabled": False}, None
 
     floor_level = body.get("floor_level", arm.bt_scan.floor_level)
-    toe_bend = body.get("toe_bend", arm.bt_scan.floor_toe_bend)
-    toe_angle = body.get("toe_angle_deg", math.degrees(arm.bt_scan.floor_toe_angle))
 
     from ..rigging.scanner.floor_contact import setup_floor_contact
     result = setup_floor_contact(
         arm,
         floor_level=floor_level,
-        toe_bend=toe_bend,
-        toe_bend_max_rad=math.radians(toe_angle),
     )
     if "error" in result:
         return None, result["error"]
 
     arm.bt_scan.floor_enabled = True
     arm.bt_scan.floor_level = floor_level
-    arm.bt_scan.floor_toe_bend = toe_bend
-    arm.bt_scan.floor_toe_angle = math.radians(toe_angle)
 
     return {"success": True, "enabled": True, **result}, None
 

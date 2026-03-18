@@ -191,17 +191,13 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
                 icon='SNAP_FACE' if sd.floor_enabled else 'SNAP_OFF',
                 depress=sd.floor_enabled,
             )
+            col = box.column(align=True)
             if sd.floor_enabled:
-                col = box.column(align=True)
                 row = col.row(align=True)
                 row.prop(sd, "floor_level", text="Level")
                 row.operator("bt.update_floor_level", text="", icon='FILE_REFRESH')
             else:
-                col = box.column(align=True)
                 col.prop(sd, "floor_level", text="Level")
-                col.prop(sd, "floor_toe_bend", text="Toe Auto-Bend")
-                if sd.floor_toe_bend:
-                    col.prop(sd, "floor_toe_angle", text="Max Angle")
 
         # ── Actions ──
         layout.separator()

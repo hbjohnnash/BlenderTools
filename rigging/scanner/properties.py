@@ -1,6 +1,5 @@
 """PropertyGroups for skeleton scanner UI state."""
 
-import math
 
 import bpy
 from bpy.props import (
@@ -115,19 +114,6 @@ class BT_ScanData(bpy.types.PropertyGroup):
         description="World-space Z value for the floor plane",
         default=0.0,
         unit='LENGTH',
-    )
-    floor_toe_bend: BoolProperty(
-        name="Toe Auto-Bend",
-        description="Automatically bend toes upward when foot contacts floor",
-        default=True,
-    )
-    floor_toe_angle: FloatProperty(
-        name="Max Toe Angle",
-        description="Maximum toe bend angle when foot is at floor level",
-        default=math.radians(45.0),
-        min=0.0,
-        max=math.radians(90.0),
-        subtype='ANGLE',
     )
 
 

@@ -8,7 +8,6 @@ from ...core.constants import WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX
 from .floor_contact import (
     remove_floor_contact,
     setup_floor_contact,
-    toggle_toe_bend_for_chain,
 )
 from .scan import scan_skeleton
 from .wrap_assembly import (
@@ -328,10 +327,6 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
         ik_coll = armature.data.collections.get(f"IK_{self.chain_id}")
         if ik_coll:
             ik_coll.is_visible = use_ik
-
-        # Toggle floor toe bend constraint if floor contact is active
-        if armature.bt_scan.floor_enabled:
-            toggle_toe_bend_for_chain(armature, self.chain_id, use_ik)
 
         # --- Newton correction: eliminate IK solver residual ---
         # After all constraints are in their final state (IK active, limits
@@ -739,17 +734,13 @@ class BT_OT_ToggleFloorContact(bpy.types.Operator):
             result = setup_floor_contact(
                 armature,
                 floor_level=sd.floor_level,
-                toe_bend=sd.floor_toe_bend,
-                toe_bend_max_rad=sd.floor_toe_angle,
             )
             if "error" in result:
                 self.report({'WARNING'}, result["error"])
                 return {'CANCELLED'}
             sd.floor_enabled = True
-            msg = f"Floor contact: {result['floor_constraints']} legs"
-            if result.get("toe_bends"):
-                msg += f", {result['toe_bends']} toe bends"
-            self.report({'INFO'}, msg)
+            self.report({'INFO'},
+                        f"Floor contact: {result['floor_constraints']} legs")
 
         return {'FINISHED'}
 

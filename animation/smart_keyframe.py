@@ -1,13 +1,22 @@
 """Smart keyframe insertion for wrap rigs.
 
-Intercepts the "I" key in pose mode. Ensures IK bones are never keyed —
-if an IK bone is selected and its chain is in IK mode, FK bones are
-snapped to match the IK pose and keyed instead.
+Intercepts the "I" key in pose mode.  Keys the ACTIVE system's controls
+(IK targets when in IK mode, FK bones when in FK mode) plus any
+independently-controlled bones (e.g. toe FK in IK mode).  Constraint
+influences are keyed with CONSTANT interpolation so IK/FK switches are
+instantaneous during playback — no blending drift.
+
+Snapping between IK and FK is NOT done here — it belongs in the toggle
+operator, which runs when the user explicitly switches modes.
 """
 
 import bpy
 
-from ..core.constants import WRAP_CTRL_PREFIX
+from ..core.constants import (
+    WRAP_CONSTRAINT_PREFIX,
+    WRAP_CTRL_PREFIX,
+    WRAP_MCH_PREFIX,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -37,6 +46,33 @@ def _get_chain_fk_pbones(armature_obj, sd, chain_id):
     return fk_bones
 
 
+def _get_independent_fk_pbones(armature_obj, sd, chain_id):
+    """Return FK CTRL bones that have no IK alternative (e.g. toe).
+
+    These bones are always FK-driven regardless of the chain's IK/FK mode,
+    so they must be keyed even when the chain is in IK mode.
+    """
+    fk_bones = []
+    for bone_item in sd.bones:
+        if bone_item.chain_id != chain_id or bone_item.skip:
+            continue
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        if not mch_pb:
+            continue
+        has_ik = any(
+            c.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION')
+            and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
+            for c in mch_pb.constraints
+        )
+        if not has_ik:
+            ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{bone_item.role}"
+            pb = armature_obj.pose.bones.get(ctrl_name)
+            if pb:
+                fk_bones.append(pb)
+    return fk_bones
+
+
 def _get_chain_ik_pbones(armature_obj, chain_id):
     """Return IK control pose bones (target and/or pole) for a chain."""
     ik_bones = []
@@ -46,6 +82,21 @@ def _get_chain_ik_pbones(armature_obj, chain_id):
         if pb:
             ik_bones.append(pb)
     return ik_bones
+
+
+def _iter_fcurves(action):
+    """Yield all FCurves from an Action, supporting both legacy and Blender 5.0+ API.
+
+    Blender 5.0 moved fcurves into action.layers[].strips[].channelbags[].fcurves.
+    Legacy Blender (< 5.0) uses action.fcurves directly.
+    """
+    if hasattr(action, 'fcurves'):
+        yield from action.fcurves
+    else:
+        for layer in getattr(action, 'layers', ()):
+            for strip in getattr(layer, 'strips', ()):
+                for channelbag in getattr(strip, 'channelbags', ()):
+                    yield from getattr(channelbag, 'fcurves', ())
 
 
 def _key_rotation(pbone, frame):
@@ -58,16 +109,90 @@ def _key_rotation(pbone, frame):
         pbone.keyframe_insert('rotation_euler', frame=frame)
 
 
+def _key_bones(pbones, frame):
+    """Key rotation (+ location where unlocked) on pose bones."""
+    for pb in pbones:
+        _key_rotation(pb, frame)
+        if not all(pb.lock_location):
+            pb.keyframe_insert('location', frame=frame)
+
+
+def _key_ik_controls(ik_pbones, frame):
+    """Key location + rotation on IK target/pole pose bones."""
+    for pb in ik_pbones:
+        pb.keyframe_insert('location', frame=frame)
+        _key_rotation(pb, frame)
+
+
+def _key_chain_influences(armature_obj, sd, chain_id, use_ik, frame):
+    """Keyframe constraint influences on MCH bones and set CONSTANT interp.
+
+    This makes the IK/FK switch an instant step function during playback —
+    no blending between modes, no interpolation drift.
+    """
+    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+
+    keyed_fcurves = set()
+
+    for bone_item in chain_bones:
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        if not mch_pb:
+            continue
+
+        # Check if this bone has any IK-related constraint.  If not
+        # (e.g. toe), its FK COPY_TRANSFORMS stays active in IK mode
+        # so the user can still control it.
+        has_ik_constraint = any(
+            c.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION')
+            and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
+            for c in mch_pb.constraints
+        )
+
+        for i, con in enumerate(mch_pb.constraints):
+            if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
+                continue
+
+            if con.type == 'COPY_TRANSFORMS':
+                if has_ik_constraint:
+                    con.influence = 0.0 if use_ik else 1.0
+                else:
+                    # No IK alternative — FK stays active in both modes
+                    con.influence = 1.0
+            elif con.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION'):
+                con.influence = 1.0 if use_ik else 0.0
+            else:
+                continue
+
+            # Build the data path using constraint name (Blender 5.0
+            # stores fcurves with the name, not the integer index).
+            data_path = f'pose.bones["{mch_name}"].constraints["{con.name}"].influence'
+            armature_obj.keyframe_insert(data_path, frame=frame)
+            keyed_fcurves.add(data_path)
+
+    # Set all influence keyframes to CONSTANT interpolation
+    action = armature_obj.animation_data and armature_obj.animation_data.action
+    if action:
+        for fc in _iter_fcurves(action):
+            if fc.data_path in keyed_fcurves:
+                for kp in fc.keyframe_points:
+                    kp.interpolation = 'CONSTANT'
+
+
 # ---------------------------------------------------------------------------
 # Operator
 # ---------------------------------------------------------------------------
 
 class BT_OT_SmartKeyframe(bpy.types.Operator):
-    """Insert keyframes intelligently — FK rotation for FK bones,
-    snap-and-key for IK bones, location+rotation for COG/root."""
+    """Insert keyframes for the active control system.
+
+    IK mode: keys IK targets/poles + independently-controlled FK (e.g. toe).
+    FK mode: keys all FK controls.
+    Constraint influences are keyed with CONSTANT interpolation so mode
+    switches are instant during playback."""
     bl_idname = "bt.smart_keyframe"
     bl_label = "Smart Keyframe"
-    bl_description = "Key FK bones; IK bones snap to FK first"
+    bl_description = "Key active control system (IK or FK) with instant mode switching"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -91,91 +216,75 @@ class BT_OT_SmartKeyframe(bpy.types.Operator):
         if not sd or not sd.has_wrap_rig:
             return self._key_plain(selected, frame)
 
-        from ..rigging.scanner.wrap_assembly import snap_fk_to_ik
+        # Ensure animation data exists
+        if not armature.animation_data:
+            armature.animation_data_create()
+        if not armature.animation_data.action:
+            armature.animation_data.action = bpy.data.actions.new(
+                name=f"{armature.name}_Action")
 
-        fk_to_key = []       # bones that get rotation keyed
-        loc_to_key = []      # bones that also get location keyed
-        snapped_chains = []  # chains where FK was snapped from IK
+        # Track what we've processed so chains aren't handled twice
+        processed_chains = set()
+        plain_bones = []  # non-wrap bones keyed normally
 
         for pbone in selected:
             name = pbone.name
 
             if not name.startswith(WRAP_CTRL_PREFIX):
-                # Non-wrap bone (root, original skeleton, etc.)
-                fk_to_key.append(pbone)
-                if not all(pbone.lock_location):
-                    loc_to_key.append(pbone)
+                # Non-wrap bone (root, COG, original skeleton, etc.)
+                plain_bones.append(pbone)
                 continue
 
             # --- Wrap CTRL bone ---
-            is_ik_target = name.endswith("_IK_target")
-            is_ik_pole = name.endswith("_IK_pole")
-            is_spline = "_Spline_" in name
+            chain_id = _find_chain_for_ctrl(sd, name)
+            if not chain_id or chain_id in processed_chains:
+                continue
 
-            if is_ik_target or is_ik_pole or is_spline:
-                # IK bone — snap FK to match, key FK instead
-                chain_id = _find_chain_for_ctrl(sd, name)
-                if not chain_id:
-                    continue
+            # Find chain config
+            chain_item = None
+            for c in sd.chains:
+                if c.chain_id == chain_id:
+                    chain_item = c
+                    break
+            if not chain_item:
+                continue
 
-                # Check if chain is actually in IK mode
-                chain_item = None
-                for c in sd.chains:
-                    if c.chain_id == chain_id:
-                        chain_item = c
-                        break
+            processed_chains.add(chain_id)
+            use_ik = chain_item.ik_active
 
-                if not chain_item or not chain_item.ik_active:
-                    self.report({'INFO'},
-                                f"Chain '{chain_id}' is in FK mode — "
-                                f"IK bone '{name}' skipped")
-                    continue
-
-                if chain_id not in snapped_chains:
-                    snap_fk_to_ik(armature, chain_id)
-                    snapped_chains.append(chain_id)
-                    chain_fk = _get_chain_fk_pbones(armature, sd, chain_id)
-                    for fk_pb in chain_fk:
-                        if fk_pb not in fk_to_key:
-                            fk_to_key.append(fk_pb)
-                            if not all(fk_pb.lock_location):
-                                loc_to_key.append(fk_pb)
+            if use_ik:
+                # IK mode: key IK controls + independently-controlled FK
+                ik_pbones = _get_chain_ik_pbones(armature, chain_id)
+                _key_ik_controls(ik_pbones, frame)
+                indie_fk = _get_independent_fk_pbones(armature, sd, chain_id)
+                if indie_fk:
+                    _key_bones(indie_fk, frame)
             else:
-                # FK bone
-                fk_to_key.append(pbone)
-                if not all(pbone.lock_location):
-                    loc_to_key.append(pbone)
+                # FK mode: key all FK controls
+                fk_pbones = _get_chain_fk_pbones(armature, sd, chain_id)
+                _key_bones(fk_pbones, frame)
 
-        # Deduplicate (preserving order)
-        seen = set()
-        fk_dedup = []
-        for pb in fk_to_key:
-            if pb.name not in seen:
-                seen.add(pb.name)
-                fk_dedup.append(pb)
-        fk_to_key = fk_dedup
+            # Key constraint influences with CONSTANT interpolation
+            _key_chain_influences(armature, sd, chain_id, use_ik, frame)
 
-        loc_seen = set()
-        loc_dedup = []
-        for pb in loc_to_key:
-            if pb.name not in loc_seen:
-                loc_seen.add(pb.name)
-                loc_dedup.append(pb)
-        loc_to_key = loc_dedup
-
-        # Insert keyframes
-        keyed = 0
-        for pbone in fk_to_key:
+        # Key non-wrap bones normally
+        for pbone in plain_bones:
             _key_rotation(pbone, frame)
-            keyed += 1
-
-        for pbone in loc_to_key:
-            pbone.keyframe_insert('location', frame=frame)
+            if not all(pbone.lock_location):
+                pbone.keyframe_insert('location', frame=frame)
 
         # Report
-        msg = f"Keyed {keyed} bone(s)"
-        if snapped_chains:
-            msg += f" (snapped FK from IK: {', '.join(snapped_chains)})"
+        msg = f"Keyed {len(processed_chains)} chain(s)"
+        if plain_bones:
+            msg += f", {len(plain_bones)} other bone(s)"
+        modes = []
+        for cid in sorted(processed_chains):
+            for c in sd.chains:
+                if c.chain_id == cid:
+                    modes.append(f"{cid}={'IK' if c.ik_active else 'FK'}")
+                    break
+        if modes:
+            msg += f" [{', '.join(modes)}]"
         self.report({'INFO'}, msg)
         return {'FINISHED'}
 
