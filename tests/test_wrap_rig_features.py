@@ -670,13 +670,13 @@ class TestFloorContact:
         result = setup_floor_contact(armature)
         assert "error" in result
 
-    def test_no_leg_chains_returns_error(self):
-        """Should return error if no leg chains found."""
+    def test_no_ik_limb_chains_returns_error(self):
+        """Should return error if no arm or leg chains found."""
         from rigging.scanner.floor_contact import setup_floor_contact
 
         armature = MagicMock()
         armature.bt_scan.has_wrap_rig = True
-        armature.bt_scan.chains = [_make_chain_item("arm_L", "arm")]
+        armature.bt_scan.chains = [_make_chain_item("spine_C", "spine")]
 
         result = setup_floor_contact(armature)
         assert "error" in result

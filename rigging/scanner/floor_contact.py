@@ -1,4 +1,4 @@
-"""Floor interaction — LIMIT_LOCATION on leg IK targets to prevent feet below floor."""
+"""Floor interaction — LIMIT_LOCATION on IK targets to prevent limbs below floor."""
 
 import bpy
 
@@ -8,10 +8,11 @@ FLOOR_CONSTRAINT = f"{WRAP_CONSTRAINT_PREFIX}Floor"
 
 
 def setup_floor_contact(armature_obj, floor_level=0.0):
-    """Add floor constraints to leg IK targets.
+    """Add floor constraints to IK targets on ground-contact limbs.
 
     Adds a LIMIT_LOCATION constraint (min Z = floor_level) on each leg
-    chain's IK target so the foot cannot be moved below the floor plane.
+    and arm chain's IK target so limbs cannot be moved below the floor
+    plane.  This supports quadrupeds where front legs are rigged as arms.
 
     Args:
         armature_obj: Armature with an active wrap rig.
@@ -24,9 +25,9 @@ def setup_floor_contact(armature_obj, floor_level=0.0):
     if not sd.has_wrap_rig:
         return {"error": "No wrap rig found"}
 
-    leg_chains = [ch for ch in sd.chains if ch.module_type == "leg"]
-    if not leg_chains:
-        return {"error": "No leg chains found"}
+    ik_chains = [ch for ch in sd.chains if ch.module_type in ("leg", "arm")]
+    if not ik_chains:
+        return {"error": "No IK limb chains found"}
 
     # Remove existing first
     remove_floor_contact(armature_obj)
@@ -37,7 +38,7 @@ def setup_floor_contact(armature_obj, floor_level=0.0):
     bpy.ops.object.mode_set(mode='POSE')
 
     try:
-        for chain in leg_chains:
+        for chain in ik_chains:
             cid = chain.chain_id
 
             ik_target_name = f"{WRAP_CTRL_PREFIX}{cid}_IK_target"
