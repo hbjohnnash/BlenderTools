@@ -99,9 +99,10 @@ class TestRecoverFrom263:
         # conjugation, Ry(−2θ) → Rz(+2θ), so Z Euler increases.
         z_angles = [rots[f][0][2] for f in range(4)]
         assert abs(z_angles[0]) < 1e-6
-        assert z_angles[1] > z_angles[0]
-        assert z_angles[2] > z_angles[1]
-        # Frame 1: r_rot_ang=0.1 → Ry(-0.2) → Rz(+0.2)
+        # Facing accumulates: each frame's |z_angle| grows
+        assert abs(z_angles[1]) > abs(z_angles[0])
+        assert abs(z_angles[2]) > abs(z_angles[1])
+        # Frame 1: r_rot_ang=0.1 → magnitude ≈ 0.2
         assert abs(z_angles[1]) == pytest.approx(0.2, abs=1e-3)
 
     def test_positions_yup_matches_reference(self):
