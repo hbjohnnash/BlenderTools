@@ -501,6 +501,7 @@ def _constrain_arm(armature_obj, chain_id, chain_bones, bones_info):
             con.chain_count = chain_count
             con.use_stretch = False
             con.influence = 0.0  # Start with FK, user toggles IK
+            con.mute = True
 
             if armature_obj.pose.bones.get(ik_pole):
                 con.pole_target = armature_obj
@@ -521,6 +522,7 @@ def _constrain_arm(armature_obj, chain_id, chain_bones, bones_info):
             con.target = armature_obj
             con.subtarget = ik_target
             con.influence = 0.0  # Start with FK
+            con.mute = True
 
 
 # --- Leg Controls ---
@@ -612,6 +614,7 @@ def _constrain_leg(armature_obj, chain_id, chain_bones, bones_info):
             con.chain_count = chain_count
             con.use_stretch = False
             con.influence = 0.0  # Start with FK
+            con.mute = True
 
             if armature_obj.pose.bones.get(ik_pole):
                 con.pole_target = armature_obj
@@ -632,6 +635,7 @@ def _constrain_leg(armature_obj, chain_id, chain_bones, bones_info):
             con.target = armature_obj
             con.subtarget = ik_target
             con.influence = 0.0  # Start with FK
+            con.mute = True
 
 
 # --- Helpers ---
@@ -688,7 +692,7 @@ def _calibrate_pole_angles(armature_obj):
         for cpb in chain_pbones:
             for c in cpb.constraints:
                 if c.type == 'COPY_TRANSFORMS' and c.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                    saved_fk.append((c, c.influence))
+                    saved_fk.append((c, c.influence, c.mute))
 
         # Disable sync constraints on IK target/pole to prevent circular
         # dependency (IK solver → MCH → sync → IK target → IK solver).
@@ -703,8 +707,9 @@ def _calibrate_pole_angles(armature_obj):
                 continue
             for c in sync_pb.constraints:
                 if c.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                    saved_sync.append((c, c.influence))
+                    saved_sync.append((c, c.influence, c.mute))
                     c.influence = 0.0
+                    c.mute = True
 
         # Rest-pose bend direction: find the joint with MAXIMUM
         # perpendicular displacement from the root→tip axis.
@@ -713,8 +718,9 @@ def _calibrate_pole_angles(armature_obj):
         chain_tip = pbone.bone.tail_local
         chain_axis = (chain_tip - chain_root)
         if chain_axis.length < 0.0001:
-            for c, inf in saved_sync:
+            for c, inf, muted in saved_sync:
                 c.influence = inf
+                c.mute = muted
             continue
         chain_axis_n = chain_axis.normalized()
 
@@ -732,8 +738,9 @@ def _calibrate_pole_angles(armature_obj):
                 best_joint_idx = i
 
         if best_disp < 0.0001 or best_rest_bend is None:
-            for c, inf in saved_sync:
+            for c, inf, muted in saved_sync:
                 c.influence = inf
+                c.mute = muted
             continue
         best_rest_bend.normalize()
 
@@ -742,11 +749,14 @@ def _calibrate_pole_angles(armature_obj):
 
         # Temporarily enable IK with pole_angle=0, disable FK
         saved_ik_inf = ik_con.influence
+        saved_ik_mute = ik_con.mute
         saved_pole = ik_con.pole_angle
-        for c, _ in saved_fk:
+        for c, _, _ in saved_fk:
             c.influence = 0.0
+            c.mute = True
         ik_con.pole_angle = 0.0
         ik_con.influence = 1.0
+        ik_con.mute = False
 
         bpy.context.view_layer.update()
 
@@ -758,10 +768,13 @@ def _calibrate_pole_angles(armature_obj):
         if chain_pose.length < 0.0001:
             ik_con.pole_angle = saved_pole
             ik_con.influence = saved_ik_inf
-            for c, inf in saved_fk:
+            ik_con.mute = saved_ik_mute
+            for c, inf, muted in saved_fk:
                 c.influence = inf
-            for c, inf in saved_sync:
+                c.mute = muted
+            for c, inf, muted in saved_sync:
                 c.influence = inf
+                c.mute = muted
             continue
         chain_pose_n = chain_pose.normalized()
         proj_pose = upper_head_pose + chain_pose_n * (mid_head_pose - upper_head_pose).dot(chain_pose_n)
@@ -769,10 +782,13 @@ def _calibrate_pole_angles(armature_obj):
         if pose_bend.length < 0.0001:
             ik_con.pole_angle = saved_pole
             ik_con.influence = saved_ik_inf
-            for c, inf in saved_fk:
+            ik_con.mute = saved_ik_mute
+            for c, inf, muted in saved_fk:
                 c.influence = inf
-            for c, inf in saved_sync:
+                c.mute = muted
+            for c, inf, muted in saved_sync:
                 c.influence = inf
+                c.mute = muted
             continue
         pose_bend.normalize()
 
@@ -786,10 +802,13 @@ def _calibrate_pole_angles(armature_obj):
         # Apply correction and restore FK mode + sync constraints
         ik_con.pole_angle = correction
         ik_con.influence = saved_ik_inf
-        for c, inf in saved_fk:
+        ik_con.mute = saved_ik_mute
+        for c, inf, muted in saved_fk:
             c.influence = inf
-        for c, inf in saved_sync:
+            c.mute = muted
+        for c, inf, muted in saved_sync:
             c.influence = inf
+            c.mute = muted
 
     bpy.context.view_layer.update()
 
@@ -1035,8 +1054,9 @@ def snap_ik_to_fk(armature_obj, chain_id):
                 for _ in range(ik_chain_count):
                     for c in walk_pb.constraints:
                         if c.type == 'COPY_TRANSFORMS' and c.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                            saved_fk.append((c, c.influence))
+                            saved_fk.append((c, c.influence, c.mute))
                             c.influence = 0.0
+                            c.mute = True
                     if walk_pb.parent:
                         walk_pb = walk_pb.parent
 
@@ -1047,12 +1067,15 @@ def snap_ik_to_fk(armature_obj, chain_id):
                     if sync_pb:
                         for c in sync_pb.constraints:
                             if c.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                                _snap_saved_sync.append((c, c.influence))
+                                _snap_saved_sync.append((c, c.influence, c.mute))
                                 c.influence = 0.0
+                                c.mute = True
 
                 saved_ik_inf = ik_con.influence
+                saved_ik_mute = ik_con.mute
                 saved_pole = ik_con.pole_angle
                 ik_con.influence = 1.0
+                ik_con.mute = False
                 bpy.context.view_layer.update()
 
                 # Measure IK solver's bend direction at the same mid bone
@@ -1075,10 +1098,13 @@ def snap_ik_to_fk(armature_obj, chain_id):
 
                 # Restore constraints to pre-snap state
                 ik_con.influence = saved_ik_inf
-                for c, inf in saved_fk:
+                ik_con.mute = saved_ik_mute
+                for c, inf, muted in saved_fk:
                     c.influence = inf
-                for c, inf in _snap_saved_sync:
+                    c.mute = muted
+                for c, inf, muted in _snap_saved_sync:
                     c.influence = inf
+                    c.mute = muted
                 bpy.context.view_layer.update()
 
     # --- Newton correction: pre-compensate IK target for solver residual ---
@@ -1096,8 +1122,9 @@ def snap_ik_to_fk(armature_obj, chain_id):
             for c in _walk.constraints:
                 if (c.type == 'COPY_TRANSFORMS'
                         and c.name.startswith(WRAP_CONSTRAINT_PREFIX)):
-                    _corr_saved_fk.append((c, c.influence))
+                    _corr_saved_fk.append((c, c.influence, c.mute))
                     c.influence = 0.0
+                    c.mute = True
             if _walk.parent:
                 _walk = _walk.parent
 
@@ -1107,11 +1134,14 @@ def snap_ik_to_fk(armature_obj, chain_id):
             if sync_pb:
                 for c in sync_pb.constraints:
                     if c.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                        _corr_saved_sync.append((c, c.influence))
+                        _corr_saved_sync.append((c, c.influence, c.mute))
                         c.influence = 0.0
+                        c.mute = True
 
         _corr_saved_ik = ik_con.influence
+        _corr_saved_ik_mute = ik_con.mute
         ik_con.influence = 1.0
+        ik_con.mute = False
         bpy.context.view_layer.update()
 
         _POS_TOL_SQ = 1e-16   # ~0.1 nanometre squared
@@ -1127,10 +1157,13 @@ def snap_ik_to_fk(armature_obj, chain_id):
 
         # Restore to FK state (toggle operator switches to IK later)
         ik_con.influence = _corr_saved_ik
-        for c, inf in _corr_saved_fk:
+        ik_con.mute = _corr_saved_ik_mute
+        for c, inf, muted in _corr_saved_fk:
             c.influence = inf
-        for c, inf in _corr_saved_sync:
+            c.mute = muted
+        for c, inf, muted in _corr_saved_sync:
             c.influence = inf
+            c.mute = muted
         bpy.context.view_layer.update()
 
 
@@ -1327,6 +1360,7 @@ def _constrain_ik_chain(armature_obj, chain_id, chain_bones, bones_info,
     con.chain_count = chain_count
     con.use_stretch = False
     con.influence = 0.0  # Start with FK, user toggles IK
+    con.mute = True
 
     if armature_obj.pose.bones.get(ik_pole) and chain_count >= 2:
         con.pole_target = armature_obj
@@ -1349,6 +1383,7 @@ def _constrain_ik_chain(armature_obj, chain_id, chain_bones, bones_info,
             rot_con.target = armature_obj
             rot_con.subtarget = ik_target
             rot_con.influence = 0.0  # Start with FK
+            rot_con.mute = True
 
 
 # --- Spline IK Chain ---
@@ -1584,38 +1619,18 @@ def _compute_joint_limits(armature_obj, mch_name, role, module_type):
 
 
 def _add_sync_constraints(armature_obj, chain_id, chain_bones, bones_info):
-    """Add real-time sync constraints so the inactive system follows the active.
+    """Add FK sync constraints so FK controls mirror the IK-driven pose.
 
     FK sync (on FK CTRL bones):
         COPY_TRANSFORMS from MCH → FK bones mirror IK-driven MCH in real-time.
         Active in IK mode (influence=1), off in FK mode (influence=0).
         Added LAST in the constraint stack so it overrides joint limits.
 
-    IK sync (on IK target/pole bones):
-        COPY_TRANSFORMS from end-effector MCH → IK target tracks foot/hand.
-        COPY_LOCATION from max-displacement IK-chain MCH → IK pole tracks bend.
-        Active in FK mode (influence=1), off in IK mode (influence=0).
-
-    Target selection uses the actual IK chain geometry, not the full bone list,
-    so it works correctly for N-bone IK chains where foot/toe are outside the chain.
+    IK target/pole do NOT get sync constraints.  Adding them would create a
+    circular dependency in Blender's depsgraph (MCH reads IK target via
+    COPY_ROTATION, IK target reads MCH via sync → cycle).  Instead, IK
+    controls are positioned by the snap operators at toggle time.
     """
-    # --- Find the IK constraint and its chain to determine correct targets ---
-    ik_mch_pb = None
-    ik_chain_count = 0
-    for bone_name in chain_bones:
-        role = bones_info.get(bone_name, {}).get("role", bone_name)
-        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{role}"
-        mch_pb = armature_obj.pose.bones.get(mch_name)
-        if not mch_pb:
-            continue
-        for c in mch_pb.constraints:
-            if c.type == 'IK' and c.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                ik_mch_pb = mch_pb
-                ik_chain_count = c.chain_count
-                break
-        if ik_mch_pb:
-            break
-
     # --- FK sync: each FK CTRL copies its MCH counterpart ---
     for bone_name in chain_bones:
         role = bones_info.get(bone_name, {}).get("role", bone_name)
@@ -1641,82 +1656,7 @@ def _add_sync_constraints(armature_obj, chain_id, chain_bones, bones_info):
         con.subtarget = mch_name
         # Start at 0 — FK mode is default; toggle operator activates in IK mode
         con.influence = 0.0
-
-    # --- IK target sync: tracks the end-effector MCH (foot/hand) ---
-    # The end-effector is the bone with COPY_ROTATION targeting the IK target,
-    # or if none found, the bone just after the IK chain (child of IK tip).
-    ik_target_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
-    ik_target_pb = armature_obj.pose.bones.get(ik_target_name)
-
-    if ik_target_pb and ik_mch_pb:
-        # Strategy 1: find the MCH bone with COPY_ROTATION from IK target
-        effector_mch_name = None
-        for bone_name in chain_bones:
-            role = bones_info.get(bone_name, {}).get("role", bone_name)
-            mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{role}"
-            mch_pb = armature_obj.pose.bones.get(mch_name)
-            if not mch_pb:
-                continue
-            for c in mch_pb.constraints:
-                if (c.type == 'COPY_ROTATION'
-                        and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
-                        and c.subtarget == ik_target_name):
-                    effector_mch_name = mch_name
-                    break
-            if effector_mch_name:
-                break
-
-        # Strategy 2: use the IK chain bone itself (its tail = IK target pos)
-        if not effector_mch_name:
-            effector_mch_name = ik_mch_pb.name
-
-        if armature_obj.pose.bones.get(effector_mch_name):
-            con = ik_target_pb.constraints.new('COPY_TRANSFORMS')
-            con.name = f"{WRAP_CONSTRAINT_PREFIX}IK_sync"
-            con.target = armature_obj
-            con.subtarget = effector_mch_name
-            # Active in FK mode (default), off in IK mode
-            con.influence = 1.0
-
-    # --- IK pole sync: tracks the max-displacement bone in the IK chain ---
-    # Walk up the IK chain from ik_mch and find the joint most displaced
-    # from the root→tip axis (the knee/elbow). This is geometrically robust
-    # for any chain length.
-    ik_pole_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_pole"
-    ik_pole_pb = armature_obj.pose.bones.get(ik_pole_name)
-
-    if ik_pole_pb and ik_mch_pb and ik_chain_count >= 2:
-        # Collect IK chain bones (tip to root)
-        ik_chain = [ik_mch_pb]
-        walk = ik_mch_pb
-        for _ in range(ik_chain_count - 1):
-            if walk.parent:
-                walk = walk.parent
-                ik_chain.append(walk)
-
-        # Find the bone with max displacement from root→tip axis
-        root_pos = ik_chain[-1].bone.head_local
-        tip_pos = ik_chain[0].bone.tail_local
-        axis = tip_pos - root_pos
-        best_mch_name = ik_chain[0].name  # fallback to IK bone
-        if axis.length > 0.0001:
-            axis_n = axis.normalized()
-            best_disp = 0.0
-            for cpb in ik_chain:
-                joint = cpb.bone.head_local
-                proj = root_pos + axis_n * (joint - root_pos).dot(axis_n)
-                disp = (joint - proj).length
-                if disp > best_disp:
-                    best_disp = disp
-                    best_mch_name = cpb.name
-
-        if armature_obj.pose.bones.get(best_mch_name):
-            con = ik_pole_pb.constraints.new('COPY_LOCATION')
-            con.name = f"{WRAP_CONSTRAINT_PREFIX}IK_pole_sync"
-            con.target = armature_obj
-            con.subtarget = best_mch_name
-            # Active in FK mode (default), off in IK mode
-            con.influence = 1.0
+        con.mute = True
 
 
 def apply_ik_limits(armature_obj, chain_id, chain_bones, bones_info, module_type):

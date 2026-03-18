@@ -288,8 +288,8 @@ class TestAddSyncConstraints:
                      and c.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"]
         assert len(sync_cons) == 0, "Toe should not have FK_sync"
 
-    def test_ik_target_sync_added(self):
-        """IK target should get an IK_sync constraint."""
+    def test_no_ik_sync_on_target(self):
+        """IK target must NOT get an IK_sync constraint (avoids depsgraph cycle)."""
         from rigging.scanner.wrap_assembly import _add_sync_constraints
 
         armature, bones, _ = _make_armature(
@@ -312,10 +312,10 @@ class TestAddSyncConstraints:
         sync_cons = [c for c in ik_target.constraints
                      if hasattr(c, 'name')
                      and c.name == f"{WRAP_CONSTRAINT_PREFIX}IK_sync"]
-        assert len(sync_cons) >= 1, "IK target should have IK_sync"
+        assert len(sync_cons) == 0, "IK target must not have IK_sync"
 
-    def test_ik_pole_sync_added(self):
-        """IK pole should get an IK_pole_sync constraint."""
+    def test_no_ik_pole_sync(self):
+        """IK pole must NOT get an IK_pole_sync constraint (avoids depsgraph cycle)."""
         from rigging.scanner.wrap_assembly import _add_sync_constraints
 
         armature, bones, _ = _make_armature(
@@ -338,7 +338,7 @@ class TestAddSyncConstraints:
         sync_cons = [c for c in ik_pole.constraints
                      if hasattr(c, 'name')
                      and c.name == f"{WRAP_CONSTRAINT_PREFIX}IK_pole_sync"]
-        assert len(sync_cons) >= 1, "IK pole should have IK_pole_sync"
+        assert len(sync_cons) == 0, "IK pole must not have IK_pole_sync"
 
     def test_fk_sync_starts_disabled(self):
         """FK_sync should start at influence=0 (FK mode default)."""
@@ -363,30 +363,6 @@ class TestAddSyncConstraints:
                     if hasattr(c, 'name')
                     and c.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"]
         assert sync_con[0].influence == 0.0
-
-    def test_ik_sync_starts_enabled(self):
-        """IK_sync should start at influence=1 (FK mode = IK target tracks)."""
-        from rigging.scanner.wrap_assembly import _add_sync_constraints
-
-        armature, bones, _ = _make_armature(
-            "leg_L",
-            ["upper_leg", "lower_leg", "foot"],
-        )
-
-        chain_bones = ["orig_upper_leg", "orig_lower_leg", "orig_foot"]
-        bones_info = {
-            "orig_upper_leg": {"role": "upper_leg"},
-            "orig_lower_leg": {"role": "lower_leg"},
-            "orig_foot": {"role": "foot"},
-        }
-
-        _add_sync_constraints(armature, "leg_L", chain_bones, bones_info)
-
-        ik_target = bones[f"{WRAP_CTRL_PREFIX}leg_L_IK_target"]
-        sync_con = [c for c in ik_target.constraints
-                    if hasattr(c, 'name')
-                    and c.name == f"{WRAP_CONSTRAINT_PREFIX}IK_sync"]
-        assert sync_con[0].influence == 1.0
 
 
 # ===========================================================================

@@ -184,22 +184,6 @@ def _key_chain_influences(armature_obj, sd, chain_id, use_ik, frame):
                 armature_obj.keyframe_insert(dp, frame=frame)
                 keyed_fcurves.add(dp)
 
-    # Key IK target/pole sync constraints
-    for suffix, sync_name, fk_influence in (
-        ("_IK_target", f"{WRAP_CONSTRAINT_PREFIX}IK_sync", 1.0),
-        ("_IK_pole", f"{WRAP_CONSTRAINT_PREFIX}IK_pole_sync", 1.0),
-    ):
-        bone_name = f"{WRAP_CTRL_PREFIX}{chain_id}{suffix}"
-        pb = armature_obj.pose.bones.get(bone_name)
-        if not pb:
-            continue
-        for con in pb.constraints:
-            if con.name == sync_name:
-                con.influence = 0.0 if use_ik else fk_influence
-                dp = f'pose.bones["{bone_name}"].constraints["{con.name}"].influence'
-                armature_obj.keyframe_insert(dp, frame=frame)
-                keyed_fcurves.add(dp)
-
     # Set all influence keyframes to CONSTANT interpolation
     action = armature_obj.animation_data and armature_obj.animation_data.action
     if action:

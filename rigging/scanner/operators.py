@@ -305,14 +305,16 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
                 if con.type == 'COPY_TRANSFORMS':
                     if in_ik_range or has_ik_rot:
                         con.influence = 0.0 if use_ik else 1.0
+                        con.mute = use_ik
                 elif con.type in ('IK', 'SPLINE_IK'):
                     con.influence = 1.0 if use_ik else 0.0
+                    con.mute = not use_ik
                 elif con.type == 'COPY_ROTATION':
                     con.influence = 1.0 if use_ik else 0.0
+                    con.mute = not use_ik
 
-        # Toggle sync constraints on FK CTRL and IK target/pole bones.
-        # FK_sync: active in IK mode (FK bones mirror MCH)
-        # IK_sync / IK_pole_sync: active in FK mode (IK bones track MCH)
+        # Toggle FK_sync on FK CTRL bones.
+        # FK_sync: active in IK mode (FK bones mirror MCH), off in FK mode.
         for bone_item in chain_bones:
             ctrl_name = f"{WRAP_CTRL_PREFIX}{self.chain_id}_FK_{bone_item.role}"
             ctrl_pb = armature.pose.bones.get(ctrl_name)
@@ -321,17 +323,7 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
                     if (con.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"
                             and con.type == 'COPY_TRANSFORMS'):
                         con.influence = 1.0 if use_ik else 0.0
-
-        for suffix, sync_name in (
-            ("_IK_target", f"{WRAP_CONSTRAINT_PREFIX}IK_sync"),
-            ("_IK_pole", f"{WRAP_CONSTRAINT_PREFIX}IK_pole_sync"),
-        ):
-            pb = armature.pose.bones.get(
-                f"{WRAP_CTRL_PREFIX}{self.chain_id}{suffix}")
-            if pb:
-                for con in pb.constraints:
-                    if con.name == sync_name:
-                        con.influence = 0.0 if use_ik else 1.0
+                        con.mute = not use_ik
 
         # Restore per-bone limit states (preserves user customizations)
         if saved_limit_states:

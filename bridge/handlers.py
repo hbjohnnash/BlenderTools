@@ -515,20 +515,46 @@ def _rig_toggle_fk_ik(body):
                         ik_bone_set.add(walk.name)
                         walk = walk.parent
 
+    from ..core.constants import WRAP_CTRL_PREFIX
+
     for bone_item in chain_bones:
         mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
         mch_pbone = arm.pose.bones.get(mch_name)
         if not mch_pbone:
             continue
         in_ik_range = mch_name in ik_bone_set
+        # End-effector bones (hand/foot) have COPY_ROTATION from IK target.
+        # Their FK COPY_TRANSFORMS must also be toggled even though they
+        # are outside the IK chain range.
+        has_ik_rot = any(
+            c.type == 'COPY_ROTATION' and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
+            for c in mch_pbone.constraints
+        )
         for con in mch_pbone.constraints:
             if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
                 continue
             if con.type == 'COPY_TRANSFORMS':
-                if in_ik_range:
+                if in_ik_range or has_ik_rot:
                     con.influence = 0.0 if use_ik else 1.0
+                    con.mute = use_ik
             elif con.type in ('IK', 'SPLINE_IK'):
                 con.influence = 1.0 if use_ik else 0.0
+                con.mute = not use_ik
+            elif con.type == 'COPY_ROTATION':
+                con.influence = 1.0 if use_ik else 0.0
+                con.mute = not use_ik
+
+    # Toggle FK_sync on FK CTRL bones.
+    # FK_sync: active in IK mode (FK bones mirror MCH), off in FK mode.
+    for bone_item in chain_bones:
+        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{bone_item.role}"
+        ctrl_pb = arm.pose.bones.get(ctrl_name)
+        if ctrl_pb:
+            for con in ctrl_pb.constraints:
+                if (con.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"
+                        and con.type == 'COPY_TRANSFORMS'):
+                    con.influence = 1.0 if use_ik else 0.0
+                    con.mute = not use_ik
 
     # Restore per-bone limit states (preserves user customizations)
     if saved_limit_states:
