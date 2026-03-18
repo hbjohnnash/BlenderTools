@@ -4,8 +4,9 @@ import zipfile
 EXCLUDE_DIRS = {'tests', '__pycache__', '.git', '.github', 'docs',
                 '.pytest_cache', '.ruff_cache', '.claude'}
 EXCLUDE_FILES = {'.gitignore', 'pytest.ini', 'ruff.toml', 'CLAUDE.md',
-                 '.python-version', '_build_zip.py'}
-EXCLUDE_EXT = {'.png', '.pyc', '.zip'}
+                 '.python-version', '_build_zip.py', 'Transcript.txt',
+                 'requirements-dev.txt'}
+EXCLUDE_EXT = {'.png', '.jpg', '.pyc', '.zip'}
 
 with zipfile.ZipFile('blender_tools.zip', 'w', zipfile.ZIP_DEFLATED) as zf:
     for root, dirs, files in os.walk('.'):
