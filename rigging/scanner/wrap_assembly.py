@@ -153,6 +153,10 @@ def assemble_wrap_rig(armature_obj, scan_data):
             else:
                 _constrain_fk_chain(armature_obj, chain_id, chain_bones, bones_info)
 
+            # Add sync constraints so inactive system follows active in real-time
+            if ik_enabled:
+                _add_sync_constraints(armature_obj, chain_id, chain_bones, bones_info)
+
             # Always write limit values so they're ready to toggle on.
             # IK limits go on MCH bones, FK limits go on CTRL-FK bones.
             if ik_enabled:
@@ -1485,6 +1489,80 @@ def _compute_joint_limits(armature_obj, mch_name, role, module_type):
             limits[axis] = (-lim, lim, 0.0)
 
     return limits
+
+
+def _add_sync_constraints(armature_obj, chain_id, chain_bones, bones_info):
+    """Add real-time sync constraints so the inactive system follows the active.
+
+    FK sync (on FK CTRL bones):
+        COPY_TRANSFORMS from MCH → FK bones mirror IK-driven MCH in real-time.
+        Active in IK mode (influence=1), off in FK mode (influence=0).
+        Added LAST in the constraint stack so it overrides joint limits.
+
+    IK sync (on IK target/pole bones):
+        COPY_TRANSFORMS from chain-tip MCH → IK target tracks foot/hand.
+        COPY_LOCATION from mid-chain MCH → IK pole tracks bend.
+        Active in FK mode (influence=1), off in IK mode (influence=0).
+    """
+    # --- FK sync: each FK CTRL copies its MCH counterpart ---
+    for bone_name in chain_bones:
+        role = bones_info.get(bone_name, {}).get("role", bone_name)
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{role}"
+        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{role}"
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        ctrl_pb = armature_obj.pose.bones.get(ctrl_name)
+        if not mch_pb or not ctrl_pb:
+            continue
+
+        # Only add sync to bones that have an IK alternative (not toe etc.)
+        has_ik = any(
+            c.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION')
+            and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
+            for c in mch_pb.constraints
+        )
+        if not has_ik:
+            continue
+
+        con = ctrl_pb.constraints.new('COPY_TRANSFORMS')
+        con.name = f"{WRAP_CONSTRAINT_PREFIX}FK_sync"
+        con.target = armature_obj
+        con.subtarget = mch_name
+        # Start at 0 — FK mode is default; toggle operator activates in IK mode
+        con.influence = 0.0
+
+    # --- IK target sync: copies chain-tip MCH position/rotation ---
+    ik_target_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
+    ik_target_pb = armature_obj.pose.bones.get(ik_target_name)
+
+    # Find chain tip MCH (last bone in chain)
+    if ik_target_pb and chain_bones:
+        tip_role = bones_info.get(chain_bones[-1], {}).get("role", chain_bones[-1])
+        tip_mch = f"{WRAP_MCH_PREFIX}{chain_id}_{tip_role}"
+        if armature_obj.pose.bones.get(tip_mch):
+            con = ik_target_pb.constraints.new('COPY_TRANSFORMS')
+            con.name = f"{WRAP_CONSTRAINT_PREFIX}IK_sync"
+            con.target = armature_obj
+            con.subtarget = tip_mch
+            # Active in FK mode (default), off in IK mode
+            con.influence = 1.0
+
+    # --- IK pole sync: tracks mid-chain MCH for bend direction ---
+    ik_pole_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_pole"
+    ik_pole_pb = armature_obj.pose.bones.get(ik_pole_name)
+
+    if ik_pole_pb and len(chain_bones) >= 2:
+        # Mid-chain bone (elbow/knee) — usually the second bone
+        mid_idx = len(chain_bones) // 2
+        mid_role = bones_info.get(chain_bones[mid_idx], {}).get(
+            "role", chain_bones[mid_idx])
+        mid_mch = f"{WRAP_MCH_PREFIX}{chain_id}_{mid_role}"
+        if armature_obj.pose.bones.get(mid_mch):
+            con = ik_pole_pb.constraints.new('COPY_LOCATION')
+            con.name = f"{WRAP_CONSTRAINT_PREFIX}IK_pole_sync"
+            con.target = armature_obj
+            con.subtarget = mid_mch
+            # Active in FK mode (default), off in IK mode
+            con.influence = 1.0
 
 
 def apply_ik_limits(armature_obj, chain_id, chain_bones, bones_info, module_type):
