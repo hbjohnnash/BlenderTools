@@ -501,7 +501,6 @@ def _constrain_arm(armature_obj, chain_id, chain_bones, bones_info):
             con.chain_count = chain_count
             con.use_stretch = False
             con.influence = 0.0  # Start with FK, user toggles IK
-            con.mute = True
 
             if armature_obj.pose.bones.get(ik_pole):
                 con.pole_target = armature_obj
@@ -522,7 +521,6 @@ def _constrain_arm(armature_obj, chain_id, chain_bones, bones_info):
             con.target = armature_obj
             con.subtarget = ik_target
             con.influence = 0.0  # Start with FK
-            con.mute = True
 
 
 # --- Leg Controls ---
@@ -614,7 +612,6 @@ def _constrain_leg(armature_obj, chain_id, chain_bones, bones_info):
             con.chain_count = chain_count
             con.use_stretch = False
             con.influence = 0.0  # Start with FK
-            con.mute = True
 
             if armature_obj.pose.bones.get(ik_pole):
                 con.pole_target = armature_obj
@@ -635,7 +632,6 @@ def _constrain_leg(armature_obj, chain_id, chain_bones, bones_info):
             con.target = armature_obj
             con.subtarget = ik_target
             con.influence = 0.0  # Start with FK
-            con.mute = True
 
 
 # --- Helpers ---
@@ -1360,7 +1356,6 @@ def _constrain_ik_chain(armature_obj, chain_id, chain_bones, bones_info,
     con.chain_count = chain_count
     con.use_stretch = False
     con.influence = 0.0  # Start with FK, user toggles IK
-    con.mute = True
 
     if armature_obj.pose.bones.get(ik_pole) and chain_count >= 2:
         con.pole_target = armature_obj
@@ -1383,7 +1378,6 @@ def _constrain_ik_chain(armature_obj, chain_id, chain_bones, bones_info,
             rot_con.target = armature_obj
             rot_con.subtarget = ik_target
             rot_con.influence = 0.0  # Start with FK
-            rot_con.mute = True
 
 
 # --- Spline IK Chain ---
@@ -1656,7 +1650,6 @@ def _add_sync_constraints(armature_obj, chain_id, chain_bones, bones_info):
         con.subtarget = mch_name
         # Start at 0 — FK mode is default; toggle operator activates in IK mode
         con.influence = 0.0
-        con.mute = True
 
 
 def apply_ik_limits(armature_obj, chain_id, chain_bones, bones_info, module_type):
