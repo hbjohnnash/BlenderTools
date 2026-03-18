@@ -5,7 +5,7 @@
 # Pipeline:
 #   1. lint-and-test  — ruff + pytest (fast, no Blender needed)
 #   2. smoke-test     — real Blender headless (catches registration bugs)
-#   3. build          — packages BlenderTools.zip (downloadable artifact)
+#   3. build          — packages blender_tools.zip (downloadable artifact)
 #
 # Jobs 2 and 3 only run if job 1 passes (needs: lint-and-test).
 
@@ -111,7 +111,7 @@ jobs:
 
       # Build the zip with only the files Blender needs
       # Blender extensions expect a top-level folder matching the manifest id
-      - name: Build BlenderTools.zip
+      - name: Build blender_tools.zip
         run: |
           mkdir -p build/staging/blender_tools
           # Copy addon source files into staging
@@ -125,11 +125,11 @@ jobs:
                    --exclude='Transcript.txt' --exclude='.python-version' \
                    ./ build/staging/blender_tools/
           # Create zip with blender_tools/ as top-level directory
-          cd build/staging && zip -r ../../BlenderTools.zip blender_tools/
+          cd build/staging && zip -r ../../blender_tools.zip blender_tools/
 
       # Upload as a downloadable artifact on the Actions page
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: BlenderTools
-          path: BlenderTools.zip
+          path: blender_tools.zip
