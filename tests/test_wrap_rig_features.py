@@ -80,14 +80,22 @@ def _make_armature(chain_id, roles, ik_roles=None):
         chain_id: e.g. "leg_L"
         roles: list of roles e.g. ["upper_leg", "lower_leg", "foot", "toe"]
         ik_roles: roles that have IK constraints on MCH (default: all except last)
+
+    IK constraints are placed on ALL ik_roles' MCH bones (matching the check
+    in _get_independent_fk_pbones which looks per-bone).  A chain_count
+    attribute is set on each so _add_sync_constraints can find the IK chain.
     """
     if ik_roles is None:
         ik_roles = set(roles[:-1])  # all except toe
 
     bones = {}
     bone_items = []
+    ik_target_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
 
-    for role in roles:
+    # Fake positions along Y axis so pole displacement math works
+    spacing = 0.3
+
+    for idx, role in enumerate(roles):
         mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{role}"
         ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{role}"
 
@@ -98,15 +106,34 @@ def _make_armature(chain_id, roles, ik_roles=None):
                              f"{WRAP_CONSTRAINT_PREFIX}FK", 1.0))
         # IK constraint on MCH (if this role has IK)
         if role in ik_roles:
-            mch_constraints.append(
-                _make_constraint('IK', f"{WRAP_CONSTRAINT_PREFIX}IK", 0.0))
+            ik_con = _make_constraint(
+                'IK', f"{WRAP_CONSTRAINT_PREFIX}IK", 0.0)
+            ik_con.chain_count = len(ik_roles)
+            ik_con.subtarget = ik_target_name
+            ik_con.pole_target = None
+            ik_con.pole_subtarget = ""
+            mch_constraints.append(ik_con)
 
-        bones[mch_name] = _make_pose_bone(mch_name, mch_constraints)
+        mch_pb = _make_pose_bone(mch_name, mch_constraints)
+        # Mock bone.head_local / tail_local with _MockVector for arithmetic
+        from conftest import _MockVector
+        mch_pb.bone = SimpleNamespace(
+            head_local=_MockVector((0, idx * spacing, 0)),
+            tail_local=_MockVector((0, (idx + 1) * spacing, 0)),
+        )
+        mch_pb.parent = None
+        bones[mch_name] = mch_pb
         bones[ctrl_name] = _make_pose_bone(ctrl_name)
         bone_items.append(_make_bone_item(chain_id, role))
 
+    # Wire up MCH parent chain
+    for i in range(1, len(roles)):
+        parent_mch = f"{WRAP_MCH_PREFIX}{chain_id}_{roles[i - 1]}"
+        child_mch = f"{WRAP_MCH_PREFIX}{chain_id}_{roles[i]}"
+        if child_mch in bones and parent_mch in bones:
+            bones[child_mch].parent = bones[parent_mch]
+
     # IK target and pole
-    ik_target_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
     ik_pole_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_pole"
     bones[ik_target_name] = _make_pose_bone(ik_target_name)
     bones[ik_pole_name] = _make_pose_bone(ik_pole_name)

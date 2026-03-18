@@ -100,6 +100,12 @@ class _MockVector:
             self.z /= mag
         return self
 
+    def normalized(self):
+        return self.copy().normalize()
+
+    def dot(self, other):
+        return self.x * other.x + self.y * other.y + self.z * other.z
+
     def angle(self, other, fallback=0.0):
         dot = self.x * other.x + self.y * other.y + self.z * other.z
         dot = max(-1.0, min(1.0, dot))
