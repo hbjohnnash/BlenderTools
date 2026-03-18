@@ -133,3 +133,65 @@ jobs:
         with:
           name: BlenderTools
           path: blender_tools.zip
+
+  # ── Job 4: Create release with artifact and update extension index ──
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: BlenderTools
+
+      - name: Calculate SHA256
+        id: sha256
+        run: |
+          SHA256=$(sha256sum blender_tools.zip | cut -d' ' -f1)
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+
+      - name: Update extension index
+        run: |
+          python3 << 'EOF'
+          import json
+          sha256_hash = "${{ steps.sha256.outputs.sha256 }}"
+          with open("blender_extensions_index.json", "r") as f:
+              data = json.load(f)
+          for addon in data["addons"]:
+              if addon["id"] == "blender_tools":
+                  addon["download_sha256"] = sha256_hash
+          with open("blender_extensions_index.json", "w") as f:
+              json.dump(data, f, indent=2)
+          print(f"Updated index with SHA256: {sha256_hash}")
+          EOF
+
+      - name: Create/Update release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: blender_tools.zip
+          tag_name: latest
+          name: Latest Build
+          prerelease: false
+          body: |
+            Built from: ${{ github.sha }}
+
+            **Add this repository to Blender:**
+            1. Go to Edit → Preferences → Extensions
+            2. Click the dropdown menu and select "Add Remote Repository"
+            3. Paste: https://raw.githubusercontent.com/hbjohnnash/BlenderTools/main/blender_extensions_index.json
+            4. Find BlenderTools and install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit updated index
+        run: |
+          git config user.email "github-actions@github.com"
+          git config user.name "GitHub Actions"
+          git add blender_extensions_index.json
+          git commit -m "chore: update extension index" || true
+          git push || true
