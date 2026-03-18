@@ -98,7 +98,7 @@ class BT_PT_AnimationMain(bpy.types.Panel):
                     has_preview = get_smpl_preview() is not None
                 except Exception:
                     has_preview = False
-                    is_link_active = lambda: False
+                    def is_link_active(): return False
                 row = box.row(align=True)
                 row.operator(
                     "bt.retarget_preview",

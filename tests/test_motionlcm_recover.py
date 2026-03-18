@@ -8,8 +8,8 @@ from math import pi
 import numpy as np
 import pytest
 
-from animation.ml.motionlcm_adapter import MotionLCMAdapter
 from animation.ml import smpl_skeleton
+from animation.ml.motionlcm_adapter import MotionLCMAdapter
 
 _adapter = MotionLCMAdapter.__new__(MotionLCMAdapter)
 

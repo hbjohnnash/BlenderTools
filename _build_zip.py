@@ -1,5 +1,5 @@
-import zipfile
 import os
+import zipfile
 
 EXCLUDE_DIRS = {'tests', '__pycache__', '.git', '.github', 'docs',
                 '.pytest_cache', '.ruff_cache', '.claude'}
