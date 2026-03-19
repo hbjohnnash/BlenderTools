@@ -48,24 +48,6 @@ Apply a predefined combination of seam methods.
 - `hard_surface` — Hard Edge + Angle (35°) + Material
 - `organic` — Island-Aware + Material
 
-### Neural Seams (AI)
-Uses MeshCNN to segment the mesh into body part regions; segment boundaries become seams.
-
-**Requirements:** Click "Initialize AI Seams" first (downloads PyTorch + MeshCNN model, ~300MB).
-
-**How it works:**
-1. Exports mesh to temporary OBJ
-2. MeshCNN classifies edges into 8 body-part segments (human body segmentation)
-3. Edges where adjacent segments differ are marked as seams
-4. Falls back to angle-based prediction (>45 dihedral angle) if the model fails
-
-**Model:** MeshCNN (MIT license, edge-based convolution on meshes)
-
-**Operators:**
-- `bt.init_seam_ai` — Download PyTorch + MeshCNN (modal, threaded, non-blocking)
-- `bt.seam_neural` — Run neural seam prediction
-- `bt.remove_seam_ai` — Delete cached model to free disk space
-
 ### Clear All Seams
 Removes all seams from the active mesh.
 

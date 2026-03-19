@@ -64,23 +64,6 @@ IK bones never keyed directly. Per-bone behavior:
 
 Fallback (no wrap rig): all selected keyed with rotation + location. Operator: `bt.smart_keyframe`
 
-## AI Motion Generation
-
-Model selection is automatic: humanoid skeletons (spine+arm+leg chains) use MotionLCM; exotic topologies use AnyTop. User can override via Model enum (AUTO/MOTIONLCM/ANYTOP).
-
-### MotionLCM (humanoid text-to-motion, ECCV 2024)
-1-step latent consistency model on SMPL 22 joints (~30ms). Outputs HumanML3D 263-dim features, recovered to rotations via position-based IK. Retargeted to user armature via influence map. See `docs/motionlcm_flow.md` for full pipeline.
-
-### AnyTop (any-topology text-to-motion, SIGGRAPH 2025)
-Any skeleton topology. Extracts topology from armature, sends to model, outputs 6D joint rotations, converts to Euler via Gram-Schmidt, applies as keyframes. HF: `inbar2344/AnyTop`.
-
-### SinMDM (style transfer)
-Tasks: style transfer, inbetween, expand. Single-motion diffusion, MIT license, generic BVH input.
-
-Operators: `bt.init_anim_ai`, `bt.remove_anim_ai`, `bt.ai_generate_motion`, `bt.ai_style_transfer`, `bt.ai_inbetween`
-
-Models cached at `~/.blendertools/models/<model_id>/`.
-
 ## Animation Data Flow
 
 Uses `create_fcurve` helper (in `core/utils.py`) for Blender 5.0 channelbag API: Action > Slot > Channelbag > FCurve > Keyframes. Reading: `action.layers[].strips[].channelbags[].fcurves`.

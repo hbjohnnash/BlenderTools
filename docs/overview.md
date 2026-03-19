@@ -1,6 +1,6 @@
 # BlenderTools — Overview
 
-Comprehensive Blender 5.0+ addon for seam creation, modular rigging, skinning, animation tools, AI-powered workflows, and LLM bridge integration. You model; BlenderTools handles everything after.
+Comprehensive Blender 5.0+ addon for seam creation, modular rigging, skinning, animation tools, and LLM bridge integration. You model; BlenderTools handles everything after.
 
 **GitHub:** https://github.com/hbjohnnash/BlenderTools
 
@@ -12,10 +12,10 @@ Edit > Preferences > Extensions > Install from Disk > select `BlenderTools.zip` 
 
 3D Viewport sidebar (`N` key) > **BlenderTools** tab:
 - **Header** — Subsystem toggles + unified Overlay controls
-- **Seams** — UV seam tools + AI neural seams (MeshCNN)
+- **Seams** — UV seam tools (angle, material, hard edge, island-aware, projection, presets)
 - **Rigging** — Modular builder + Scanner + CoM/Balance + Control Shapes
 - **Skinning** — Weight painting tools
-- **Animation** — Mechanical, root motion, trajectory, onion skin, Smart Keyframe, AI motion (MotionLCM, AnyTop, SinMDM)
+- **Animation** — Mechanical, root motion, trajectory, onion skin, Smart Keyframe, retarget-to-FK
 - **Export** — Rig scaling & UE FBX export
 - **LLM Bridge** — HTTP server for Claude Code
 
@@ -48,10 +48,6 @@ Three-tier: **CTRL -> MCH -> DEF**. DEF = COPY_TRANSFORMS from MCH. MCH = rig lo
 **Root motion:** Select armature > Animation > Root Motion > Auto Detect > Setup > Finalize.
 
 **Export to UE:** Scale rig (factor 100) > "Export to UE".
-
-**AI seams:** Seams > "Initialize AI Seams" > "Neural Seams".
-
-**AI motion:** Animation > "Initialize AI Motion" > select armature > "Generate Motion" + text prompt.
 
 **Claude Code bridge:** "Start Bridge" > `python blender_api.py ping`.
 
