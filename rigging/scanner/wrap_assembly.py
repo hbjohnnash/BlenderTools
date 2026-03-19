@@ -809,6 +809,135 @@ def _calibrate_pole_angles(armature_obj):
     bpy.context.view_layer.update()
 
 
+# ---------------------------------------------------------------------------
+# IK state cache — save/restore for lossless FK↔IK roundtrips
+# ---------------------------------------------------------------------------
+# Keyed by (armature name, chain_id).  Stores IK control values at the
+# moment of IK→FK snap so that FK→IK can restore them exactly if the user
+# hasn't modified the FK pose.
+_ik_state_cache = {}
+
+
+def _cache_key(armature_obj, chain_id):
+    return (armature_obj.name, chain_id)
+
+
+def save_ik_state(armature_obj, chain_id):
+    """Snapshot IK target/pole positions + pole_angle after IK→FK snap."""
+    sd = armature_obj.bt_scan
+
+    ik_target_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
+    ik_pole_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_pole"
+    ik_target_pb = armature_obj.pose.bones.get(ik_target_name)
+    ik_pole_pb = armature_obj.pose.bones.get(ik_pole_name)
+
+    # Find pole_angle from IK constraint
+    pole_angle = None
+    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+    for bone_item in chain_bones:
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        if mch_pb:
+            for c in mch_pb.constraints:
+                if c.type == 'IK' and c.name.startswith(WRAP_CONSTRAINT_PREFIX):
+                    pole_angle = c.pole_angle
+                    break
+        if pole_angle is not None:
+            break
+
+    state = {
+        'target_matrix': ik_target_pb.matrix.copy() if ik_target_pb else None,
+        'pole_matrix': ik_pole_pb.matrix.copy() if ik_pole_pb else None,
+        'pole_angle': pole_angle,
+    }
+    _ik_state_cache[_cache_key(armature_obj, chain_id)] = state
+
+
+def save_fk_snapshot(armature_obj, chain_id):
+    """Snapshot FK bone rotations after IK→FK snap for modification detection."""
+    sd = armature_obj.bt_scan
+    key = _cache_key(armature_obj, chain_id)
+    state = _ik_state_cache.get(key)
+    if not state:
+        return
+
+    fk_snapshot = {}
+    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+    for bone_item in chain_bones:
+        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{bone_item.role}"
+        ctrl_pb = armature_obj.pose.bones.get(ctrl_name)
+        if ctrl_pb:
+            fk_snapshot[bone_item.role] = ctrl_pb.matrix.copy()
+    state['fk_snapshot'] = fk_snapshot
+
+
+def fk_was_modified(armature_obj, chain_id):
+    """Return True if FK bones were changed since the last IK→FK snap."""
+    _POS_TOL_SQ = 1e-10   # ~10 nanometre — tighter than visible drift
+    _ROT_TOL = 1e-8
+
+    key = _cache_key(armature_obj, chain_id)
+    state = _ik_state_cache.get(key)
+    if not state or 'fk_snapshot' not in state:
+        return True  # No snapshot — assume modified
+
+    sd = armature_obj.bt_scan
+    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+    for bone_item in chain_bones:
+        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{bone_item.role}"
+        ctrl_pb = armature_obj.pose.bones.get(ctrl_name)
+        if not ctrl_pb:
+            continue
+        saved = state['fk_snapshot'].get(bone_item.role)
+        if saved is None:
+            continue
+        pos_err = (saved.translation - ctrl_pb.matrix.translation).length_squared
+        if pos_err > _POS_TOL_SQ:
+            return True
+        saved_q = saved.to_quaternion()
+        curr_q = ctrl_pb.matrix.to_quaternion()
+        if abs(saved_q.dot(curr_q)) < (1.0 - _ROT_TOL):
+            return True
+    return False
+
+
+def restore_ik_state(armature_obj, chain_id):
+    """Restore saved IK target/pole/angle.  Returns True if restored."""
+    key = _cache_key(armature_obj, chain_id)
+    state = _ik_state_cache.get(key)
+    if not state:
+        return False
+
+    sd = armature_obj.bt_scan
+
+    # Restore IK target
+    ik_target_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_target"
+    ik_target_pb = armature_obj.pose.bones.get(ik_target_name)
+    if ik_target_pb and state['target_matrix']:
+        ik_target_pb.matrix = state['target_matrix']
+
+    # Restore IK pole
+    ik_pole_name = f"{WRAP_CTRL_PREFIX}{chain_id}_IK_pole"
+    ik_pole_pb = armature_obj.pose.bones.get(ik_pole_name)
+    if ik_pole_pb and state['pole_matrix']:
+        ik_pole_pb.matrix = state['pole_matrix']
+
+    # Restore pole_angle
+    if state['pole_angle'] is not None:
+        chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+        for bone_item in chain_bones:
+            mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+            mch_pb = armature_obj.pose.bones.get(mch_name)
+            if mch_pb:
+                for c in mch_pb.constraints:
+                    if c.type == 'IK' and c.name.startswith(WRAP_CONSTRAINT_PREFIX):
+                        c.pole_angle = state['pole_angle']
+                        break
+
+    bpy.context.view_layer.update()
+    return True
+
+
 def snap_fk_to_ik(armature_obj, chain_id):
     """Snap FK controls to match the current IK-solved pose.
 
@@ -1091,6 +1220,32 @@ def snap_ik_to_fk(armature_obj, chain_id):
                         if cross.dot(ik_axis_n) < 0:
                             correction = -correction
                         ik_con.pole_angle = saved_pole + correction
+
+                        # Iterative pole angle refinement — reduce residual
+                        # bend error that the single-pass correction leaves.
+                        _ANGLE_TOL = 1e-7  # radians (~0.006 millidegrees)
+                        for _ in range(3):
+                            bpy.context.view_layer.update()
+                            ik_mid2 = mid_point_getter()
+                            ik_root2 = upper_pb.head.copy()
+                            ik_tip2 = ik_mch.tail.copy()
+                            ik_axis2 = ik_tip2 - ik_root2
+                            if ik_axis2.length < 0.0001:
+                                break
+                            ik_axis2_n = ik_axis2.normalized()
+                            ik_proj2 = ik_root2 + ik_axis2_n * (ik_mid2 - ik_root2).dot(ik_axis2_n)
+                            ik_bend2 = ik_mid2 - ik_proj2
+                            if ik_bend2.length < 0.0001:
+                                break
+                            ik_bend2.normalize()
+                            dot2 = max(-1.0, min(1.0, ik_bend2.dot(fk_bend)))
+                            residual = math.acos(dot2)
+                            if residual < _ANGLE_TOL:
+                                break
+                            cross2 = ik_bend2.cross(fk_bend)
+                            if cross2.dot(ik_axis2_n) < 0:
+                                residual = -residual
+                            ik_con.pole_angle += residual
 
                 # Restore constraints to pre-snap state
                 ik_con.influence = saved_ik_inf
@@ -1644,12 +1799,58 @@ def _add_sync_constraints(armature_obj, chain_id, chain_bones, bones_info):
         if not has_ik:
             continue
 
+        # Skip if FK_sync already exists on this bone
+        sync_name = f"{WRAP_CONSTRAINT_PREFIX}FK_sync"
+        if any(c.name == sync_name for c in ctrl_pb.constraints):
+            continue
+
         con = ctrl_pb.constraints.new('COPY_TRANSFORMS')
-        con.name = f"{WRAP_CONSTRAINT_PREFIX}FK_sync"
+        con.name = sync_name
         con.target = armature_obj
         con.subtarget = mch_name
         # Start at 0 — FK mode is default; toggle operator activates in IK mode
         con.influence = 0.0
+
+
+def ensure_fk_sync(armature_obj, chain_id):
+    """Ensure FK_sync constraints exist for a chain. Repairs old rigs.
+
+    Safe to call repeatedly — skips bones that already have FK_sync.
+    Returns the number of constraints added.
+    """
+    sd = armature_obj.bt_scan
+    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+    added = 0
+
+    for bone_item in chain_bones:
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{bone_item.role}"
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        ctrl_pb = armature_obj.pose.bones.get(ctrl_name)
+        if not mch_pb or not ctrl_pb:
+            continue
+
+        # Only add sync to bones that have an IK alternative
+        has_ik = any(
+            c.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION')
+            and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
+            for c in mch_pb.constraints
+        )
+        if not has_ik:
+            continue
+
+        sync_name = f"{WRAP_CONSTRAINT_PREFIX}FK_sync"
+        if any(c.name == sync_name for c in ctrl_pb.constraints):
+            continue
+
+        con = ctrl_pb.constraints.new('COPY_TRANSFORMS')
+        con.name = sync_name
+        con.target = armature_obj
+        con.subtarget = mch_name
+        con.influence = 0.0
+        added += 1
+
+    return added
 
 
 def apply_ik_limits(armature_obj, chain_id, chain_bones, bones_info, module_type):
