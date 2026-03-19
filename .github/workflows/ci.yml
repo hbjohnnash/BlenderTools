@@ -185,10 +185,7 @@ jobs:
                       "tags": [],
                       "blender_version_min": "5.0.0",
                       "license": ["SPDX:MIT"],
-                      "permissions": {
-                          "network": "LLM bridge HTTP server for Claude Code integration",
-                          "files": "Load/save rig configs, seam presets, and animation presets"
-                      },
+                      "permissions": ["network", "files"],
                       "archive_size": archive_size,
                       "archive_hash": f"sha256:{sha256_hash}",
                       "archive_url": download_url

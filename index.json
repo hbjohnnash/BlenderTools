@@ -15,10 +15,7 @@
       "license": [
         "SPDX:MIT"
       ],
-      "permissions": {
-        "network": "LLM bridge HTTP server for Claude Code integration",
-        "files": "Load/save rig configs, seam presets, and animation presets"
-      },
+      "permissions": ["network", "files"],
       "archive_size": 276707,
       "archive_hash": "sha256:9bfe01b261eaacc45e6afb7d4314d498acb3fc2ce13f6f95894bf4b1b01626ce",
       "archive_url": "https://github.com/hbjohnnash/BlenderTools/releases/download/latest/blender_tools.zip"
