@@ -10,7 +10,7 @@
       "tagline": "Comprehensive seam, rigging, skinning, animation & LLM bridge toolkit",
       "maintainer": "hbjohnnash",
       "type": "add-on",
-      "tags": [],
+      "tags": ["Rigging", "Animation"],
       "blender_version_min": "5.0.0",
       "license": [
         "SPDX:MIT"
