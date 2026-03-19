@@ -1,0 +1,27 @@
+{
+  "version": "v1",
+  "blocklist": [],
+  "data": [
+    {
+      "id": "blender_tools",
+      "schema_version": "1.0.0",
+      "name": "BlenderTools",
+      "version": "1.0.0",
+      "tagline": "Comprehensive seam, rigging, skinning, animation & LLM bridge toolkit",
+      "maintainer": "hbjohnnash",
+      "type": "add-on",
+      "tags": [],
+      "blender_version_min": "5.0.0",
+      "license": [
+        "SPDX:MIT"
+      ],
+      "permissions": {
+        "network": "LLM bridge HTTP server for Claude Code integration",
+        "files": "Load/save rig configs, seam presets, and animation presets"
+      },
+      "archive_size": 0,
+      "archive_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "archive_url": "https://github.com/hbjohnnash/BlenderTools/releases/download/latest/blender_tools.zip"
+    }
+  ]
+}

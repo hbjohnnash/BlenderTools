@@ -17,6 +17,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: write    # Needed for creating releases and pushing index updates
+
 jobs:
   # ── Job 1: Fast checks (no Blender needed) ──
   lint-and-test:
@@ -149,26 +152,55 @@ jobs:
         with:
           name: BlenderTools
 
-      - name: Calculate SHA256
-        id: sha256
+      - name: Calculate SHA256 and file size
+        id: zip_info
         run: |
           SHA256=$(sha256sum blender_tools.zip | cut -d' ' -f1)
+          SIZE=$(stat --format=%s blender_tools.zip)
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          echo "size=$SIZE" >> $GITHUB_OUTPUT
 
-      - name: Update extension index
+      - name: Generate extension index
         run: |
-          python3 << 'EOF'
-          import json
-          sha256_hash = "${{ steps.sha256.outputs.sha256 }}"
-          with open("blender_extensions_index.json", "r") as f:
-              data = json.load(f)
-          for addon in data["addons"]:
-              if addon["id"] == "blender_tools":
-                  addon["download_sha256"] = sha256_hash
-          with open("blender_extensions_index.json", "w") as f:
-              json.dump(data, f, indent=2)
-          print(f"Updated index with SHA256: {sha256_hash}")
-          EOF
+          python3 << 'PYEOF'
+          import json, os
+
+          sha256_hash = "${{ steps.zip_info.outputs.sha256 }}"
+          archive_size = int("${{ steps.zip_info.outputs.size }}")
+          download_url = "https://github.com/hbjohnnash/BlenderTools/releases/download/latest/blender_tools.zip"
+
+          # Blender remote repository index format
+          index = {
+              "version": "v1",
+              "blocklist": [],
+              "data": [
+                  {
+                      "id": "blender_tools",
+                      "schema_version": "1.0.0",
+                      "name": "BlenderTools",
+                      "version": "1.0.0",
+                      "tagline": "Comprehensive seam, rigging, skinning, animation & LLM bridge toolkit",
+                      "maintainer": "hbjohnnash",
+                      "type": "add-on",
+                      "tags": [],
+                      "blender_version_min": "5.0.0",
+                      "license": ["SPDX:MIT"],
+                      "permissions": {
+                          "network": "LLM bridge HTTP server for Claude Code integration",
+                          "files": "Load/save rig configs, seam presets, and animation presets"
+                      },
+                      "archive_size": archive_size,
+                      "archive_hash": f"sha256:{sha256_hash}",
+                      "archive_url": download_url
+                  }
+              ]
+          }
+
+          with open("index.json", "w") as f:
+              json.dump(index, f, indent=2)
+
+          print(f"Generated index.json  sha256:{sha256_hash}  size:{archive_size}")
+          PYEOF
 
       - name: Create/Update release
         uses: softprops/action-gh-release@v2
@@ -183,7 +215,7 @@ jobs:
             **Add this repository to Blender:**
             1. Go to Edit → Preferences → Extensions
             2. Click the dropdown menu and select "Add Remote Repository"
-            3. Paste: https://raw.githubusercontent.com/hbjohnnash/BlenderTools/main/blender_extensions_index.json
+            3. Enter URL: `https://raw.githubusercontent.com/hbjohnnash/BlenderTools/main/index.json`
             4. Find BlenderTools and install
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -192,6 +224,7 @@ jobs:
         run: |
           git config user.email "github-actions@github.com"
           git config user.name "GitHub Actions"
-          git add blender_extensions_index.json
-          git commit -m "chore: update extension index" || true
+          git add index.json
+          git rm blender_extensions_index.json || true
+          git commit -m "chore: update extension index with build hash" || true
           git push || true
