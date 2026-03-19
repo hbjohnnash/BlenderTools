@@ -10,7 +10,10 @@
       "tagline": "Comprehensive seam, rigging, skinning, animation & LLM bridge toolkit",
       "maintainer": "hbjohnnash",
       "type": "add-on",
-      "tags": ["Rigging", "Animation"],
+      "tags": [
+        "Rigging",
+        "Animation"
+      ],
       "blender_version_min": "5.0.0",
       "license": [
         "SPDX:MIT"
@@ -19,8 +22,8 @@
         "network",
         "files"
       ],
-      "archive_size": 276229,
-      "archive_hash": "sha256:aa55e7c6b5e87fdf96365b6e20bf02a634ee9e1809fa71b344fb027703adc938",
+      "archive_size": 276241,
+      "archive_hash": "sha256:df6c9ee7219eed41ce4e4ccdad264b871b5d7b23826903a078ba06377ff13f6f",
       "archive_url": "https://github.com/hbjohnnash/BlenderTools/releases/download/latest/blender_tools.zip"
     }
   ]
