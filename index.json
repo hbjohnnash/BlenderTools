@@ -22,8 +22,8 @@
         "network",
         "files"
       ],
-      "archive_size": 271949,
-      "archive_hash": "sha256:2924efc7f53e588d0b78fb508dc9d8a5860e8fcca0ecdd1c483bf329f4d51e35",
+      "archive_size": 274603,
+      "archive_hash": "sha256:e9b30aabe36729a79a120526269085e9aeaecfad8429345578a718f0feade411",
       "archive_url": "https://github.com/hbjohnnash/BlenderTools/releases/download/latest/blender_tools.zip"
     }
   ]
