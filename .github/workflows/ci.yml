@@ -113,10 +113,10 @@ jobs:
         uses: actions/checkout@v4
 
       # Build the zip with only the files Blender needs
-      # Blender extensions expect a top-level folder matching the manifest id
+      # Blender extensions expect blender_manifest.toml at the zip root
       - name: Build blender_tools.zip
         run: |
-          mkdir -p build/staging/blender_tools
+          mkdir -p build/staging
           # Copy addon source files into staging
           rsync -a --exclude='tests/' --exclude='.github/' --exclude='.git/' \
                    --exclude='__pycache__/' --exclude='*.pyc' --exclude='*.pyo' \
@@ -126,9 +126,10 @@ jobs:
                    --exclude='build/' --exclude='*.png' --exclude='*.jpg' \
                    --exclude='_build_zip.py' --exclude='CLAUDE.md' \
                    --exclude='Transcript.txt' --exclude='.python-version' \
-                   ./ build/staging/blender_tools/
-          # Create zip with blender_tools/ as top-level directory
-          cd build/staging && zip -r ../../blender_tools.zip blender_tools/
+                   --exclude='index.json' --exclude='blender_extensions_index.json' \
+                   ./ build/staging/
+          # Create zip with manifest at root (no wrapping folder)
+          cd build/staging && zip -r ../../blender_tools.zip .
 
       # Upload as a downloadable artifact on the Actions page
       - name: Upload artifact
