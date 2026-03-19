@@ -19,6 +19,8 @@ on:
 
 permissions:
   contents: write    # Needed for creating releases and pushing index updates
+  pages: write       # Needed for deploying extension index to GitHub Pages
+  id-token: write    # Needed for GitHub Pages deployment
 
 jobs:
   # ── Job 1: Fast checks (no Blender needed) ──
@@ -213,16 +215,18 @@ jobs:
             **Add this repository to Blender:**
             1. Go to Edit → Preferences → Extensions
             2. Click the dropdown menu and select "Add Remote Repository"
-            3. Enter URL: `https://raw.githubusercontent.com/hbjohnnash/BlenderTools/main/index.json`
+            3. Enter URL: `https://hbjohnnash.github.io/BlenderTools/index.json`
             4. Find BlenderTools and install
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Commit updated index
+      - name: Deploy index to GitHub Pages
         run: |
-          git config user.email "github-actions@github.com"
-          git config user.name "GitHub Actions"
-          git add index.json
-          git rm blender_extensions_index.json || true
-          git commit -m "chore: update extension index with build hash" || true
-          git push || true
+          mkdir -p _pages
+          cp index.json _pages/
+
+      - name: Publish to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_pages
