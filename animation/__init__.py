@@ -1,10 +1,9 @@
 """Animation generators subsystem."""
 
-from . import ml, onion_skin, operators, panels, root_motion, smart_keyframe, trajectory
+from . import onion_skin, operators, panels, root_motion, smart_keyframe, trajectory
 
 
 def register():
-    ml.register()
     operators.register()
     panels.register()
     root_motion.register()
@@ -20,4 +19,3 @@ def unregister():
     root_motion.unregister()
     panels.unregister()
     operators.unregister()
-    ml.unregister()

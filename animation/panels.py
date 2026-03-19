@@ -5,22 +5,6 @@ import bpy
 from ..core.constants import PANEL_CATEGORY
 
 
-def get_ai_model_readiness():
-    """Check readiness of AI motion models.
-
-    Returns:
-        tuple[bool, bool, bool]: (lcm_ready, anytop_ready, sinmdm_ready)
-    """
-    from ..core.ml import model_manager
-    from ..core.ml.dependencies import check_torch_available
-
-    torch_ok = check_torch_available()
-    lcm_ready = torch_ok and model_manager.is_model_installed("motionlcm")
-    anytop_ready = torch_ok and model_manager.is_model_installed("anytop")
-    sinmdm_ready = torch_ok and model_manager.is_model_installed("sinmdm")
-    return lcm_ready, anytop_ready, sinmdm_ready
-
-
 class BT_PT_AnimationMain(bpy.types.Panel):
     bl_label = "Animation"
     bl_idname = "BT_PT_AnimationMain"
@@ -71,111 +55,28 @@ class BT_PT_AnimationMain(bpy.types.Panel):
         col.operator("bt.match_cycle_keyframes", icon='FILE_REFRESH')
         col.operator("bt.push_to_nla", icon='NLA')
 
-        # ── AI Motion ──
+        # ── Retarget to FK ──
         is_armature = obj and obj.type == 'ARMATURE'
-        box = layout.box()
-        box.label(text="AI Motion", icon='OUTLINER_OB_LIGHT')
-        box.separator(factor=0.3)
-
-        wm = context.window_manager
-        from ..core.ml import model_manager
-
-        if wm.bt_ml_busy and wm.bt_ml_status:
-            box.label(text=wm.bt_ml_status, icon='SORTTIME')
-            col = box.column(align=True)
-            col.scale_y = 0.5
-            col.prop(wm, "bt_ml_progress", text="", slider=True)
-        else:
-            lcm_ready, anytop_ready, sinmdm_ready = get_ai_model_readiness()
-
-            if anytop_ready or sinmdm_ready:
-                # SMPL Reference toggle (may fail if numpy not yet installed)
-                try:
-                    from ..animation.ml.retarget_preview import (
-                        get_smpl_preview,
-                        is_link_active,
-                    )
-                    has_preview = get_smpl_preview() is not None
-                except Exception:
-                    has_preview = False
-                    def is_link_active(): return False
-                row = box.row(align=True)
-                row.operator(
-                    "bt.retarget_preview",
-                    text="Hide SMPL Reference" if has_preview
-                         else "Show SMPL Reference",
-                    icon='ARMATURE_DATA',
-                    depress=has_preview,
+        if is_armature:
+            from .retarget import has_wrap_rig
+            if (has_wrap_rig(obj)
+                    and obj.animation_data
+                    and obj.animation_data.action):
+                box = layout.box()
+                box.label(text="Retarget to FK", icon='CON_ARMATURE')
+                col = box.column(align=True)
+                op = col.operator(
+                    "bt.retarget_action_to_fk",
+                    text="Active Action \u2192 FK",
+                    icon='ACTION',
                 )
-                if has_preview:
-                    linked = is_link_active()
-                    row.operator(
-                        "bt.link_smpl_preview",
-                        text="Unlink" if linked else "Link",
-                        icon='LINKED' if linked else 'UNLINKED',
-                        depress=linked,
-                    )
-
-                # Text-to-Motion (auto-selects model)
-                if lcm_ready or anytop_ready:
-                    sub = box.box()
-                    models = []
-                    if lcm_ready:
-                        models.append("MotionLCM")
-                    if anytop_ready:
-                        models.append("AnyTop")
-                    sub.label(
-                        text=f"Text-to-Motion ({' + '.join(models)})",
-                        icon='CHECKMARK',
-                    )
-                    col = sub.column(align=True)
-                    col.operator("bt.ai_generate_motion", icon='PLAY')
-                    col.operator(
-                        "bt.debug_retarget_frame", icon='VIEWZOOM',
-                    )
-
-                # SinMDM — Style & In-Between
-                if sinmdm_ready:
-                    sub = box.box()
-                    sub.label(text="Style & In-Between (SinMDM)", icon='CHECKMARK')
-                    col = sub.column(align=True)
-                    col.operator("bt.ai_style_transfer", icon='BRUSHES_ALL')
-                    col.operator("bt.ai_inbetween", icon='IPO_BEZIER')
-
-                # Retarget to FK (visible when wrap rig exists + action)
-                from ..animation.retarget import has_wrap_rig
-                if (is_armature and has_wrap_rig(obj)
-                        and obj.animation_data
-                        and obj.animation_data.action):
-                    sub = box.box()
-                    sub.label(text="Retarget to FK", icon='CON_ARMATURE')
-                    col = sub.column(align=True)
-                    op = col.operator(
-                        "bt.retarget_action_to_fk",
-                        text="Active Action → FK",
-                        icon='ACTION',
-                    )
-                    op.all_actions = False
-                    op = col.operator(
-                        "bt.retarget_action_to_fk",
-                        text="All Actions → FK",
-                        icon='NLA',
-                    )
-                    op.all_actions = True
-
-                # Remove button
-                total_mb = (model_manager.get_cache_size_mb("anytop")
-                            + model_manager.get_cache_size_mb("sinmdm"))
-                row = box.row(align=True)
-                row.operator(
-                    "bt.remove_anim_ai",
-                    text=f"Remove Models ({total_mb:.0f} MB)",
-                    icon='TRASH',
+                op.all_actions = False
+                op = col.operator(
+                    "bt.retarget_action_to_fk",
+                    text="All Actions \u2192 FK",
+                    icon='NLA',
                 )
-            else:
-                box.operator("bt.init_anim_ai", icon='IMPORT')
-                if not is_armature:
-                    box.label(text="Select an armature to use AI motion", icon='INFO')
+                op.all_actions = True
 
 
 class BT_PT_TrajectorySettings(bpy.types.Panel):

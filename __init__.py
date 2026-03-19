@@ -146,10 +146,6 @@ def _import_subsystems():
 def register():
     preferences.register()
 
-    # Core ML infrastructure (WM properties for progress tracking)
-    from .core import ml as core_ml
-    core_ml.register()
-
     bpy.utils.register_class(BT_OT_ToggleSubsystem)
     bpy.utils.register_class(BT_OT_SetAllPanels)
     bpy.utils.register_class(BT_PT_Header)
@@ -174,8 +170,5 @@ def unregister():
     bpy.utils.unregister_class(BT_PT_Header)
     bpy.utils.unregister_class(BT_OT_SetAllPanels)
     bpy.utils.unregister_class(BT_OT_ToggleSubsystem)
-
-    from .core import ml as core_ml
-    core_ml.unregister()
 
     preferences.unregister()

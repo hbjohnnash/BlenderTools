@@ -9,10 +9,9 @@ HOW IT WORKS:
     If we put a Mock object there, Python uses that instead of
     searching for the real module (which doesn't exist outside Blender).
 
-    Blender addon modules use deep relative imports like
-    ``from ...core.ml.base_adapter import BaseModelAdapter``.
-    Outside Blender these go beyond the top-level package, so we
-    patch ``builtins.__import__`` to fall back to absolute imports
+    Blender addon modules use deep relative imports that go beyond
+    the top-level package outside Blender, so we patch
+    ``builtins.__import__`` to fall back to absolute imports
     and stub package __init__ files to prevent heavy import chains.
 """
 
@@ -139,7 +138,7 @@ if str(_project_root) not in sys.path:
 # 2. Patch builtins.__import__ to redirect relative imports that exceed
 #    the top-level package depth to absolute imports instead.
 
-for _pkg_name in ["seams", "seams.ml", "animation", "animation.ml"]:
+for _pkg_name in ["seams", "animation"]:
     if _pkg_name not in sys.modules:
         _mod = types.ModuleType(_pkg_name)
         _mod.__path__ = [str(_project_root / _pkg_name.replace(".", "/"))]
@@ -175,47 +174,3 @@ builtins.__import__ = _patched_import
 # Fixtures are reusable setup/teardown helpers that tests can request
 # by name in their function arguments.
 
-@pytest.fixture
-def tmp_model_dir(tmp_path):
-    """Provide a temporary directory for model cache tests.
-
-    tmp_path is a built-in pytest fixture that gives a unique
-    temporary directory for each test, automatically cleaned up.
-    """
-    return tmp_path / "models"
-
-
-@pytest.fixture
-def sample_bvh_file(tmp_path):
-    """Create a minimal BVH file for parsing tests."""
-    bvh_content = """\
-HIERARCHY
-ROOT Hips
-{
-  OFFSET 0.000000 0.000000 0.000000
-  CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation
-  JOINT Spine
-  {
-    OFFSET 0.000000 5.000000 0.000000
-    CHANNELS 3 Zrotation Xrotation Yrotation
-    JOINT Head
-    {
-      OFFSET 0.000000 5.000000 0.000000
-      CHANNELS 3 Zrotation Xrotation Yrotation
-      End Site
-      {
-        OFFSET 0.000000 2.000000 0.000000
-      }
-    }
-  }
-}
-MOTION
-Frames: 3
-Frame Time: 0.033333
-0.0 1.0 0.0 0.0 0.0 0.0 0.0 10.0 0.0 0.0 0.0 0.0
-0.5 1.0 0.0 5.0 0.0 0.0 0.0 15.0 0.0 0.0 5.0 0.0
-1.0 1.0 0.0 10.0 0.0 0.0 0.0 20.0 0.0 0.0 10.0 0.0
-"""
-    bvh_path = tmp_path / "test_motion.bvh"
-    bvh_path.write_text(bvh_content, encoding="utf-8")
-    return bvh_path

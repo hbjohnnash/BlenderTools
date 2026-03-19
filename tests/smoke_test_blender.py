@@ -79,11 +79,11 @@ def test_operators_exist():
     log("\n── Operator Registration ──")
 
     expected_ops = [
-        "bt.mark_seams",
-        "bt.init_seam_ai",
-        "bt.seam_neural",
-        "bt.init_anim_ai",
-        "bt.ai_generate_motion",
+        "bt.seam_by_angle",
+        "bt.mechanical_anim",
+        "bt.scan_skeleton",
+        "bt.apply_wrap_rig",
+        "bt.toggle_fk_ik",
     ]
 
     for op_idtext in expected_ops:
@@ -116,31 +116,6 @@ def test_panels_exist():
         check(f"Panel {panel_name}", panel_name in all_panels)
 
 
-def test_ml_properties():
-    """Test that ML progress tracking properties exist on WindowManager.
-
-    These only exist after the ML integration commit. If the addon was
-    installed before that, they'll be missing — reported as WARN not FAIL.
-    """
-    import bpy
-
-    log("\n── ML Properties ──")
-
-    wm = bpy.context.window_manager
-    props = ["bt_ml_busy", "bt_ml_progress", "bt_ml_status"]
-    found = [p for p in props if hasattr(wm, p)]
-    missing = [p for p in props if not hasattr(wm, p)]
-
-    if missing and not found:
-        log("  WARN: ML properties not found (addon may need reinstalling)")
-        for p in missing:
-            log(f"    - {p}")
-        log("  (This is expected if the installed addon predates the ML commit)")
-    else:
-        for p in props:
-            check(f"{p} property exists", hasattr(wm, p))
-
-
 def test_preferences():
     """Test that addon preferences are accessible."""
     import bpy
@@ -166,7 +141,6 @@ if __name__ == "__main__":
         test_addon_registration,
         test_operators_exist,
         test_panels_exist,
-        test_ml_properties,
         test_preferences,
     ]
 

@@ -128,7 +128,7 @@ Built-in: circle, cube, diamond, sphere, arrow, square, line. Auto-assigned: FK=
 
 ## Floor Contact
 
-IK legs only. `LIMIT_LOCATION` on IK targets (min Z = floor level). Optional `TRANSFORM` on toes for auto-bend. Properties on `bt_scan`: `floor_enabled`, `floor_level`, `floor_toe_bend`, `floor_toe_angle`.
+IK legs and arm chains (supports quadrupeds). `LIMIT_LOCATION` on IK targets (min Z = floor level). Optional `TRANSFORM` on toes for auto-bend. Properties on `bt_scan`: `floor_enabled`, `floor_level`, `floor_toe_bend`, `floor_toe_angle`.
 
 ## Center of Mass + Balance
 

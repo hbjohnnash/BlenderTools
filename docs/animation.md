@@ -66,7 +66,12 @@ Fallback (no wrap rig): all selected keyed with rotation + location. Operator: `
 
 ## AI Motion Generation
 
-### AnyTop (text-to-motion, SIGGRAPH 2025)
+Model selection is automatic: humanoid skeletons (spine+arm+leg chains) use MotionLCM; exotic topologies use AnyTop. User can override via Model enum (AUTO/MOTIONLCM/ANYTOP).
+
+### MotionLCM (humanoid text-to-motion, ECCV 2024)
+1-step latent consistency model on SMPL 22 joints (~30ms). Outputs HumanML3D 263-dim features, recovered to rotations via position-based IK. Retargeted to user armature via influence map. See `docs/motionlcm_flow.md` for full pipeline.
+
+### AnyTop (any-topology text-to-motion, SIGGRAPH 2025)
 Any skeleton topology. Extracts topology from armature, sends to model, outputs 6D joint rotations, converts to Euler via Gram-Schmidt, applies as keyframes. HF: `inbar2344/AnyTop`.
 
 ### SinMDM (style transfer)

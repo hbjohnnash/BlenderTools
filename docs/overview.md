@@ -15,7 +15,7 @@ Edit > Preferences > Extensions > Install from Disk > select `BlenderTools.zip` 
 - **Seams** — UV seam tools + AI neural seams (MeshCNN)
 - **Rigging** — Modular builder + Scanner + CoM/Balance + Control Shapes
 - **Skinning** — Weight painting tools
-- **Animation** — Mechanical, root motion, trajectory, onion skin, Smart Keyframe, AI motion (AnyTop, SinMDM)
+- **Animation** — Mechanical, root motion, trajectory, onion skin, Smart Keyframe, AI motion (MotionLCM, AnyTop, SinMDM)
 - **Export** — Rig scaling & UE FBX export
 - **LLM Bridge** — HTTP server for Claude Code
 
@@ -64,7 +64,7 @@ pytest                          # unit tests (no Blender needed)
 blender-launcher --background --python tests/smoke_test_blender.py
 ```
 
-CI (GitHub Actions): lint+test > smoke-test > build `BlenderTools.zip`.
+CI (GitHub Actions): lint+test > smoke-test > build > release (GitHub Release + extension index on GitHub Pages).
 
 ## Blender 5.0 APIs
 

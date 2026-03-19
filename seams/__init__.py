@@ -1,10 +1,9 @@
 """Seam creation subsystem."""
 
-from . import ml, operators, panels
+from . import operators, panels
 
 
 def register():
-    ml.register()
     operators.register()
     panels.register()
 
@@ -12,4 +11,3 @@ def register():
 def unregister():
     panels.unregister()
     operators.unregister()
-    ml.unregister()
