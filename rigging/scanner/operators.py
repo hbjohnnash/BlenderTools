@@ -14,6 +14,11 @@ from .wrap_assembly import (
     assemble_wrap_rig,
     bake_to_def,
     disassemble_wrap_rig,
+    ensure_fk_sync,
+    fk_was_modified,
+    restore_ik_state,
+    save_fk_snapshot,
+    save_ik_state,
     snap_fk_to_ik,
     snap_ik_to_fk,
     snap_spline_to_fk,
@@ -238,6 +243,10 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
         if use_ik == chain_item.ik_active:
             return {'FINISHED'}
 
+        # Auto-repair: ensure FK_sync constraints exist (repairs old rigs)
+        if chain_item.ik_enabled:
+            ensure_fk_sync(armature, self.chain_id)
+
         # Temporarily disable IK limits during snap so the solver can
         # reproduce the FK pose without being blocked by joint limits.
         # Save per-bone states so user customizations are preserved.
@@ -255,7 +264,9 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
                     mch_pb.use_ik_limit_y = False
                     mch_pb.use_ik_limit_z = False
 
-        # Snap controls BEFORE switching so the pose is preserved
+        # Snap controls BEFORE switching so the pose is preserved.
+        # Fast path: if FK wasn't modified since the last IK→FK snap,
+        # restore the cached IK state instead of recalculating (lossless).
         if chain_item.ik_type == 'SPLINE':
             if use_ik:
                 snap_spline_to_fk(armature, self.chain_id)
@@ -263,9 +274,16 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
                 snap_fk_to_ik(armature, self.chain_id)
         elif chain_item.ik_snap:
             if use_ik:
-                snap_ik_to_fk(armature, self.chain_id)
+                # FK→IK: try cached restore first, fall back to full snap
+                if not fk_was_modified(armature, self.chain_id):
+                    restore_ik_state(armature, self.chain_id)
+                else:
+                    snap_ik_to_fk(armature, self.chain_id)
             else:
+                # IK→FK: snap then cache IK state for potential restore
+                save_ik_state(armature, self.chain_id)
                 snap_fk_to_ik(armature, self.chain_id)
+                save_fk_snapshot(armature, self.chain_id)
 
         # Toggle constraints on MCH bones (not DEF bones)
         chain_bones = [b for b in sd.bones if b.chain_id == self.chain_id and not b.skip]
@@ -338,6 +356,18 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
         ik_coll = armature.data.collections.get(f"IK_{self.chain_id}")
         if ik_coll:
             ik_coll.is_visible = use_ik
+
+        # Keyframe constraint influences so the toggle persists across
+        # frame changes (keyframed values from smart_keyframe would
+        # otherwise override the toggle on the next frame evaluation).
+        from ...animation.smart_keyframe import _key_chain_influences
+        if not armature.animation_data:
+            armature.animation_data_create()
+        if not armature.animation_data.action:
+            armature.animation_data.action = bpy.data.actions.new(
+                name=f"{armature.name}_Action")
+        frame = context.scene.frame_current
+        _key_chain_influences(armature, sd, self.chain_id, use_ik, frame)
 
         # --- Newton correction: eliminate IK solver residual ---
         # After all constraints are in their final state (IK active, limits

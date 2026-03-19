@@ -2,12 +2,18 @@
 
 Shows clickable buttons for each IK-capable chain in pose mode.
 Only visible when a wrap rig is active.
+
+Includes a frame_change handler that syncs chain ik_active state and
+IK collection visibility from keyframed constraint influences, so the
+overlay buttons and bone visibility track the animation correctly.
 """
 
 import blf
 import bpy
 import gpu
 from gpu_extras.batch import batch_for_shader
+
+from ...core.constants import WRAP_CONSTRAINT_PREFIX, WRAP_MCH_PREFIX
 
 # ---------------------------------------------------------------------------
 # State
@@ -261,6 +267,54 @@ class BT_OT_IKOverlay(bpy.types.Operator):
 
 
 # ---------------------------------------------------------------------------
+# Frame-change sync — read keyframed constraint influences and update
+# ik_active + IK collection visibility so overlay tracks the animation.
+# ---------------------------------------------------------------------------
+
+@bpy.app.handlers.persistent
+def _sync_ik_state_on_frame(_scene, _depsgraph=None):
+    """Sync chain ik_active from keyframed constraint influences each frame."""
+    for obj in bpy.data.objects:
+        if obj.type != 'ARMATURE':
+            continue
+        sd = obj.bt_scan
+        if not sd.has_wrap_rig:
+            continue
+
+        for chain in sd.chains:
+            if not chain.ik_enabled:
+                continue
+
+            # Find the first MCH bone in this chain that has an IK constraint
+            ik_influence = None
+            chain_bones = [b for b in sd.bones
+                           if b.chain_id == chain.chain_id and not b.skip]
+            for bone_item in chain_bones:
+                mch_name = f"{WRAP_MCH_PREFIX}{chain.chain_id}_{bone_item.role}"
+                mch_pb = obj.pose.bones.get(mch_name)
+                if not mch_pb:
+                    continue
+                for con in mch_pb.constraints:
+                    if (con.type in ('IK', 'SPLINE_IK')
+                            and con.name.startswith(WRAP_CONSTRAINT_PREFIX)):
+                        ik_influence = con.influence
+                        break
+                if ik_influence is not None:
+                    break
+
+            if ik_influence is None:
+                continue
+
+            should_be_ik = ik_influence > 0.5
+            if chain.ik_active != should_be_ik:
+                chain.ik_active = should_be_ik
+                # Sync IK collection visibility
+                ik_coll = obj.data.collections.get(f"IK_{chain.chain_id}")
+                if ik_coll:
+                    ik_coll.is_visible = should_be_ik
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -272,6 +326,7 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+    bpy.app.handlers.frame_change_post.append(_sync_ik_state_on_frame)
 
 
 def unregister():
@@ -280,5 +335,7 @@ def unregister():
         bpy.types.SpaceView3D.draw_handler_remove(_draw_handle, 'WINDOW')
         _draw_handle = None
     _active = False
+    if _sync_ik_state_on_frame in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.remove(_sync_ik_state_on_frame)
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
