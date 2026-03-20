@@ -161,8 +161,14 @@ def register():
     for sub in _subsystems:
         sub.register()
 
+    from . import ui
+    ui.register()
+
 
 def unregister():
+    from . import ui
+    ui.unregister()
+
     for sub in reversed(_subsystems):
         sub.unregister()
     for name, _, _ in _SUBSYSTEM_DEFS:
