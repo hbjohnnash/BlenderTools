@@ -57,9 +57,23 @@ def _get_settings(context):
 
 
 def _get_action_keyframes(armature_obj):
-    """Collect all unique keyframe times from the armature's action."""
+    """Collect unique keyframe times from user-keyed pose bone transforms.
+
+    Only considers location/rotation/scale channels on pose bones —
+    ignores constraint influences and other auto-keyed properties so
+    ghosts only appear at frames where the user actually posed.
+    """
     if not armature_obj.animation_data or not armature_obj.animation_data.action:
         return []
+
+    # Pose bone transform data_paths end with one of these suffixes
+    _POSE_SUFFIXES = (
+        ".location",
+        ".rotation_quaternion",
+        ".rotation_euler",
+        ".rotation_axis_angle",
+        ".scale",
+    )
 
     action = armature_obj.animation_data.action
     frames = set()
@@ -67,6 +81,11 @@ def _get_action_keyframes(armature_obj):
         for strip in layer.strips:
             for channelbag in strip.channelbags:
                 for fcurve in channelbag.fcurves:
+                    dp = fcurve.data_path
+                    if not dp.startswith('pose.bones['):
+                        continue
+                    if not any(dp.endswith(s) for s in _POSE_SUFFIXES):
+                        continue
                     for kp in fcurve.keyframe_points:
                         frames.add(int(kp.co.x))
     return sorted(frames)

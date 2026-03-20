@@ -144,7 +144,7 @@ def _key_chain_influences(armature_obj, sd, chain_id, use_ik, frame):
         # (e.g. toe), its FK COPY_TRANSFORMS stays active in IK mode
         # so the user can still control it.
         has_ik_constraint = any(
-            c.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION')
+            c.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION', 'DAMPED_TRACK')
             and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
             for c in mch_pb.constraints
         )
@@ -159,7 +159,7 @@ def _key_chain_influences(armature_obj, sd, chain_id, use_ik, frame):
                 else:
                     # No IK alternative — FK stays active in both modes
                     con.influence = 1.0
-            elif con.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION'):
+            elif con.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION', 'DAMPED_TRACK'):
                 con.influence = 1.0 if use_ik else 0.0
             else:
                 continue

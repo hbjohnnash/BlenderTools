@@ -17,10 +17,13 @@ from .wrap_assembly import (
     ensure_fk_sync,
     fk_was_modified,
     restore_ik_state,
+    restore_lookat_state,
     save_fk_snapshot,
     save_ik_state,
+    save_lookat_state,
     snap_fk_to_ik,
     snap_ik_to_fk,
+    snap_lookat_to_fk,
     snap_spline_to_fk,
     toggle_ik_limits,
 )
@@ -51,10 +54,15 @@ def _scan_data_to_props(armature_obj, scan_data):
         item.module_type = info["module_type"]
         item.side = info["side"]
         item.bone_count = info["bone_count"]
-        item.ik_enabled = info["module_type"] in ("arm", "leg", "wing")
+        item.ik_enabled = info["module_type"] in ("arm", "leg", "wing", "neck_head")
         item.fk_enabled = True
-        item.ik_snap = info["module_type"] in ("arm", "leg", "wing")
-        item.ik_type = 'SPLINE' if info["module_type"] in ("tail", "tentacle") else 'STANDARD'
+        item.ik_snap = info["module_type"] in ("arm", "leg", "wing", "neck_head")
+        if info["module_type"] == "neck_head":
+            item.ik_type = 'LOOKAT'
+        elif info["module_type"] in ("tail", "tentacle"):
+            item.ik_type = 'SPLINE'
+        else:
+            item.ik_type = 'STANDARD'
         item.ik_limits = False
 
     sd.unmapped_bones = ",".join(scan_data.get("unmapped_bones", []))
@@ -267,7 +275,19 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
         # Snap controls BEFORE switching so the pose is preserved.
         # Fast path: if FK wasn't modified since the last IK→FK snap,
         # restore the cached IK state instead of recalculating (lossless).
-        if chain_item.ik_type == 'SPLINE':
+        if chain_item.ik_type == 'LOOKAT':
+            if use_ik:
+                # FK→LookAt: position target at current gaze direction
+                if not fk_was_modified(armature, self.chain_id):
+                    restore_lookat_state(armature, self.chain_id)
+                else:
+                    snap_lookat_to_fk(armature, self.chain_id)
+            else:
+                # LookAt→FK: snap FK to match head MCH, cache target
+                save_lookat_state(armature, self.chain_id)
+                snap_fk_to_ik(armature, self.chain_id)
+                save_fk_snapshot(armature, self.chain_id)
+        elif chain_item.ik_type == 'SPLINE':
             if use_ik:
                 snap_spline_to_fk(armature, self.chain_id)
             else:
@@ -317,15 +337,22 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
                 c.type == 'COPY_ROTATION' and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
                 for c in mch_pbone.constraints
             )
+            # Head bones with DAMPED_TRACK (LookAt) also need FK toggled.
+            has_lookat = any(
+                c.type == 'DAMPED_TRACK' and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
+                for c in mch_pbone.constraints
+            )
             for con in mch_pbone.constraints:
                 if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
                     continue
                 if con.type == 'COPY_TRANSFORMS':
-                    if in_ik_range or has_ik_rot:
+                    if in_ik_range or has_ik_rot or has_lookat:
                         con.influence = 0.0 if use_ik else 1.0
                 elif con.type in ('IK', 'SPLINE_IK'):
                     con.influence = 1.0 if use_ik else 0.0
                 elif con.type == 'COPY_ROTATION':
+                    con.influence = 1.0 if use_ik else 0.0
+                elif con.type == 'DAMPED_TRACK':
                     con.influence = 1.0 if use_ik else 0.0
 
         # Toggle FK_sync on FK CTRL bones.
@@ -374,7 +401,7 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
         # restored), verify the chain tip actually reaches the IK target.
         # Pre-compensate the IK target position for any solver offset so
         # the foot stays perfectly planted when the body moves.
-        if use_ik and chain_item.ik_snap:
+        if use_ik and chain_item.ik_snap and chain_item.ik_type != 'LOOKAT':
             bpy.context.view_layer.update()
 
             ik_mch = None
@@ -406,7 +433,10 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
                     ik_target_pb.matrix = mat
                     bpy.context.view_layer.update()
 
-        mode_name = "IK" if use_ik else "FK"
+        if chain_item.ik_type == 'LOOKAT':
+            mode_name = "LookAt" if use_ik else "FK"
+        else:
+            mode_name = "IK" if use_ik else "FK"
         self.report({'INFO'}, f"{self.chain_id}: switched to {mode_name}")
         return {'FINISHED'}
 

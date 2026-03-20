@@ -87,9 +87,16 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
                 )
                 op.chain_id = active_chain.chain_id
                 op.mode = 'FK'
-                # Show "Spline" or "IK" based on chain's ik_type
-                ik_label = "Spline" if active_chain.ik_type == 'SPLINE' else "IK"
-                ik_icon = 'CURVE_BEZCURVE' if active_chain.ik_type == 'SPLINE' else 'CON_KINEMATIC'
+                # Show "Spline", "LookAt", or "IK" based on chain's ik_type
+                if active_chain.ik_type == 'SPLINE':
+                    ik_label = "Spline"
+                    ik_icon = 'CURVE_BEZCURVE'
+                elif active_chain.ik_type == 'LOOKAT':
+                    ik_label = "LookAt"
+                    ik_icon = 'TRACKER'
+                else:
+                    ik_label = "IK"
+                    ik_icon = 'CON_KINEMATIC'
                 op = row.operator(
                     "bt.toggle_fk_ik", text=ik_label,
                     icon=ik_icon,
@@ -198,6 +205,13 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
                 row.operator("bt.update_floor_level", text="", icon='FILE_REFRESH')
             else:
                 col.prop(sd, "floor_level", text="Level")
+
+        # ── Forward Axis (shown when a LookAt chain exists) ──
+        if not sd.has_wrap_rig and any(
+            ch.ik_enabled and ch.ik_type == 'LOOKAT' for ch in sd.chains
+        ):
+            row = layout.row()
+            row.prop(sd, "forward_axis", text="Forward Axis")
 
         # ── Actions ──
         layout.separator()

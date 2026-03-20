@@ -680,3 +680,464 @@ class TestFloorContact:
 
         result = setup_floor_contact(armature)
         assert "error" in result
+
+
+# ===========================================================================
+# Helpers — neck/head chain mock builder
+# ===========================================================================
+
+def _make_neck_head_armature(chain_id="neck_head_C", roles=None):
+    """Build a mock armature for a neck/head chain with DAMPED_TRACK.
+
+    Returns (armature, bones, bone_items).
+    The head MCH gets a DAMPED_TRACK constraint (LookAt) instead of IK.
+    """
+    if roles is None:
+        roles = ["neck", "head"]
+
+    from conftest import _MockVector
+
+    bones = {}
+    bone_items = []
+    lookat_name = f"{WRAP_CTRL_PREFIX}{chain_id}_LookAt_target"
+
+    spacing = 0.3
+
+    for idx, role in enumerate(roles):
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{role}"
+        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{role}"
+
+        mch_constraints = []
+        # FK COPY_TRANSFORMS on MCH
+        mch_constraints.append(
+            _make_constraint('COPY_TRANSFORMS',
+                             f"{WRAP_CONSTRAINT_PREFIX}FK", 1.0))
+
+        # DAMPED_TRACK on head MCH only
+        if role == "head":
+            dt_con = _make_constraint(
+                'DAMPED_TRACK', f"{WRAP_CONSTRAINT_PREFIX}LookAt", 0.0)
+            dt_con.target = MagicMock()
+            dt_con.subtarget = lookat_name
+            dt_con.track_axis = 'TRACK_Y'
+            mch_constraints.append(dt_con)
+
+        mch_pb = _make_pose_bone(mch_name, mch_constraints)
+        mch_pb.bone = SimpleNamespace(
+            head_local=_MockVector((0, idx * spacing, 1.6)),
+            tail_local=_MockVector((0, (idx + 1) * spacing, 1.6)),
+        )
+        mch_pb.head = _MockVector((0, idx * spacing, 1.6))
+        mch_pb.tail = _MockVector((0, (idx + 1) * spacing, 1.6))
+        mch_pb.parent = None
+        bones[mch_name] = mch_pb
+
+        ctrl_pb = _make_pose_bone(ctrl_name)
+        bones[ctrl_name] = ctrl_pb
+
+        item = _make_bone_item(chain_id, role)
+        item.module_type = "neck_head"
+        bone_items.append(item)
+
+    # Wire up parent chain
+    for i in range(1, len(roles)):
+        parent_mch = f"{WRAP_MCH_PREFIX}{chain_id}_{roles[i - 1]}"
+        child_mch = f"{WRAP_MCH_PREFIX}{chain_id}_{roles[i]}"
+        if child_mch in bones and parent_mch in bones:
+            bones[child_mch].parent = bones[parent_mch]
+
+    # LookAt target bone
+    lookat_pb = _make_pose_bone(lookat_name)
+    lookat_pb.head = _MockVector((0, 2.0, 1.6))
+    lookat_pb.tail = _MockVector((0, 2.0, 1.8))
+    lookat_pb.matrix = MagicMock()
+    lookat_pb.matrix.copy = MagicMock(return_value="saved_matrix")
+    bones[lookat_name] = lookat_pb
+
+    armature = MagicMock()
+    armature.name = "TestArmature"
+    armature.pose.bones.get = lambda name: bones.get(name)
+    armature.pose.bones.__iter__ = lambda self: iter(bones.values())
+
+    sd = SimpleNamespace()
+    sd.bones = bone_items
+    chain_item = _make_chain_item(chain_id, module_type="neck_head")
+    chain_item.ik_type = "LOOKAT"
+    sd.chains = [chain_item]
+    sd.has_wrap_rig = True
+    sd.floor_enabled = False
+    sd.floor_level = 0.0
+    armature.bt_scan = sd
+
+    return armature, bones, bone_items
+
+
+# ===========================================================================
+# Test: LookAt — _add_sync_constraints with DAMPED_TRACK
+# ===========================================================================
+
+class TestLookAtSyncConstraints:
+    """Tests for _add_sync_constraints with DAMPED_TRACK (neck/head chain)."""
+
+    def test_fk_sync_added_to_head_with_damped_track(self):
+        """Head MCH has DAMPED_TRACK → FK CTRL should get FK_sync."""
+        from rigging.scanner.wrap_assembly import _add_sync_constraints
+
+        armature, bones, _ = _make_neck_head_armature()
+
+        chain_bones = ["orig_neck", "orig_head"]
+        bones_info = {
+            "orig_neck": {"role": "neck"},
+            "orig_head": {"role": "head"},
+        }
+
+        _add_sync_constraints(armature, "neck_head_C", chain_bones, bones_info)
+
+        head_ctrl = bones[f"{WRAP_CTRL_PREFIX}neck_head_C_FK_head"]
+        sync_cons = [c for c in head_ctrl.constraints
+                     if hasattr(c, 'name')
+                     and c.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"]
+        assert len(sync_cons) >= 1, "Head FK should have FK_sync (DAMPED_TRACK)"
+
+    def test_no_fk_sync_on_neck_without_damped_track(self):
+        """Neck MCH has no DAMPED_TRACK → should NOT get FK_sync."""
+        from rigging.scanner.wrap_assembly import _add_sync_constraints
+
+        armature, bones, _ = _make_neck_head_armature()
+
+        chain_bones = ["orig_neck", "orig_head"]
+        bones_info = {
+            "orig_neck": {"role": "neck"},
+            "orig_head": {"role": "head"},
+        }
+
+        _add_sync_constraints(armature, "neck_head_C", chain_bones, bones_info)
+
+        neck_ctrl = bones[f"{WRAP_CTRL_PREFIX}neck_head_C_FK_neck"]
+        sync_cons = [c for c in neck_ctrl.constraints
+                     if hasattr(c, 'name')
+                     and c.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"]
+        assert len(sync_cons) == 0, "Neck has no IK alternative — no sync"
+
+
+# ===========================================================================
+# Test: LookAt — _key_chain_influences with DAMPED_TRACK
+# ===========================================================================
+
+class TestLookAtKeyChainInfluences:
+    """Tests for _key_chain_influences with DAMPED_TRACK constraint."""
+
+    def test_lookat_mode_disables_fk_on_head(self):
+        """In LookAt mode, head MCH FK COPY_TRANSFORMS should go to 0."""
+        from animation.smart_keyframe import _key_chain_influences
+
+        armature, bones, _ = _make_neck_head_armature()
+        armature.animation_data = None
+
+        _key_chain_influences(
+            armature, armature.bt_scan, "neck_head_C", use_ik=True, frame=1)
+
+        head_mch = bones[f"{WRAP_MCH_PREFIX}neck_head_C_head"]
+        fk_con = head_mch.constraints[0]
+        assert fk_con.type == 'COPY_TRANSFORMS'
+        assert fk_con.influence == 0.0
+
+    def test_lookat_mode_enables_damped_track(self):
+        """In LookAt mode, DAMPED_TRACK should be set to 1.0."""
+        from animation.smart_keyframe import _key_chain_influences
+
+        armature, bones, _ = _make_neck_head_armature()
+        armature.animation_data = None
+
+        _key_chain_influences(
+            armature, armature.bt_scan, "neck_head_C", use_ik=True, frame=1)
+
+        head_mch = bones[f"{WRAP_MCH_PREFIX}neck_head_C_head"]
+        dt_con = head_mch.constraints[1]
+        assert dt_con.type == 'DAMPED_TRACK'
+        assert dt_con.influence == 1.0
+
+    def test_fk_mode_disables_damped_track(self):
+        """In FK mode, DAMPED_TRACK should be set to 0.0."""
+        from animation.smart_keyframe import _key_chain_influences
+
+        armature, bones, _ = _make_neck_head_armature()
+        armature.animation_data = None
+
+        _key_chain_influences(
+            armature, armature.bt_scan, "neck_head_C", use_ik=False, frame=1)
+
+        head_mch = bones[f"{WRAP_MCH_PREFIX}neck_head_C_head"]
+        dt_con = head_mch.constraints[1]
+        assert dt_con.type == 'DAMPED_TRACK'
+        assert dt_con.influence == 0.0
+
+    def test_fk_mode_keeps_fk_on_neck(self):
+        """In FK mode, neck FK (no DAMPED_TRACK) stays at 1.0."""
+        from animation.smart_keyframe import _key_chain_influences
+
+        armature, bones, _ = _make_neck_head_armature()
+        armature.animation_data = None
+
+        _key_chain_influences(
+            armature, armature.bt_scan, "neck_head_C", use_ik=False, frame=1)
+
+        neck_mch = bones[f"{WRAP_MCH_PREFIX}neck_head_C_neck"]
+        fk_con = neck_mch.constraints[0]
+        assert fk_con.type == 'COPY_TRANSFORMS'
+        assert fk_con.influence == 1.0
+
+    def test_lookat_mode_keeps_fk_on_neck(self):
+        """In LookAt mode, neck (no DAMPED_TRACK) keeps FK at 1.0."""
+        from animation.smart_keyframe import _key_chain_influences
+
+        armature, bones, _ = _make_neck_head_armature()
+        armature.animation_data = None
+
+        _key_chain_influences(
+            armature, armature.bt_scan, "neck_head_C", use_ik=True, frame=1)
+
+        neck_mch = bones[f"{WRAP_MCH_PREFIX}neck_head_C_neck"]
+        fk_con = neck_mch.constraints[0]
+        assert fk_con.type == 'COPY_TRANSFORMS'
+        assert fk_con.influence == 1.0
+
+
+# ===========================================================================
+# Test: LookAt — save / restore state
+# ===========================================================================
+
+class TestLookAtStateCaching:
+    """Tests for save_lookat_state / restore_lookat_state."""
+
+    def test_save_and_restore_lookat(self):
+        """save_lookat_state should cache matrix, restore should apply it."""
+        from rigging.scanner.wrap_assembly import (
+            _ik_state_cache,
+            restore_lookat_state,
+            save_lookat_state,
+        )
+
+        armature, bones, _ = _make_neck_head_armature()
+
+        # Clear cache before test
+        cache_key = (armature.name, "neck_head_C")
+        _ik_state_cache.pop(cache_key, None)
+
+        save_lookat_state(armature, "neck_head_C")
+
+        # Should have saved
+        assert cache_key in _ik_state_cache
+        assert 'lookat_matrix' in _ik_state_cache[cache_key]
+        assert _ik_state_cache[cache_key]['lookat_matrix'] == "saved_matrix"
+
+        # Restore should apply it back
+        result = restore_lookat_state(armature, "neck_head_C")
+        assert result is True
+
+        # Clean up
+        _ik_state_cache.pop(cache_key, None)
+
+    def test_restore_without_save_returns_false(self):
+        """restore_lookat_state should return False if no cached state."""
+        from rigging.scanner.wrap_assembly import (
+            _ik_state_cache,
+            restore_lookat_state,
+        )
+
+        armature, _, _ = _make_neck_head_armature()
+
+        # Ensure cache is empty
+        cache_key = (armature.name, "neck_head_C")
+        _ik_state_cache.pop(cache_key, None)
+
+        result = restore_lookat_state(armature, "neck_head_C")
+        assert result is False
+
+    def test_save_without_target_bone_is_noop(self):
+        """save_lookat_state should be no-op if LookAt target bone missing."""
+        from rigging.scanner.wrap_assembly import (
+            _ik_state_cache,
+            save_lookat_state,
+        )
+
+        armature, bones, _ = _make_neck_head_armature()
+        cache_key = (armature.name, "neck_head_C")
+        _ik_state_cache.pop(cache_key, None)
+
+        # Remove the LookAt target from bones lookup
+        lookat_name = f"{WRAP_CTRL_PREFIX}neck_head_C_LookAt_target"
+        del bones[lookat_name]
+        armature.pose.bones.get = lambda name: bones.get(name)
+
+        save_lookat_state(armature, "neck_head_C")
+        assert cache_key not in _ik_state_cache
+
+
+# ===========================================================================
+# Test: LookAt — _scan_data_to_props
+# ===========================================================================
+
+class TestScanDataToPropsLookAt:
+    """Tests for _scan_data_to_props neck_head auto-config."""
+
+    def test_neck_head_gets_lookat_type(self):
+        """neck_head chain should auto-get ik_type=LOOKAT."""
+        from rigging.scanner.operators import _scan_data_to_props
+
+        armature = MagicMock()
+        sd = armature.bt_scan
+        sd.bones = MagicMock()
+        sd.bones.clear = MagicMock()
+        sd.chains = MagicMock()
+        sd.chains.clear = MagicMock()
+
+        # Collect items added to chains
+        chain_items = []
+
+        def chain_add():
+            item = SimpleNamespace()
+            chain_items.append(item)
+            return item
+
+        sd.chains.add = chain_add
+        sd.bones.add = lambda: SimpleNamespace()
+
+        scan_data = {
+            "skeleton_type": "humanoid",
+            "confidence": 0.9,
+            "bones": {},
+            "chains": {
+                "neck_head_C": {
+                    "module_type": "neck_head",
+                    "side": "C",
+                    "bone_count": 2,
+                },
+            },
+            "unmapped_bones": [],
+        }
+
+        _scan_data_to_props(armature, scan_data)
+
+        assert len(chain_items) == 1
+        item = chain_items[0]
+        assert item.ik_type == 'LOOKAT'
+        assert item.ik_enabled is True
+        assert item.ik_snap is True
+
+    def test_arm_still_gets_standard_type(self):
+        """arm chain should still get ik_type=STANDARD (regression check)."""
+        from rigging.scanner.operators import _scan_data_to_props
+
+        armature = MagicMock()
+        sd = armature.bt_scan
+        sd.bones = MagicMock()
+        sd.bones.clear = MagicMock()
+        sd.chains = MagicMock()
+        sd.chains.clear = MagicMock()
+
+        chain_items = []
+
+        def chain_add():
+            item = SimpleNamespace()
+            chain_items.append(item)
+            return item
+
+        sd.chains.add = chain_add
+        sd.bones.add = lambda: SimpleNamespace()
+
+        scan_data = {
+            "skeleton_type": "humanoid",
+            "confidence": 0.9,
+            "bones": {},
+            "chains": {
+                "arm_L": {
+                    "module_type": "arm",
+                    "side": "L",
+                    "bone_count": 3,
+                },
+            },
+            "unmapped_bones": [],
+        }
+
+        _scan_data_to_props(armature, scan_data)
+
+        item = chain_items[0]
+        assert item.ik_type == 'STANDARD'
+
+    def test_tail_still_gets_spline_type(self):
+        """tail chain should still get ik_type=SPLINE (regression check)."""
+        from rigging.scanner.operators import _scan_data_to_props
+
+        armature = MagicMock()
+        sd = armature.bt_scan
+        sd.bones = MagicMock()
+        sd.bones.clear = MagicMock()
+        sd.chains = MagicMock()
+        sd.chains.clear = MagicMock()
+
+        chain_items = []
+
+        def chain_add():
+            item = SimpleNamespace()
+            chain_items.append(item)
+            return item
+
+        sd.chains.add = chain_add
+        sd.bones.add = lambda: SimpleNamespace()
+
+        scan_data = {
+            "skeleton_type": "creature",
+            "confidence": 0.8,
+            "bones": {},
+            "chains": {
+                "tail_C": {
+                    "module_type": "tail",
+                    "side": "C",
+                    "bone_count": 5,
+                },
+            },
+            "unmapped_bones": [],
+        }
+
+        _scan_data_to_props(armature, scan_data)
+
+        item = chain_items[0]
+        assert item.ik_type == 'SPLINE'
+
+
+# ===========================================================================
+# Test: LookAt — ensure_fk_sync with DAMPED_TRACK
+# ===========================================================================
+
+class TestEnsureFkSyncDampedTrack:
+    """Tests for ensure_fk_sync recognizing DAMPED_TRACK."""
+
+    def test_ensure_fk_sync_adds_sync_for_damped_track(self):
+        """ensure_fk_sync should add FK_sync to head with DAMPED_TRACK."""
+        from rigging.scanner.wrap_assembly import ensure_fk_sync
+
+        armature, bones, _ = _make_neck_head_armature()
+
+        ensure_fk_sync(armature, "neck_head_C")
+
+        head_ctrl = bones[f"{WRAP_CTRL_PREFIX}neck_head_C_FK_head"]
+        sync_cons = [c for c in head_ctrl.constraints
+                     if hasattr(c, 'name')
+                     and c.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"]
+        assert len(sync_cons) >= 1
+
+    def test_ensure_fk_sync_idempotent(self):
+        """Calling ensure_fk_sync twice should not duplicate FK_sync."""
+        from rigging.scanner.wrap_assembly import ensure_fk_sync
+
+        armature, bones, _ = _make_neck_head_armature()
+
+        ensure_fk_sync(armature, "neck_head_C")
+        ensure_fk_sync(armature, "neck_head_C")
+
+        head_ctrl = bones[f"{WRAP_CTRL_PREFIX}neck_head_C_FK_head"]
+        sync_cons = [c for c in head_ctrl.constraints
+                     if hasattr(c, 'name')
+                     and c.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"]
+        assert len(sync_cons) == 1, "FK_sync should not be duplicated"

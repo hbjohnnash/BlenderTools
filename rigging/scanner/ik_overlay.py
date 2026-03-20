@@ -68,7 +68,10 @@ def _get_chain_buttons(context):
     for chain in sd.chains:
         if not chain.ik_enabled:
             continue
-        mode = "IK" if chain.ik_active else "FK"
+        if chain.ik_active:
+            mode = "LookAt" if chain.ik_type == 'LOOKAT' else "IK"
+        else:
+            mode = "FK"
         label = f"{chain.chain_id}: {mode}"
         w, _ = blf.dimensions(font_id, label)
         buttons.append({
@@ -295,7 +298,7 @@ def _sync_ik_state_on_frame(_scene, _depsgraph=None):
                 if not mch_pb:
                     continue
                 for con in mch_pb.constraints:
-                    if (con.type in ('IK', 'SPLINE_IK')
+                    if (con.type in ('IK', 'SPLINE_IK', 'DAMPED_TRACK')
                             and con.name.startswith(WRAP_CONSTRAINT_PREFIX)):
                         ik_influence = con.influence
                         break

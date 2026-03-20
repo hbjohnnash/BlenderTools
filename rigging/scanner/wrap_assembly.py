@@ -45,6 +45,9 @@ def assemble_wrap_rig(armature_obj, scan_data):
     _ensure_collection(armature_obj, "CTRL")
     _ensure_collection(armature_obj, "MCH")
 
+    # Store forward axis for LookAt target placement
+    bones_info["_forward_axis"] = getattr(armature_obj.bt_scan, "forward_axis", "-Y")
+
     # Process chains in dependency order: root → spine → neck/arms/legs → fingers → generic
     chain_order = _sort_chains_by_dependency(chains, bones_info, armature_obj)
 
@@ -73,6 +76,8 @@ def assemble_wrap_rig(armature_obj, scan_data):
                 new_bones = _create_arm_controls(edit_bones, chain_id, chain_bones, bones_info, orig_to_ctrl, orig_to_mch)
             elif module_type == "leg":
                 new_bones = _create_leg_controls(edit_bones, chain_id, chain_bones, bones_info, orig_to_ctrl, orig_to_mch)
+            elif module_type == "neck_head" and ik_enabled:
+                new_bones = _create_neck_head_controls(edit_bones, chain_id, chain_bones, bones_info, orig_to_ctrl, orig_to_mch)
             elif use_spline:
                 new_bones, spline_info = _create_spline_ik_chain(
                     edit_bones, chain_id, chain_bones, bones_info, orig_to_ctrl, orig_to_mch)
@@ -88,7 +93,7 @@ def assemble_wrap_rig(armature_obj, scan_data):
             ik_coll_name = f"IK_{chain_id}"
             has_ik_bones = any(
                 bn.endswith("_IK_target") or bn.endswith("_IK_pole")
-                or "_Spline_" in bn
+                or bn.endswith("_LookAt_target") or "_Spline_" in bn
                 for bn in new_bones
             )
             if has_ik_bones:
@@ -101,6 +106,7 @@ def assemble_wrap_rig(armature_obj, scan_data):
                     if bn.startswith(WRAP_CTRL_PREFIX):
                         is_ik_ctrl = (bn.endswith("_IK_target")
                                       or bn.endswith("_IK_pole")
+                                      or bn.endswith("_LookAt_target")
                                       or "_Spline_" in bn)
                         if is_ik_ctrl:
                             _assign_collection_exclusive(armature_obj, eb, ik_coll_name)
@@ -143,6 +149,8 @@ def assemble_wrap_rig(armature_obj, scan_data):
                 _constrain_arm(armature_obj, chain_id, chain_bones, bones_info)
             elif module_type == "leg":
                 _constrain_leg(armature_obj, chain_id, chain_bones, bones_info)
+            elif module_type == "neck_head" and ik_enabled:
+                _constrain_neck_head(armature_obj, chain_id, chain_bones, bones_info)
             elif use_spline and chain_id in spline_curves:
                 _constrain_spline_ik_chain(
                     armature_obj, chain_id, chain_bones, bones_info,
@@ -521,6 +529,229 @@ def _constrain_arm(armature_obj, chain_id, chain_bones, bones_info):
             con.target = armature_obj
             con.subtarget = ik_target
             con.influence = 0.0  # Start with FK
+
+
+# --- Neck/Head Controls ---
+
+def _create_neck_head_controls(edit_bones, chain_id, chain_bones, bones_info,
+                                orig_to_ctrl=None, orig_to_mch=None):
+    """Create FK controls + LookAt target for neck/head chain."""
+    created = _create_fk_chain(edit_bones, chain_id, chain_bones, bones_info,
+                                orig_to_ctrl, orig_to_mch)
+
+    # Find the head bone by role
+    roles = {bones_info.get(b, {}).get("role", ""): b for b in chain_bones}
+    head_bone_name = roles.get("head")
+    if not head_bone_name:
+        return created
+
+    orig_head = edit_bones.get(head_bone_name)
+    if not orig_head:
+        return created
+
+    head_len = (orig_head.tail - orig_head.head).length
+    bone_len = max(head_len * 0.3, 0.02)
+
+    # LookAt target: placed in front of head center.
+    # The head bone typically points upward (base→top of skull), so its
+    # axis is NOT the gaze direction. Use the user-selected forward axis
+    # projected perpendicular to the bone's up axis.
+    head_center = (orig_head.head + orig_head.tail) * 0.5
+    head_up = (orig_head.tail - orig_head.head).normalized()
+
+    axis_map = {
+        '-Y': Vector((0, -1, 0)),
+        '+Y': Vector((0, 1, 0)),
+        '-X': Vector((-1, 0, 0)),
+        '+X': Vector((1, 0, 0)),
+        '-Z': Vector((0, 0, -1)),
+        '+Z': Vector((0, 0, 1)),
+    }
+    fwd_axis = bones_info.get("_forward_axis", "-Y")
+    world_forward = axis_map.get(fwd_axis, Vector((0, -1, 0)))
+
+    # Project world forward perpendicular to the head bone axis
+    forward = world_forward - head_up * head_up.dot(world_forward)
+    if forward.length < 0.001:
+        # Bone axis is parallel to chosen forward — pick a perpendicular fallback
+        fallback = Vector((1, 0, 0)) if abs(head_up.x) < 0.9 else Vector((0, 0, 1))
+        forward = fallback - head_up * head_up.dot(fallback)
+    forward.normalize()
+
+    # Place target well in front of the head (5x head length)
+    target_pos = head_center + forward * head_len * 5.0
+
+    lookat_name = f"{WRAP_CTRL_PREFIX}{chain_id}_LookAt_target"
+    lookat = edit_bones.new(lookat_name)
+    lookat.head = target_pos
+    # Small vertical tail for visibility
+    lookat.tail = target_pos + Vector((0, 0, bone_len))
+    lookat.roll = 0
+    created.append(lookat_name)
+
+    # Store the head role in bones_info so _constrain_neck_head can find it
+    bones_info.setdefault("_lookat_head_role", {})[chain_id] = bones_info.get(
+        head_bone_name, {}).get("role", head_bone_name)
+
+    return created
+
+
+def _find_best_track_axis(armature_obj, head_mch_name, lookat_name):
+    """Determine which DAMPED_TRACK axis enum points closest to the target.
+
+    Tests all 6 axis candidates in the bone's rest-pose orientation and
+    returns the axis enum string with highest dot product toward the target.
+    """
+    head_eb = armature_obj.data.bones.get(head_mch_name)
+    lookat_eb = armature_obj.data.bones.get(lookat_name)
+    if not head_eb or not lookat_eb:
+        return 'TRACK_Y'  # fallback
+
+    # Direction from head bone center to target in armature space
+    head_center = (head_eb.head_local + head_eb.tail_local) * 0.5
+    to_target = (lookat_eb.head_local - head_center).normalized()
+
+    # Bone rest-pose matrix columns give local axes in armature space
+    mat = head_eb.matrix_local.to_3x3()
+    axis_candidates = [
+        ('TRACK_X', mat.col[0].normalized()),
+        ('TRACK_NEGATIVE_X', -mat.col[0].normalized()),
+        ('TRACK_Y', mat.col[1].normalized()),
+        ('TRACK_NEGATIVE_Y', -mat.col[1].normalized()),
+        ('TRACK_Z', mat.col[2].normalized()),
+        ('TRACK_NEGATIVE_Z', -mat.col[2].normalized()),
+    ]
+
+    best_axis = 'TRACK_Y'
+    best_dot = -2.0
+    for axis_enum, axis_dir in axis_candidates:
+        d = axis_dir.dot(to_target)
+        if d > best_dot:
+            best_dot = d
+            best_axis = axis_enum
+    return best_axis
+
+
+def _constrain_neck_head(armature_obj, chain_id, chain_bones, bones_info):
+    """Add FK + LookAt constraints for neck/head chain."""
+    _constrain_fk_chain(armature_obj, chain_id, chain_bones, bones_info)
+
+    # Find head bone
+    roles = {bones_info.get(b, {}).get("role", ""): b for b in chain_bones}
+    head_bone_name = roles.get("head")
+    if not head_bone_name:
+        return
+
+    head_role = bones_info.get(head_bone_name, {}).get("role", head_bone_name)
+    head_mch = f"{WRAP_MCH_PREFIX}{chain_id}_{head_role}"
+    lookat_name = f"{WRAP_CTRL_PREFIX}{chain_id}_LookAt_target"
+
+    head_pbone = armature_obj.pose.bones.get(head_mch)
+    lookat_pbone = armature_obj.pose.bones.get(lookat_name)
+    if not head_pbone or not lookat_pbone:
+        return
+
+    # Auto-detect best track axis
+    track_axis = _find_best_track_axis(armature_obj, head_mch, lookat_name)
+
+    # DAMPED_TRACK constraint on head MCH
+    con = head_pbone.constraints.new('DAMPED_TRACK')
+    con.name = f"{WRAP_CONSTRAINT_PREFIX}LookAt"
+    con.target = armature_obj
+    con.subtarget = lookat_name
+    con.track_axis = track_axis
+    con.influence = 0.0  # Start in FK mode
+
+
+def snap_lookat_to_fk(armature_obj, chain_id):
+    """Position LookAt target where the head is currently facing (FK->LookAt snap).
+
+    Reads the head bone's current world orientation and places the target
+    along the tracked axis direction at the current distance.
+    """
+    sd = armature_obj.bt_scan
+    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+
+    # Find head MCH bone with DAMPED_TRACK constraint
+    head_mch_pb = None
+    damped_con = None
+    for bone_item in chain_bones:
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        if not mch_pb:
+            continue
+        for c in mch_pb.constraints:
+            if c.type == 'DAMPED_TRACK' and c.name.startswith(WRAP_CONSTRAINT_PREFIX):
+                head_mch_pb = mch_pb
+                damped_con = c
+                break
+        if head_mch_pb:
+            break
+
+    if not head_mch_pb or not damped_con:
+        return
+
+    lookat_name = f"{WRAP_CTRL_PREFIX}{chain_id}_LookAt_target"
+    lookat_pb = armature_obj.pose.bones.get(lookat_name)
+    if not lookat_pb:
+        return
+
+    # Current distance from head to target
+    head_center = (head_mch_pb.head + head_mch_pb.tail) * 0.5
+    current_dist = (lookat_pb.head - head_center).length
+    if current_dist < 0.001:
+        current_dist = (head_mch_pb.tail - head_mch_pb.head).length * 5.0
+
+    # Get the tracked axis direction from the bone's current world matrix
+    track_axis = damped_con.track_axis
+    mat = head_mch_pb.matrix.to_3x3()
+
+    axis_map = {
+        'TRACK_X': mat.col[0].normalized(),
+        'TRACK_NEGATIVE_X': -mat.col[0].normalized(),
+        'TRACK_Y': mat.col[1].normalized(),
+        'TRACK_NEGATIVE_Y': -mat.col[1].normalized(),
+        'TRACK_Z': mat.col[2].normalized(),
+        'TRACK_NEGATIVE_Z': -mat.col[2].normalized(),
+    }
+    forward = axis_map.get(track_axis, mat.col[1].normalized())
+
+    # Place target along forward direction at current distance
+    from mathutils import Matrix
+    target_pos = head_center + forward * current_dist
+    mat = Matrix.Translation(target_pos)
+    lookat_pb.matrix = mat
+    bpy.context.view_layer.update()
+
+
+def save_lookat_state(armature_obj, chain_id):
+    """Snapshot LookAt target position for quick restore."""
+    lookat_name = f"{WRAP_CTRL_PREFIX}{chain_id}_LookAt_target"
+    lookat_pb = armature_obj.pose.bones.get(lookat_name)
+    if not lookat_pb:
+        return
+
+    key = _cache_key(armature_obj, chain_id)
+    state = _ik_state_cache.get(key, {})
+    state['lookat_matrix'] = lookat_pb.matrix.copy()
+    _ik_state_cache[key] = state
+
+
+def restore_lookat_state(armature_obj, chain_id):
+    """Restore saved LookAt target position. Returns True if restored."""
+    key = _cache_key(armature_obj, chain_id)
+    state = _ik_state_cache.get(key)
+    if not state or 'lookat_matrix' not in state:
+        return False
+
+    lookat_name = f"{WRAP_CTRL_PREFIX}{chain_id}_LookAt_target"
+    lookat_pb = armature_obj.pose.bones.get(lookat_name)
+    if not lookat_pb:
+        return False
+
+    lookat_pb.matrix = state['lookat_matrix']
+    bpy.context.view_layer.update()
+    return True
 
 
 # --- Leg Controls ---
@@ -1792,7 +2023,7 @@ def _add_sync_constraints(armature_obj, chain_id, chain_bones, bones_info):
 
         # Only add sync to bones that have an IK alternative (not toe etc.)
         has_ik = any(
-            c.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION')
+            c.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION', 'DAMPED_TRACK')
             and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
             for c in mch_pb.constraints
         )
@@ -1832,7 +2063,7 @@ def ensure_fk_sync(armature_obj, chain_id):
 
         # Only add sync to bones that have an IK alternative
         has_ik = any(
-            c.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION')
+            c.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION', 'DAMPED_TRACK')
             and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
             for c in mch_pb.constraints
         )

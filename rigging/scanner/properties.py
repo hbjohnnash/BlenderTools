@@ -65,6 +65,7 @@ class BT_ScanChainItem(bpy.types.PropertyGroup):
         items=[
             ('STANDARD', "Standard", "Standard IK solver"),
             ('SPLINE', "Spline", "Spline IK — smooth curve deformation for long chains"),
+            ('LOOKAT', "Look At", "Head aim — look at a target point in space"),
         ],
         default='STANDARD',
     )
@@ -105,6 +106,21 @@ class BT_ScanData(bpy.types.PropertyGroup):
         name="Hidden Collections",
         description="Comma-separated names of collections hidden during rig creation",
         default="",
+    )
+
+    # Skeleton forward axis (used for LookAt target placement)
+    forward_axis: EnumProperty(
+        name="Forward",
+        description="Which world direction the character faces at rest",
+        items=[
+            ('-Y', "-Y", "Negative Y (Blender default)"),
+            ('+Y', "+Y", "Positive Y"),
+            ('-X', "-X", "Negative X"),
+            ('+X', "+X", "Positive X"),
+            ('-Z', "-Z", "Negative Z"),
+            ('+Z', "+Z", "Positive Z"),
+        ],
+        default='-Y',
     )
 
     # Floor contact settings
