@@ -222,7 +222,9 @@ class BT_PT_SkeletonScanner(bpy.types.Panel):
         col = layout.column(align=True)
         if sd.has_wrap_rig:
             col.operator("bt.bake_to_def", icon='REC')
-            col.operator("bt.clear_wrap_rig", icon='X')
+            row = col.row(align=True)
+            row.operator("bt.clear_wrap_rig", icon='X')
+            row.operator("bt.refresh_wrap_rig", text="Refresh", icon='FILE_REFRESH')
         col.operator("bt.clear_scan_data", icon='TRASH')
 
 

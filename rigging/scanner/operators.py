@@ -661,6 +661,135 @@ class BT_OT_ClearScanData(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BT_OT_RefreshWrapRig(bpy.types.Operator):
+    bl_idname = "bt.refresh_wrap_rig"
+    bl_label = "Refresh Wrap Rig"
+    bl_description = (
+        "Re-scan skeleton and re-apply wrap rig, preserving user settings"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return (obj and obj.type == 'ARMATURE'
+                and obj.bt_scan.is_scanned and obj.bt_scan.has_wrap_rig)
+
+    def execute(self, context):
+        armature = context.active_object
+        sd = armature.bt_scan
+
+        # 1. Snapshot user-configured chain settings keyed by chain_id
+        saved_chains = {}
+        for ch in sd.chains:
+            saved_chains[ch.chain_id] = {
+                "module_type": ch.module_type,
+                "side": ch.side,
+                "ik_enabled": ch.ik_enabled,
+                "fk_enabled": ch.fk_enabled,
+                "ik_type": ch.ik_type,
+                "ik_snap": ch.ik_snap,
+                "ik_limits": ch.ik_limits,
+            }
+
+        # Snapshot per-bone overrides keyed by bone_name
+        saved_bones = {}
+        for b in sd.bones:
+            saved_bones[b.bone_name] = {
+                "role": b.role,
+                "module_type": b.module_type,
+                "skip": b.skip,
+            }
+
+        # Save forward axis
+        saved_forward = sd.forward_axis
+
+        # 2. Clear wrap rig
+        if sd.floor_enabled:
+            remove_floor_contact(armature)
+            sd.floor_enabled = False
+        disassemble_wrap_rig(armature)
+        sd.has_wrap_rig = False
+
+        # 3. Clear scan data
+        sd.bones.clear()
+        sd.chains.clear()
+        sd.unmapped_bones = ""
+        sd.skeleton_type = ""
+        sd.confidence = 0.0
+        sd.is_scanned = False
+
+        # 4. Re-scan
+        scan_data = scan_skeleton(armature)
+        _scan_data_to_props(armature, scan_data)
+
+        # 5. Restore saved settings onto matching chains
+        sd.forward_axis = saved_forward
+        for ch in sd.chains:
+            if ch.chain_id in saved_chains:
+                prev = saved_chains[ch.chain_id]
+                ch.module_type = prev["module_type"]
+                ch.side = prev["side"]
+                ch.ik_enabled = prev["ik_enabled"]
+                ch.fk_enabled = prev["fk_enabled"]
+                ch.ik_type = prev["ik_type"]
+                ch.ik_snap = prev["ik_snap"]
+                ch.ik_limits = prev["ik_limits"]
+
+        # Restore per-bone overrides
+        for b in sd.bones:
+            if b.bone_name in saved_bones:
+                prev = saved_bones[b.bone_name]
+                b.role = prev["role"]
+                b.module_type = prev["module_type"]
+                b.skip = prev["skip"]
+
+        # 6. Apply wrap rig (reuse ApplyWrapRig logic)
+        scan_data = _props_to_scan_data(armature)
+        for chain_item in sd.chains:
+            cid = chain_item.chain_id
+            if cid in scan_data["chains"]:
+                scan_data["chains"][cid]["module_type"] = chain_item.module_type
+                scan_data["chains"][cid]["ik_enabled"] = chain_item.ik_enabled
+                scan_data["chains"][cid]["fk_enabled"] = chain_item.fk_enabled
+                scan_data["chains"][cid]["ik_type"] = chain_item.ik_type
+                scan_data["chains"][cid]["ik_limits"] = chain_item.ik_limits
+                for bone_name in scan_data["chains"][cid]["bones"]:
+                    if bone_name in scan_data["bones"]:
+                        scan_data["bones"][bone_name]["module_type"] = chain_item.module_type
+
+        created = assemble_wrap_rig(armature, scan_data)
+        sd.has_wrap_rig = True
+
+        from ..shapes import assign_shapes_for_wrap_rig
+        assign_shapes_for_wrap_rig(armature)
+
+        for chain_item in sd.chains:
+            chain_item.ik_active = False
+
+        bpy.ops.object.mode_set(mode='POSE')
+        try:
+            from .ik_overlay import _active as ik_active
+            if not ik_active:
+                bpy.ops.bt.ik_overlay('INVOKE_DEFAULT')
+        except Exception:
+            pass
+        try:
+            from ..center_of_mass import _active as com_active
+            if not com_active:
+                bpy.ops.bt.toggle_com()
+        except Exception:
+            pass
+
+        new_chains = [ch.chain_id for ch in sd.chains
+                      if ch.chain_id not in saved_chains]
+        msg = f"Refreshed: {len(created)} control bones"
+        if new_chains:
+            msg += f" (new chains: {', '.join(new_chains)})"
+        self.report({'INFO'}, msg)
+        return {'FINISHED'}
+
+
 class BT_OT_BatchSkipSelected(bpy.types.Operator):
     bl_idname = "bt.batch_skip_selected"
     bl_label = "Skip Selected"
@@ -844,6 +973,7 @@ classes = (
     BT_OT_EditBoneIKLimits,
     BT_OT_ClearWrapRig,
     BT_OT_ClearScanData,
+    BT_OT_RefreshWrapRig,
     BT_OT_BatchSkipSelected,
     BT_OT_BatchSkipByPattern,
     BT_OT_BatchUnskipAll,
