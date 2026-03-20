@@ -11,7 +11,7 @@ from . import draw_primitives as dp
 from . import layout as lay
 from . import panel_state as state
 from . import theme as T
-from .widgets import Slider, ScrollView, TextField
+from .widgets import ScrollView, Slider, TextField
 
 # ---------------------------------------------------------------------------
 # Module-level handles

@@ -8,7 +8,6 @@ from . import draw_primitives as dp
 from . import theme as T
 from .widget_base import Container, Widget
 
-
 # ---------------------------------------------------------------------------
 # Label
 # ---------------------------------------------------------------------------
