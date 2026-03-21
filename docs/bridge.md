@@ -4,7 +4,7 @@ HTTP server inside Blender for external tool integration (Claude Code, etc.).
 
 ## Setup
 
-- **UI:** BlenderTools tab > LLM Bridge > "Start Bridge"
+- **UI:** BlenderTools viewport panel > Bridge section > "Start Bridge"
 - **Auto-start:** Edit > Preferences > Add-ons > BlenderTools > "Auto-Start Bridge"
 - **Port:** 19785 (configurable in preferences)
 - **CLI:** `python blender_api.py <command> [options]` (no dependencies, uses urllib)

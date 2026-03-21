@@ -10,7 +10,7 @@ Edit > Preferences > Extensions > Install from Disk > select `BlenderTools.zip` 
 
 ## UI Location
 
-3D Viewport sidebar (`N` key) > **BlenderTools** tab:
+3D Viewport header > **BlenderTools** button (opens GPU-drawn panel):
 - **Header** — Subsystem toggles + unified Overlay controls
 - **Seams** — UV seam tools (angle, material, hard edge, island-aware, projection, presets)
 - **Rigging** — Modular builder + Scanner + CoM/Balance + Control Shapes
