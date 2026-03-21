@@ -234,9 +234,9 @@ def _build_ghost_cache(context, armature_obj):
         keys_before = [f for f in all_keys if f < current]
         keys_after = [f for f in all_keys if f > current]
         if selected_only:
-            # Show ALL selected keyframes — no count limits
-            frames_before = keys_before
-            frames_after = keys_after
+            # Show all selected keyframes, capped by before/after as safety limit
+            frames_before = keys_before[-count_before:] if len(keys_before) > count_before else keys_before
+            frames_after = keys_after[:count_after] if len(keys_after) > count_after else keys_after
         else:
             frames_before = keys_before[-count_before:]  # nearest N before
             frames_after = keys_after[:count_after]       # nearest N after
