@@ -52,16 +52,20 @@ def _get_settings(context):
         'frame_step': getattr(scene, 'bt_onion_step', DEFAULT_FRAME_STEP),
         'opacity': getattr(scene, 'bt_onion_opacity', DEFAULT_OPACITY),
         'use_keyframes': getattr(scene, 'bt_onion_use_keyframes', False),
+        'selected_keys': getattr(scene, 'bt_onion_selected_keys', False),
         'proxy_ratio': getattr(scene, 'bt_onion_proxy_ratio', DEFAULT_PROXY_RATIO),
     }
 
 
-def _get_action_keyframes(armature_obj):
+def _get_action_keyframes(armature_obj, selected_only=False):
     """Collect unique keyframe times from user-keyed pose bone transforms.
 
     Only considers location/rotation/scale channels on pose bones —
     ignores constraint influences and other auto-keyed properties so
     ghosts only appear at frames where the user actually posed.
+
+    If *selected_only* is True, only keyframes currently selected in the
+    Dope Sheet / Action Editor are included.
     """
     if not armature_obj.animation_data or not armature_obj.animation_data.action:
         return []
@@ -87,6 +91,8 @@ def _get_action_keyframes(armature_obj):
                     if not any(dp.endswith(s) for s in _POSE_SUFFIXES):
                         continue
                     for kp in fcurve.keyframe_points:
+                        if selected_only and not kp.select_control_point:
+                            continue
                         frames.add(int(kp.co.x))
     return sorted(frames)
 
@@ -222,7 +228,9 @@ def _build_ghost_cache(context, armature_obj):
 
     # Collect ghost frames
     if use_keyframes:
-        all_keys = _get_action_keyframes(armature_obj)
+        selected_only = settings['selected_keys']
+        all_keys = _get_action_keyframes(armature_obj,
+                                         selected_only=selected_only)
         keys_before = [f for f in all_keys if f < current]
         keys_after = [f for f in all_keys if f > current]
         frames_before = keys_before[-count_before:]  # nearest N before
@@ -452,6 +460,10 @@ def register():
         name="Keyframes Only", default=False,
         description="Show ghosts at keyframes instead of fixed intervals",
     )
+    bpy.types.Scene.bt_onion_selected_keys = bpy.props.BoolProperty(
+        name="Selected Only", default=False,
+        description="Show ghosts only at keyframes selected in the Dope Sheet",
+    )
     bpy.types.Scene.bt_onion_proxy_ratio = bpy.props.FloatProperty(
         name="Ghost Detail", default=0.25, min=0.05, max=1.0,
         description="Proxy mesh detail (lower = faster, 1.0 = full quality)",
@@ -470,7 +482,7 @@ def unregister():
     _destroy_proxy_meshes()
 
     for attr in ('bt_onion_before', 'bt_onion_after', 'bt_onion_step', 'bt_onion_opacity',
-                 'bt_onion_use_keyframes', 'bt_onion_proxy_ratio'):
+                 'bt_onion_use_keyframes', 'bt_onion_selected_keys', 'bt_onion_proxy_ratio'):
         if hasattr(bpy.types.Scene, attr):
             delattr(bpy.types.Scene, attr)
 

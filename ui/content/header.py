@@ -133,10 +133,19 @@ def build_header(context):
 
             onion_expanded = "onion" in state.expanded_gears
             scene = context.scene
-            onion_settings = Collapsible("Onion Skin Settings", [
+            use_keyframes = getattr(scene, 'bt_onion_use_keyframes', False)
+            keyframe_toggles = [
                 Toggle("Keyframes Only",
-                       on=getattr(scene, 'bt_onion_use_keyframes', False),
+                       on=use_keyframes,
                        action_id="slider_onion_keyframes"),
+            ]
+            if use_keyframes:
+                keyframe_toggles.append(
+                    Toggle("Selected Only",
+                           on=getattr(scene, 'bt_onion_selected_keys', False),
+                           action_id="slider_onion_selected"))
+            onion_settings = Collapsible("Onion Skin Settings", [
+                *keyframe_toggles,
                 Slider("Before",
                        value=getattr(scene, 'bt_onion_before', 3),
                        min_val=1, max_val=10, step=1,

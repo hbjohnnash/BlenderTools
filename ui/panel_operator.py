@@ -466,6 +466,7 @@ def _write_widget_property(action_id, context, widget):
     targets = {
         "slider_bos_threshold": (obj, 'bt_bos_threshold', float),
         "slider_onion_keyframes": (scene, 'bt_onion_use_keyframes', bool),
+        "slider_onion_selected": (scene, 'bt_onion_selected_keys', bool),
         "slider_onion_before": (scene, 'bt_onion_before', int),
         "slider_onion_after": (scene, 'bt_onion_after', int),
         "slider_onion_opacity": (scene, 'bt_onion_opacity', float),

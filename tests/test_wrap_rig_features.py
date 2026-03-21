@@ -1141,3 +1141,172 @@ class TestEnsureFkSyncDampedTrack:
                      if hasattr(c, 'name')
                      and c.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"]
         assert len(sync_cons) == 1, "FK_sync should not be duplicated"
+
+
+# ===========================================================================
+# Helpers — mock Blender 5.0 layered action for onion skin tests
+# ===========================================================================
+
+def _make_keyframe_point(frame, selected=True):
+    """Create a mock keyframe point with frame and selection state."""
+    kp = SimpleNamespace()
+    kp.co = SimpleNamespace(x=float(frame))
+    kp.select_control_point = selected
+    return kp
+
+
+def _make_fcurve(data_path, keyframes):
+    """Create a mock FCurve with data_path and keyframe_points list."""
+    fc = SimpleNamespace()
+    fc.data_path = data_path
+    fc.keyframe_points = keyframes
+    return fc
+
+
+def _make_action_with_keyframes(fcurves):
+    """Build a mock Blender 5.0 layered action from a list of FCurves.
+
+    Structure: action.layers[0].strips[0].channelbags[0].fcurves = fcurves
+    """
+    channelbag = SimpleNamespace(fcurves=fcurves)
+    strip = SimpleNamespace(channelbags=[channelbag])
+    layer = SimpleNamespace(strips=[strip])
+    action = SimpleNamespace(layers=[layer])
+    return action
+
+
+def _make_armature_with_action(action):
+    """Build a mock armature with animation_data pointing to the action."""
+    anim_data = SimpleNamespace(action=action)
+    armature = MagicMock()
+    armature.animation_data = anim_data
+    return armature
+
+
+# ===========================================================================
+# Test: Onion skin — _get_action_keyframes with selected_only
+# ===========================================================================
+
+class TestGetActionKeyframes:
+    """Tests for _get_action_keyframes selected_only filtering."""
+
+    def test_all_keyframes_returned_by_default(self):
+        """Without selected_only, all pose bone keyframes are returned."""
+        from animation.onion_skin import _get_action_keyframes
+
+        fcurves = [
+            _make_fcurve('pose.bones["Spine"].rotation_euler', [
+                _make_keyframe_point(1, selected=False),
+                _make_keyframe_point(10, selected=True),
+                _make_keyframe_point(20, selected=False),
+            ]),
+        ]
+        armature = _make_armature_with_action(_make_action_with_keyframes(fcurves))
+
+        result = _get_action_keyframes(armature, selected_only=False)
+        assert result == [1, 10, 20]
+
+    def test_selected_only_filters_to_selected(self):
+        """With selected_only=True, only selected keyframes are returned."""
+        from animation.onion_skin import _get_action_keyframes
+
+        fcurves = [
+            _make_fcurve('pose.bones["Spine"].rotation_euler', [
+                _make_keyframe_point(1, selected=False),
+                _make_keyframe_point(10, selected=True),
+                _make_keyframe_point(20, selected=False),
+                _make_keyframe_point(30, selected=True),
+            ]),
+        ]
+        armature = _make_armature_with_action(_make_action_with_keyframes(fcurves))
+
+        result = _get_action_keyframes(armature, selected_only=True)
+        assert result == [10, 30]
+
+    def test_selected_only_no_selection_returns_empty(self):
+        """selected_only=True with nothing selected returns empty list."""
+        from animation.onion_skin import _get_action_keyframes
+
+        fcurves = [
+            _make_fcurve('pose.bones["Arm"].location', [
+                _make_keyframe_point(5, selected=False),
+                _make_keyframe_point(15, selected=False),
+            ]),
+        ]
+        armature = _make_armature_with_action(_make_action_with_keyframes(fcurves))
+
+        result = _get_action_keyframes(armature, selected_only=True)
+        assert result == []
+
+    def test_ignores_non_pose_bone_channels(self):
+        """Constraint and object channels should be excluded."""
+        from animation.onion_skin import _get_action_keyframes
+
+        fcurves = [
+            # Pose bone transform — should be included
+            _make_fcurve('pose.bones["Leg"].rotation_euler', [
+                _make_keyframe_point(1, selected=True),
+            ]),
+            # Constraint influence — should be excluded
+            _make_fcurve(
+                'pose.bones["Leg"].constraints["BT_Wrap_IK"].influence', [
+                    _make_keyframe_point(1, selected=True),
+                    _make_keyframe_point(5, selected=True),
+                ]),
+            # Object-level channel — should be excluded
+            _make_fcurve('location', [
+                _make_keyframe_point(10, selected=True),
+            ]),
+        ]
+        armature = _make_armature_with_action(_make_action_with_keyframes(fcurves))
+
+        result = _get_action_keyframes(armature, selected_only=True)
+        assert result == [1]
+
+    def test_deduplicates_across_channels(self):
+        """Same frame from multiple FCurves should appear once."""
+        from animation.onion_skin import _get_action_keyframes
+
+        fcurves = [
+            _make_fcurve('pose.bones["Spine"].rotation_euler', [
+                _make_keyframe_point(10, selected=True),
+            ]),
+            _make_fcurve('pose.bones["Spine"].location', [
+                _make_keyframe_point(10, selected=True),
+                _make_keyframe_point(20, selected=True),
+            ]),
+        ]
+        armature = _make_armature_with_action(_make_action_with_keyframes(fcurves))
+
+        result = _get_action_keyframes(armature, selected_only=True)
+        assert result == [10, 20]
+
+    def test_no_action_returns_empty(self):
+        """No animation data should return empty list."""
+        from animation.onion_skin import _get_action_keyframes
+
+        armature = MagicMock()
+        armature.animation_data = None
+
+        result = _get_action_keyframes(armature, selected_only=True)
+        assert result == []
+
+    def test_mixed_selection_across_channels(self):
+        """A frame selected on one channel but not another still counts."""
+        from animation.onion_skin import _get_action_keyframes
+
+        fcurves = [
+            _make_fcurve('pose.bones["Hip"].rotation_euler', [
+                _make_keyframe_point(5, selected=True),
+                _make_keyframe_point(15, selected=False),
+            ]),
+            _make_fcurve('pose.bones["Hip"].location', [
+                _make_keyframe_point(5, selected=False),
+                _make_keyframe_point(15, selected=True),
+            ]),
+        ]
+        armature = _make_armature_with_action(_make_action_with_keyframes(fcurves))
+
+        result = _get_action_keyframes(armature, selected_only=True)
+        # Frame 5 selected on rotation, frame 15 selected on location
+        assert result == [5, 15]
