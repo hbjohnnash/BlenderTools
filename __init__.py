@@ -173,8 +173,8 @@ def unregister():
         sub.unregister()
     for name, _, _ in _SUBSYSTEM_DEFS:
         delattr(bpy.types.WindowManager, f"bt_show_{name}")
-    bpy.utils.unregister_class(BT_PT_Header)
-    bpy.utils.unregister_class(BT_OT_SetAllPanels)
-    bpy.utils.unregister_class(BT_OT_ToggleSubsystem)
+    for cls in (BT_PT_Header, BT_OT_SetAllPanels, BT_OT_ToggleSubsystem):
+        if hasattr(cls, 'bl_rna'):
+            bpy.utils.unregister_class(cls)
 
     preferences.unregister()

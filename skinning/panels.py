@@ -61,4 +61,5 @@ def register():
 
 def unregister():
     for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+        if hasattr(cls, 'bl_rna'):
+            bpy.utils.unregister_class(cls)

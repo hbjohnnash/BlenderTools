@@ -818,6 +818,8 @@ def unregister():
         _draw_handle = None
     _active = False
     del bpy.types.Object.bt_bos_threshold
+    del bpy.types.Object.bt_bos_min_weight
     del bpy.types.Object.bt_com_masses
     for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+        if hasattr(cls, 'bl_rna'):
+            bpy.utils.unregister_class(cls)
