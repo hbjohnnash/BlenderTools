@@ -130,6 +130,9 @@ jobs:
                    --exclude='Transcript.txt' --exclude='.python-version' \
                    --exclude='index.json' --exclude='blender_extensions_index.json' \
                    ./ build/staging/
+          # Auto-version: patch manifest with run number as patch version
+          sed -i 's/^version = "1\.0\.0"/version = "1.0.${{ github.run_number }}"/' build/staging/blender_manifest.toml
+          echo "Built version: 1.0.${{ github.run_number }}"
           # Create zip with manifest at root (no wrapping folder)
           cd build/staging && zip -r ../../blender_tools.zip .
 
@@ -171,6 +174,7 @@ jobs:
           sha256_hash = "${{ steps.zip_info.outputs.sha256 }}"
           archive_size = int("${{ steps.zip_info.outputs.size }}")
           download_url = "https://github.com/hbjohnnash/BlenderTools/releases/download/latest/blender_tools.zip"
+          build_version = "1.0.${{ github.run_number }}"
 
           # Blender remote repository index format
           index = {
@@ -181,7 +185,7 @@ jobs:
                       "id": "blender_tools",
                       "schema_version": "1.0.0",
                       "name": "BlenderTools",
-                      "version": "1.0.0",
+                      "version": build_version,
                       "tagline": "Comprehensive seam, rigging, skinning, animation & LLM bridge toolkit",
                       "maintainer": "hbjohnnash",
                       "type": "add-on",
