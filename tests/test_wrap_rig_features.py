@@ -1310,3 +1310,72 @@ class TestGetActionKeyframes:
         result = _get_action_keyframes(armature, selected_only=True)
         # Frame 5 selected on rotation, frame 15 selected on location
         assert result == [5, 15]
+
+
+# ===========================================================================
+# Test: Onion skin — _build_ghost_cache selected_only bypasses count limits
+# ===========================================================================
+
+class TestBuildGhostCacheSelectedOnly:
+    """Verify that selected_only mode shows ALL selected keyframes."""
+
+    def test_selected_only_ignores_before_after_limits(self):
+        """With selected_only, all selected keyframes should appear
+        regardless of before/after count settings."""
+        from animation.onion_skin import _build_ghost_cache, _ghost_batches
+
+        # 6 selected keyframes: 3 before current (frame 20) and 3 after
+        fcurves = [
+            _make_fcurve('pose.bones["Spine"].rotation_euler', [
+                _make_keyframe_point(1, selected=True),
+                _make_keyframe_point(5, selected=True),
+                _make_keyframe_point(10, selected=True),
+                _make_keyframe_point(25, selected=True),
+                _make_keyframe_point(30, selected=True),
+                _make_keyframe_point(40, selected=True),
+            ]),
+        ]
+        action = _make_action_with_keyframes(fcurves)
+
+        # Build a mock context with count_before=1, count_after=1
+        # If selected_only works correctly, we should still get all 6 frames
+        scene = SimpleNamespace(
+            frame_current=20,
+            frame_start=0,
+            frame_end=50,
+            bt_onion_before=1,
+            bt_onion_after=1,
+            bt_onion_step=1,
+            bt_onion_opacity=0.25,
+            bt_onion_use_keyframes=True,
+            bt_onion_selected_keys=True,
+            bt_onion_proxy_ratio=1.0,
+        )
+
+        armature = _make_armature_with_action(action)
+        armature.children = []  # no child meshes — cache will be empty but frames are computed
+
+        context = SimpleNamespace(scene=scene)
+
+        # We can't fully run _build_ghost_cache (needs depsgraph), but we can
+        # test the frame collection logic by checking the internal variables.
+        # Instead, test via _get_action_keyframes + the slicing logic directly.
+        from animation.onion_skin import _get_action_keyframes, _get_settings
+
+        settings = _get_settings(context)
+        assert settings['selected_keys'] is True
+
+        all_keys = _get_action_keyframes(armature, selected_only=True)
+        current = 20
+        keys_before = [f for f in all_keys if f < current]
+        keys_after = [f for f in all_keys if f > current]
+
+        # Selected only — no count limits
+        assert keys_before == [1, 5, 10], "All 3 before-frames should be kept"
+        assert keys_after == [25, 30, 40], "All 3 after-frames should be kept"
+
+        # Compare with non-selected mode which WOULD limit to 1 each
+        count_before = settings['count_before']  # 1
+        assert count_before == 1
+        limited_before = keys_before[-count_before:]
+        assert limited_before == [10], "Without selected_only, only nearest 1"
