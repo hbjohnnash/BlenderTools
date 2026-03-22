@@ -161,52 +161,10 @@ class BT_PT_OnionSkinSettings(bpy.types.Panel):
             layout.operator("bt.onion_skin_refresh", icon='FILE_REFRESH')
 
 
-class BT_PT_PoseClipboard(bpy.types.Panel):
-    bl_label = "Pose Clipboard"
-    bl_idname = "BT_PT_PoseClipboard"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = PANEL_CATEGORY
-    bl_parent_id = "BT_PT_AnimationMain"
-    bl_options = {'DEFAULT_CLOSED'}
-
-    @classmethod
-    def poll(cls, context):
-        obj = context.active_object
-        return (obj and obj.type == 'ARMATURE'
-                and context.mode == 'POSE')
-
-    def draw_header(self, context):
-        self.layout.label(text="", icon='PASTEDOWN')
-
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-        obj = context.active_object
-
-        col = layout.column(align=True)
-        col.operator("bt.copy_pose", icon='COPYDOWN')
-
-        from .pose_clipboard import _pose_buffer
-        if _pose_buffer:
-            col.operator("bt.paste_pose", icon='PASTEDOWN')
-
-            box = layout.box()
-            box.label(text="Paste Flipped", icon='MOD_MIRROR')
-            box.separator(factor=0.3)
-            inner = box.column(align=True)
-            inner.label(text="Center Bone:")
-            inner.prop_search(scene, "bt_flip_center_bone",
-                              obj.data, "bones", text="")
-            inner.separator(factor=0.5)
-            inner.operator("bt.paste_pose_flipped", icon='PASTEFLIPDOWN')
-
-
 classes = (
     BT_PT_AnimationMain,
     BT_PT_TrajectorySettings,
     BT_PT_OnionSkinSettings,
-    BT_PT_PoseClipboard,
 )
 
 

@@ -2,7 +2,7 @@
 
 from .. import theme as T
 from ..widget_base import HStack, VStack
-from ..widgets import Button, Label, SubsectionTitle, Toggle
+from ..widgets import Button, Label, SubsectionTitle, TextField, Toggle
 
 
 def build_animation(context):
@@ -12,6 +12,26 @@ def build_animation(context):
         return VStack([])
 
     children = []
+
+    # ── Pose Clipboard (only in pose mode with wrap rig) ──
+    if obj.type == 'ARMATURE' and context.mode == 'POSE':
+        sd = getattr(obj, 'bt_scan', None)
+        if sd and sd.has_wrap_rig:
+            center_bone = getattr(context.scene, 'bt_flip_center_bone', '')
+            children.append(SubsectionTitle("Pose Clipboard", "pose_clipboard", [
+                VStack([
+                    Button("Copy Pose", action_id="copy_pose"),
+                    HStack([
+                        Button("Paste", action_id="paste_pose", flex=1),
+                        Button("Paste Flipped", action_id="paste_pose_flipped",
+                               flex=1),
+                    ], gap=4, padding=(0, 0, 0, 0)),
+                    Label("Center Bone:",
+                          size=T.FONT_SIZE_SMALL, color=T.TEXT_LABEL),
+                    TextField(text=center_bone, placeholder="e.g. root or hips",
+                              action_id="tf_flip_center_bone"),
+                ], gap=T.ITEM_GAP, padding=(0, 0, 0, 0)),
+            ]))
 
     # ── Mechanical ──
     children.append(SubsectionTitle("Mechanical", "mechanical", [

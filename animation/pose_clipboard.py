@@ -278,13 +278,6 @@ class BT_OT_PasteFlipped(bpy.types.Operator):
 
 
 # ---------------------------------------------------------------------------
-# Keymap
-# ---------------------------------------------------------------------------
-
-_addon_keymaps = []
-
-
-# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -306,20 +299,8 @@ def register():
         default="",
     )
 
-    # Keymap: Ctrl+Shift+V for paste flipped in pose mode
-    kc = bpy.context.window_manager.keyconfigs.addon
-    if kc:
-        km = kc.keymaps.new(name='Pose', space_type='EMPTY')
-        kmi = km.keymap_items.new('bt.paste_pose_flipped', 'V', 'PRESS',
-                                   ctrl=True, shift=True)
-        _addon_keymaps.append((km, kmi))
-
 
 def unregister():
-    for km, kmi in _addon_keymaps:
-        km.keymap_items.remove(kmi)
-    _addon_keymaps.clear()
-
     if hasattr(bpy.types.Scene, 'bt_flip_center_bone'):
         delattr(bpy.types.Scene, 'bt_flip_center_bone')
 

@@ -418,6 +418,9 @@ def _handle_action(action_id, context, widget=None):
         "rm_add_selected": "bt.rm_add_selected",
         "rm_auto_detect": "bt.rm_auto_detect",
         "recalc_com_masses": "bt.recalc_com_masses",
+        "copy_pose": "bt.copy_pose",
+        "paste_pose": "bt.paste_pose",
+        "paste_pose_flipped": "bt.paste_pose_flipped",
     }
     if action_id in anim_ops:
         try:
@@ -435,8 +438,9 @@ def _handle_action(action_id, context, widget=None):
         state.dirty = True
         return
 
-    # Slider / toggle property writes
-    if action_id.startswith("slider_") or action_id.startswith("rm_extract_"):
+    # Slider / toggle / text field property writes
+    if (action_id.startswith("slider_") or action_id.startswith("rm_extract_")
+            or action_id.startswith("tf_")):
         _write_widget_property(action_id, context, widget)
         state.dirty = True
         return
@@ -448,7 +452,7 @@ def _handle_action(action_id, context, widget=None):
 
 
 def _write_widget_property(action_id, context, widget):
-    """Write a slider or toggle value back to its Blender property."""
+    """Write a slider, toggle, or text field value back to its Blender property."""
     if widget is None:
         return
     # Read the current value from the widget
@@ -456,6 +460,8 @@ def _write_widget_property(action_id, context, widget):
         val = widget.value
     elif hasattr(widget, 'on'):
         val = widget.on
+    elif hasattr(widget, 'text'):
+        val = widget.text
     else:
         return
 
@@ -471,6 +477,7 @@ def _write_widget_property(action_id, context, widget):
         "slider_onion_after": (scene, 'bt_onion_after', int),
         "slider_onion_opacity": (scene, 'bt_onion_opacity', float),
         "slider_onion_detail": (scene, 'bt_onion_proxy_ratio', float),
+        "tf_flip_center_bone": (scene, 'bt_flip_center_bone', str),
     }
 
     # Root motion toggles (dynamic — need armature with bt_root_motion)
@@ -610,6 +617,11 @@ class BT_OT_ViewportPanel(bpy.types.Operator):
         # --- Text field focused ---
         if state.focus_widget and isinstance(state.focus_widget, TextField):
             if event.type in ('ESC', 'RET', 'NUMPAD_ENTER') and event.value == 'PRESS':
+                # Write text value back on confirm (Enter)
+                if event.type in ('RET', 'NUMPAD_ENTER'):
+                    aid = getattr(state.focus_widget, 'action_id', None)
+                    if aid:
+                        _handle_action(aid, context, widget=state.focus_widget)
                 state.focus_widget.focused = False
                 state.focus_widget = None
                 context.area.tag_redraw()
