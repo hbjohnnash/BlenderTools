@@ -121,7 +121,8 @@ def _create_proxy_meshes(context, armature_obj, ratio):
     if ratio >= 1.0:
         return  # full quality, use originals
 
-    mesh_children = [c for c in armature_obj.children if c.type == 'MESH']
+    mesh_children = [c for c in armature_obj.children
+                     if c.type == 'MESH' and not c.name.startswith("BT_Proxy_")]
     if not mesh_children:
         return
 
@@ -195,7 +196,11 @@ def _create_proxy_meshes(context, armature_obj, ratio):
 
 
 def _destroy_proxy_meshes():
-    """Remove all proxy objects and their mesh data."""
+    """Remove all proxy objects and their mesh data.
+
+    Also cleans up stray proxies from previous sessions that were not
+    properly destroyed (e.g. due to crash or addon reload).
+    """
     global _proxy_objects
 
     for obj in _proxy_objects:
@@ -205,9 +210,18 @@ def _destroy_proxy_meshes():
             bpy.data.meshes.remove(mesh)
     _proxy_objects = []
 
-    col = bpy.data.collections.get(_PROXY_COL_NAME)
-    if col:
-        bpy.data.collections.remove(col)
+    # Clean up stray proxy objects from previous sessions
+    stray = [o for o in bpy.data.objects if o.name.startswith("BT_Proxy_")]
+    for obj in stray:
+        mesh = obj.data if obj.type == 'MESH' else None
+        bpy.data.objects.remove(obj)
+        if mesh and mesh.users == 0:
+            bpy.data.meshes.remove(mesh)
+
+    # Remove all proxy collections
+    for col in list(bpy.data.collections):
+        if col.name.startswith(_PROXY_COL_NAME):
+            bpy.data.collections.remove(col)
 
 
 # ---------------------------------------------------------------------------
