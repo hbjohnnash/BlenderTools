@@ -1,12 +1,14 @@
 """Copy / Paste-Flipped for wrap-rig CTRL bones.
 
-Local-space approach: stores each bone's local transform (location,
-rotation, scale).  For paired L/R bones, transforms are swapped as-is
-(mirrored rest poses produce the mirror automatically).  For center
-bones, the lateral location component and rotation are mirrored.
+Local-space approach with character-space mirror for center bones.
+Paired L/R bones are swapped as-is (mirrored rest poses handle the
+visual mirror).  Center bones are converted to world/character space,
+mirrored across the sagittal plane, then converted back to bone-local
+space — correctly handling any bone roll or orientation.
 """
 
 import bpy
+from mathutils import Quaternion
 
 from ..core.constants import WRAP_CTRL_PREFIX
 from ..core.utils import mirror_name
@@ -41,8 +43,6 @@ def _apply_transform(pbone, transform):
     if pbone.rotation_mode == 'QUATERNION':
         pbone.rotation_quaternion = transform['rotation_quaternion']
     elif pbone.rotation_mode == 'AXIS_ANGLE':
-        # Stored as euler fallback — convert quat to axis-angle
-        from mathutils import Quaternion
         q = Quaternion(transform['rotation_quaternion'])
         axis, angle = q.to_axis_angle()
         pbone.rotation_axis_angle = (angle, *axis)
@@ -51,32 +51,71 @@ def _apply_transform(pbone, transform):
     pbone.scale = transform['scale']
 
 
-def _mirror_center_transform(transform, axis):
-    """Mirror a center bone's transform across the given axis.
+# ---------------------------------------------------------------------------
+# Character-space mirror for center bones
+# ---------------------------------------------------------------------------
 
-    Location: negate the lateral component.
-    Rotation: negate the two quaternion/euler components perpendicular
-    to the mirror axis (flips yaw/roll, keeps pitch).
+def _get_bone_rest_quat(armature_obj, bone_name):
+    """Get the rest-pose rotation quaternion of a bone in armature space."""
+    bone = armature_obj.data.bones.get(bone_name)
+    if not bone:
+        return Quaternion()
+    return bone.matrix_local.to_quaternion()
+
+
+def _mirror_center_transform(armature_obj, bone_name, transform, axis):
+    """Mirror a center bone's transform in character/world space.
+
+    Converts the bone's local rotation and location to world space
+    (via rest-pose rotation), mirrors across the sagittal plane
+    (perpendicular to the lateral axis), then converts back to
+    bone-local space.  This correctly handles any bone roll.
+
+    Location: only the lateral component (in world space) is negated.
+    Rotation: yaw and roll are negated, pitch is preserved.
     Scale: unchanged.
     """
-    loc = list(transform['location'])
-    loc[axis] = -loc[axis]
+    rest_q = _get_bone_rest_quat(armature_obj, bone_name)
+    rest_q_inv = rest_q.inverted()
 
+    # The two world axes perpendicular to the lateral axis
     perp = [i for i in range(3) if i != axis]
 
-    quat = list(transform['rotation_quaternion'])
+    # --- Mirror rotation ---
+    local_q = Quaternion(transform['rotation_quaternion'])
+    # Convert to world space
+    world_q = rest_q @ local_q
+    # Mirror in world space: negate the perpendicular quaternion components
+    wq = [world_q.w, world_q.x, world_q.y, world_q.z]
     for p in perp:
-        quat[p + 1] = -quat[p + 1]
+        wq[p + 1] = -wq[p + 1]
+    mirrored_world_q = Quaternion(wq)
+    # Convert back to bone-local
+    mirrored_local_q = rest_q_inv @ mirrored_world_q
 
-    euler = list(transform['rotation_euler'])
-    for p in perp:
-        euler[p] = -euler[p]
+    # --- Mirror location ---
+    local_loc = list(transform['location'])
+    # Convert to world space via rest-pose rotation matrix
+    rest_mat = rest_q.to_matrix()
+    rest_mat_inv = rest_mat.inverted()
+    from mathutils import Vector
+    world_loc = rest_mat @ Vector(local_loc)
+    # Negate only the lateral component
+    world_loc[axis] = -world_loc[axis]
+    # Convert back to bone-local
+    mirrored_loc = rest_mat_inv @ world_loc
+
+    # --- Mirror euler (convert via quaternion for correctness) ---
+    if transform['rotation_mode'] not in ('QUATERNION', 'AXIS_ANGLE'):
+        mirrored_euler = mirrored_local_q.to_euler(transform['rotation_mode'])
+    else:
+        mirrored_euler = transform['rotation_euler']
 
     return {
-        'location': tuple(loc),
+        'location': tuple(mirrored_loc),
         'rotation_mode': transform['rotation_mode'],
-        'rotation_quaternion': tuple(quat),
-        'rotation_euler': tuple(euler),
+        'rotation_quaternion': tuple(mirrored_local_q),
+        'rotation_euler': tuple(mirrored_euler),
         'scale': transform['scale'],
     }
 
@@ -86,12 +125,7 @@ def _mirror_center_transform(transform, axis):
 # ---------------------------------------------------------------------------
 
 def _detect_mirror_axis(armature_obj, ctrl_bone_names):
-    """Detect the lateral (mirror) axis from rest-pose L/R bone positions.
-
-    Compares rest-pose head positions of paired L/R CTRL bones.
-    The axis with the greatest total absolute difference is the mirror axis.
-    Returns 0 (X), 1 (Y), or 2 (Z). Defaults to 0 if no pairs found.
-    """
+    """Detect the lateral (mirror) axis from rest-pose L/R bone positions."""
     axis_diffs = [0.0, 0.0, 0.0]
     seen = set()
 
@@ -121,11 +155,7 @@ def _detect_mirror_axis(armature_obj, ctrl_bone_names):
 # ---------------------------------------------------------------------------
 
 def _get_bones_above_center(armature_obj, center_bone_name):
-    """Return set of CTRL bone names ABOVE the center bone in hierarchy.
-
-    These bones are excluded from flipping.  Returns empty set if center
-    bone is the root or not found (meaning: flip everything).
-    """
+    """Return set of CTRL bone names ABOVE the center bone in hierarchy."""
     bone = armature_obj.data.bones.get(center_bone_name)
     if not bone:
         return set()
@@ -159,7 +189,7 @@ def _get_bones_above_center(armature_obj, center_bone_name):
 # ---------------------------------------------------------------------------
 
 class BT_OT_CopyPose(bpy.types.Operator):
-    """Copy all CTRL bone local transforms for paste-flipped."""
+    """Copy all CTRL bone local transforms."""
     bl_idname = "bt.copy_pose"
     bl_label = "Copy Pose"
     bl_description = "Copy all CTRL bone transforms for paste or paste-flipped"
@@ -223,12 +253,9 @@ class BT_OT_PastePose(bpy.types.Operator):
 class BT_OT_PasteFlipped(bpy.types.Operator):
     """Paste copied pose with L/R flip.
 
-    Paired bones (L/R): transforms are swapped as-is.  Since L and R
-    bones have mirrored rest poses, the same local rotation on the
-    opposite bone produces the mirrored world-space result naturally.
-
-    Center bones: lateral location negated, rotation Y/Z negated
-    (flips yaw and roll, keeps pitch/forward bend).
+    Paired bones: swapped as-is (mirrored rest poses handle the mirror).
+    Center bones: rotation and location mirrored in character/world space
+    via rest-pose conversion (handles any bone roll correctly).
     """
     bl_idname = "bt.paste_pose_flipped"
     bl_label = "Paste Flipped"
@@ -265,7 +292,6 @@ class BT_OT_PasteFlipped(bpy.types.Operator):
             if is_paired:
                 partner_transform = _pose_buffer[mirrored_name]
 
-                # Swap as-is: L gets R's exact local transform, and vice versa
                 pbone = obj.pose.bones.get(bone_name)
                 if pbone:
                     _apply_transform(pbone, partner_transform)
@@ -279,10 +305,11 @@ class BT_OT_PasteFlipped(bpy.types.Operator):
                 processed.add(bone_name)
                 processed.add(mirrored_name)
             else:
-                # Center bone: mirror location + rotation
+                # Center bone: mirror via character-space conversion
                 pbone = obj.pose.bones.get(bone_name)
                 if pbone:
-                    mirrored = _mirror_center_transform(transform, _mirror_axis)
+                    mirrored = _mirror_center_transform(
+                        obj, bone_name, transform, _mirror_axis)
                     _apply_transform(pbone, mirrored)
                     applied += 1
                 processed.add(bone_name)
