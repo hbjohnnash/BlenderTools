@@ -116,26 +116,30 @@ def _mirror_center_transform(armature_obj, bone_name, transform, axis):
 def _mirror_paired_transform(armature_obj, target_bone_name, partner_transform, axis):
     """Mirror a paired bone's transform for L/R swap.
 
-    Since L and R bones in this rig have the SAME rest-pose axes
-    (not mirrored), the same quaternion produces the same world rotation.
-    To get the mirror: negate the bone-local LATERAL quaternion component
-    (reverses the swing direction) and location component.
+    Uses the same perpendicular-negate mirror math as center bones:
+    reflecting a rotation across the sagittal plane (perpendicular to
+    the lateral axis) is q'=(w,-x,-y,z) when lateral=Z.
 
-    This is opposite from center bones which negate the perpendicular
-    components.
+    The earlier "negate lateral only" approach distorted rotations by
+    reflecting only the rotation axis, causing pitch changes on
+    shoulders, knees, etc.
     """
     local_lat, sign = _find_bone_local_lateral(
         armature_obj, target_bone_name, axis)
+    perp = [i for i in range(3) if i != local_lat]
 
+    # --- Mirror location: negate lateral component ---
     loc = list(partner_transform['location'])
     loc[local_lat] = -loc[local_lat]
 
-    # Negate only the lateral quaternion component (reverses swing)
+    # --- Mirror rotation: negate perpendicular quaternion components ---
     quat = list(partner_transform['rotation_quaternion'])
-    quat[local_lat + 1] = -quat[local_lat + 1]
+    for p in perp:
+        quat[p + 1] = -quat[p + 1]
 
     euler = list(partner_transform['rotation_euler'])
-    euler[local_lat] = -euler[local_lat]
+    for p in perp:
+        euler[p] = -euler[p]
 
     return {
         'location': tuple(loc),
