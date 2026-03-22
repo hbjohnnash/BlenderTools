@@ -44,7 +44,7 @@ def _apply_transform(armature_obj, bone_name, transform):
     if transform['rotation_mode'] == 'QUATERNION':
         pbone.rotation_quaternion = transform['rotation_quaternion']
     elif transform['rotation_mode'] == 'AXIS_ANGLE':
-        pbone.rotation_quaternion = transform['rotation_quaternion']
+        pbone.rotation_euler = transform['rotation_euler']
     else:
         pbone.rotation_euler = transform['rotation_euler']
     pbone.scale = transform['scale']
@@ -125,25 +125,46 @@ def _detect_mirror_axis(armature_obj, ctrl_bone_names):
 
 
 # ---------------------------------------------------------------------------
-# Subtree detection
+# Center bone filtering
 # ---------------------------------------------------------------------------
 
-def _get_ctrl_subtree(armature_obj, center_bone_name):
-    """Return set of CTRL bone names at or below center bone in hierarchy."""
+def _get_bones_above_center(armature_obj, center_bone_name):
+    """Return set of CTRL bone names ABOVE the center bone in hierarchy.
+
+    These bones are excluded from flipping — only bones at or below
+    the center bone get mirrored.  Returns empty set if center bone
+    is the root or not found (meaning: flip everything).
+    """
     bone = armature_obj.data.bones.get(center_bone_name)
     if not bone:
-        # Fallback: include all CTRL bones
-        return {pb.name for pb in armature_obj.pose.bones
-                if pb.name.startswith(WRAP_CTRL_PREFIX)}
+        return set()
 
-    # Collect all descendant bone names (any type)
-    subtree_names = {bone.name}
-    for child in bone.children_recursive:
-        subtree_names.add(child.name)
+    # Walk up from center bone to root, collecting ancestors
+    ancestors = set()
+    parent = bone.parent
+    while parent:
+        ancestors.add(parent.name)
+        parent = parent.parent
 
-    # Filter to CTRL bones
-    return {name for name in subtree_names
-            if name.startswith(WRAP_CTRL_PREFIX)}
+    # Map ancestor names to CTRL bones
+    # A CTRL bone is "above" if its associated chain bone is an ancestor
+    above = set()
+    for pb in armature_obj.pose.bones:
+        if not pb.name.startswith(WRAP_CTRL_PREFIX):
+            continue
+        # Check if this CTRL bone's data bone parent chain reaches an ancestor
+        data_bone = armature_obj.data.bones.get(pb.name)
+        if data_bone:
+            check = data_bone.parent
+            while check:
+                if check.name in ancestors and check.name != center_bone_name:
+                    above.add(pb.name)
+                    break
+                if check.name == center_bone_name:
+                    break  # at or below center — not above
+                check = check.parent
+
+    return above
 
 
 # ---------------------------------------------------------------------------
@@ -230,12 +251,9 @@ class BT_OT_PasteFlipped(bpy.types.Operator):
         obj = context.active_object
         center_bone = getattr(context.scene, 'bt_flip_center_bone', '')
 
-        # Determine which CTRL bones are in the flip subtree
-        if center_bone:
-            subtree = _get_ctrl_subtree(obj, center_bone)
-        else:
-            subtree = {pb.name for pb in obj.pose.bones
-                       if pb.name.startswith(WRAP_CTRL_PREFIX)}
+        # Bones above center bone are excluded from flipping
+        above = (_get_bones_above_center(obj, center_bone)
+                 if center_bone else set())
 
         # Track processed bones to avoid double-applying L/R pairs
         processed = set()
@@ -244,7 +262,7 @@ class BT_OT_PasteFlipped(bpy.types.Operator):
         for bone_name, transform in _pose_buffer.items():
             if bone_name in processed:
                 continue
-            if bone_name not in subtree:
+            if bone_name in above:
                 continue
 
             mirrored_name = mirror_name(bone_name)
