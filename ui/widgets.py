@@ -396,13 +396,16 @@ class TextField(Widget):
 
 
 # ---------------------------------------------------------------------------
-# Dropdown (select from a list of options)
+# Dropdown (select from a list of options — popup drawn by panel operator)
 # ---------------------------------------------------------------------------
 
 class Dropdown(Widget):
-    """Dropdown selector that expands a scrollable option list on click."""
+    """Dropdown selector.  Header renders inline; expanded popup is drawn
+    as an overlay by the panel operator (via ``panel_state.active_dropdown``)
+    so it appears on top of all other widgets.
+    """
 
-    __slots__ = ('selected', 'options', 'expanded', 'placeholder',
+    __slots__ = ('selected', 'options', 'placeholder',
                  '_option_height', '_max_visible', '_scroll_offset')
 
     _ARROW_DOWN = " \u25BE"   # ▾
@@ -413,116 +416,119 @@ class Dropdown(Widget):
         super().__init__(**kw)
         self.selected = selected
         self.options = options or []
-        self.expanded = False
         self.placeholder = placeholder
         self._option_height = T.BTN_HEIGHT
         self._max_visible = max_visible
         self._scroll_offset = 0
 
+    @property
+    def expanded(self):
+        from . import panel_state as _ps
+        return _ps.active_dropdown is self
+
     def measure(self, available_w):
         self._measured_w = available_w
-        header_h = T.BTN_HEIGHT
-        if self.expanded:
-            n = min(len(self.options), self._max_visible)
-            list_h = n * self._option_height
-            self._measured_h = header_h + 2 + list_h  # 2px gap
-        else:
-            self._measured_h = header_h
-        return (available_w, self._measured_h)
+        self._measured_h = T.BTN_HEIGHT  # always just the header
+        return (available_w, T.BTN_HEIGHT)
 
     def draw(self, clip=None):
         if not self.visible:
             return
-        # Header button
         bg = T.BTN_HOVER if self.expanded else T.BTN_BG
         border = T.TAB_ACTIVE_BORDER if self.expanded else T.SECTION_BORDER
-        header_y = self.y + self.height - T.BTN_HEIGHT
-        dp.draw_rounded_rect(self.x, header_y, self.width, T.BTN_HEIGHT,
+        dp.draw_rounded_rect(self.x, self.y, self.width, self.height,
                              T.CORNER_RADIUS, bg)
-        dp.draw_border(self.x, header_y, self.width, T.BTN_HEIGHT, border)
+        dp.draw_border(self.x, self.y, self.width, self.height, border)
 
         display = self.selected if self.selected else self.placeholder
         arrow = self._ARROW_UP if self.expanded else self._ARROW_DOWN
         color = T.TEXT_PRIMARY if self.selected else T.TEXT_LABEL
         dp.draw_text(display + arrow,
-                     self.x + 8, header_y + (T.BTN_HEIGHT - T.FONT_SIZE) / 2,
+                     self.x + 8, self.y + (self.height - T.FONT_SIZE) / 2,
                      T.FONT_SIZE, color)
 
-        # Option list
-        if self.expanded and self.options:
-            list_top = header_y - 2
-            n = min(len(self.options), self._max_visible)
-            list_h = n * self._option_height
+    def draw_popup(self):
+        """Draw the expanded option list as an overlay.  Called by panel operator."""
+        if not self.options:
+            return
+        n = min(len(self.options), self._max_visible)
+        list_h = n * self._option_height
+        list_top = self.y - 2  # just below the header button
 
-            # Clip to list area
-            gpu.state.scissor_test_set(True)
-            gpu.state.scissor_set(int(self.x), int(list_top - list_h),
-                                  int(self.width), int(list_h))
+        # Background
+        dp.draw_rounded_rect(self.x, list_top - list_h, self.width, list_h,
+                             T.CORNER_RADIUS, (0.12, 0.12, 0.12, 1.0))
+        dp.draw_border(self.x, list_top - list_h, self.width, list_h,
+                       T.TAB_ACTIVE_BORDER)
 
-            start = self._scroll_offset
-            end = min(start + n, len(self.options))
-            for i in range(start, end):
-                row_i = i - start
-                oy = list_top - (row_i + 1) * self._option_height
-                is_selected = (self.options[i] == self.selected)
-                row_bg = T.BTN_HOVER if is_selected else (0.14, 0.14, 0.14, 1.0)
-                dp.draw_quad(self.x, oy, self.x + self.width,
-                             oy + self._option_height, row_bg)
-                text_color = T.TEXT_PRIMARY if is_selected else T.TEXT_SECONDARY
-                dp.draw_text(self.options[i],
-                             self.x + 8,
-                             oy + (self._option_height - T.FONT_SIZE) / 2,
-                             T.FONT_SIZE, text_color)
+        # Clip to list area
+        gpu.state.scissor_test_set(True)
+        gpu.state.scissor_set(int(self.x), int(list_top - list_h),
+                              int(self.width), int(list_h))
 
-            gpu.state.scissor_test_set(False)
+        start = self._scroll_offset
+        end = min(start + n, len(self.options))
+        for i in range(start, end):
+            row_i = i - start
+            oy = list_top - (row_i + 1) * self._option_height
+            is_selected = (self.options[i] == self.selected)
+            row_bg = T.BTN_HOVER if is_selected else (0.12, 0.12, 0.12, 1.0)
+            dp.draw_quad(self.x, oy, self.x + self.width,
+                         oy + self._option_height, row_bg)
+            text_color = T.TEXT_PRIMARY if is_selected else T.TEXT_SECONDARY
+            dp.draw_text(self.options[i],
+                         self.x + 8,
+                         oy + (self._option_height - T.FONT_SIZE) / 2,
+                         T.FONT_SIZE, text_color)
 
-            # Scroll indicator
-            if len(self.options) > self._max_visible:
-                sb_x = self.x + self.width - 4
-                frac = n / max(len(self.options), 1)
-                thumb_h = max(8, list_h * frac)
-                scroll_frac = self._scroll_offset / max(
-                    len(self.options) - n, 1)
-                thumb_y = (list_top - list_h) + (list_h - thumb_h) * (
-                    1 - scroll_frac)
-                dp.draw_quad(sb_x, thumb_y, sb_x + 3, thumb_y + thumb_h,
-                             T.SCROLLBAR_THUMB)
+        gpu.state.scissor_test_set(False)
+
+        # Scroll indicator
+        if len(self.options) > self._max_visible:
+            sb_x = self.x + self.width - 4
+            frac = n / max(len(self.options), 1)
+            thumb_h = max(8, list_h * frac)
+            scroll_frac = self._scroll_offset / max(
+                len(self.options) - n, 1)
+            thumb_y = (list_top - list_h) + (list_h - thumb_h) * (
+                1 - scroll_frac)
+            dp.draw_quad(sb_x, thumb_y, sb_x + 3, thumb_y + thumb_h,
+                         T.SCROLLBAR_THUMB)
+
+    def popup_rect(self):
+        """Return (x, y, w, h) of the popup list area (y = bottom edge)."""
+        n = min(len(self.options), self._max_visible)
+        list_h = n * self._option_height
+        list_top = self.y - 2
+        return (self.x, list_top - list_h, self.width, list_h)
 
     def on_click(self, mx, my):
-        header_y = self.y + self.height - T.BTN_HEIGHT
-        if my >= header_y:
-            # Clicked header — toggle expanded
-            self.expanded = not self.expanded
+        from . import panel_state as _ps
+        if self.expanded:
+            _ps.active_dropdown = None
+        else:
+            _ps.active_dropdown = self
             self._scroll_offset = 0
-            return None
-
-        if self.expanded and self.options:
-            # Clicked in option list
-            list_top = header_y - 2
-            row = int((list_top - my) / self._option_height)
-            idx = self._scroll_offset + row
-            if 0 <= idx < len(self.options):
-                self.selected = self.options[idx]
-                self.expanded = False
-                return self.action_id
         return None
 
-    def on_scroll(self, delta):
-        """Handle scroll within expanded dropdown."""
-        if not self.expanded:
-            return
+    def popup_click(self, mx, my):
+        """Handle a click inside the popup.  Returns action_id on selection."""
+        list_top = self.y - 2
+        row = int((list_top - my) / self._option_height)
+        idx = self._scroll_offset + row
+        if 0 <= idx < len(self.options):
+            self.selected = self.options[idx]
+            from . import panel_state as _ps
+            _ps.active_dropdown = None
+            return self.action_id
+        return None
+
+    def popup_scroll(self, delta):
+        """Handle scroll within the popup."""
         n = min(len(self.options), self._max_visible)
         max_offset = max(0, len(self.options) - n)
         self._scroll_offset = max(0, min(
             self._scroll_offset - delta, max_offset))
-
-    def hit_test(self, mx, my):
-        if not self.visible:
-            return None
-        if not (self.x <= mx <= self.x + self.width
-                and self.y <= my <= self.y + self.height):
-            return None
-        return self
 
 
 # ---------------------------------------------------------------------------

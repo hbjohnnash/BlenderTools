@@ -19,6 +19,9 @@ active_tabs = {}             # {tab_bar_id: int}
 collapsed_sections = set()   # section keys that are collapsed (default: expanded)
 hidden_sections = set()      # subsystem names hidden via Controls icon toggles
 
+# Dropdown overlay state — when a Dropdown is expanded, its popup renders here
+active_dropdown = None  # Dropdown widget reference (or None)
+
 # Rebuild flag — set True when Blender state changes require content rebuild
 dirty = True
 
@@ -31,7 +34,7 @@ def reset():
     global visible, position, hover_widget, prev_hover_widget
     global focus_widget, dragging_panel, drag_offset, dragging_slider
     global expanded_gears, active_tabs, collapsed_sections, hidden_sections
-    global dirty, invoke_area
+    global active_dropdown, dirty, invoke_area
 
     visible = False
     position = None
@@ -45,6 +48,7 @@ def reset():
     active_tabs = {}
     collapsed_sections = set()
     hidden_sections = set()
+    active_dropdown = None
     dirty = True
     invoke_area = None
 

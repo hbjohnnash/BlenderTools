@@ -11,7 +11,7 @@ from . import draw_primitives as dp
 from . import layout as lay
 from . import panel_state as state
 from . import theme as T
-from .widgets import Dropdown, ScrollView, Slider, TextField
+from .widgets import ScrollView, Slider, TextField
 
 # ---------------------------------------------------------------------------
 # Module-level handles
@@ -165,6 +165,10 @@ def _draw_callback(context):
 
     # Draw widget tree
     _widget_tree.draw()
+
+    # Dropdown popup overlay (on top of everything)
+    if state.active_dropdown is not None:
+        state.active_dropdown.draw_popup()
 
     # Tooltip
     hw = state.hover_widget
@@ -525,13 +529,10 @@ def _find_scroll_view(widget):
 
 
 def _find_scroll_at(mx, my, widget):
-    """Find a scrollable widget (ScrollView or expanded Dropdown) under cursor."""
+    """Find the ScrollView (if any) under the given coordinates."""
     if not widget.visible:
         return None
     if isinstance(widget, ScrollView):
-        if _is_in_rect(mx, my, widget.x, widget.y, widget.width, widget.height):
-            return widget
-    if isinstance(widget, Dropdown) and widget.expanded:
         if _is_in_rect(mx, my, widget.x, widget.y, widget.width, widget.height):
             return widget
     if hasattr(widget, 'children'):
@@ -671,6 +672,33 @@ class BT_OT_ViewportPanel(bpy.types.Operator):
             state.dragging_panel = True
             state.drag_offset = (mx - tx, my - ty)
             return {'RUNNING_MODAL'}
+
+        # --- Dropdown popup overlay (intercepts before other widgets) ---
+        dd = state.active_dropdown
+        if dd is not None:
+            px, py, pw, ph = dd.popup_rect()
+            in_popup = _is_in_rect(mx, my, px, py, pw, ph)
+
+            if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+                if in_popup:
+                    action = dd.popup_click(mx, my)
+                    _handle_action(action, context, widget=dd)
+                    context.area.tag_redraw()
+                    return {'RUNNING_MODAL'}
+                # Click outside popup — close it (fall through to normal click)
+                state.active_dropdown = None
+                state.dirty = True
+                context.area.tag_redraw()
+
+            if event.type in ('WHEELUPMOUSE', 'WHEELDOWNMOUSE') and in_popup:
+                delta = 1 if event.type == 'WHEELUPMOUSE' else -1
+                dd.popup_scroll(delta)
+                context.area.tag_redraw()
+                return {'RUNNING_MODAL'}
+
+            if event.type in ('MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'):
+                context.area.tag_redraw()
+                return {'RUNNING_MODAL'}
 
         # --- MOUSEMOVE: hover ---
         if event.type in ('MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'):
