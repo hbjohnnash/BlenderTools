@@ -55,67 +55,69 @@ def _apply_transform(pbone, transform):
 # Character-space mirror for center bones
 # ---------------------------------------------------------------------------
 
-def _get_bone_rest_quat(armature_obj, bone_name):
-    """Get the rest-pose rotation quaternion of a bone in armature space."""
+def _find_bone_local_lateral(armature_obj, bone_name, world_lateral_axis):
+    """Find which bone-local axis (0=X,1=Y,2=Z) maps to the world lateral axis.
+
+    Returns (local_axis_index, sign) where sign is +1 or -1 indicating
+    whether the bone-local axis points in the same or opposite direction
+    as the world lateral axis.
+    """
     bone = armature_obj.data.bones.get(bone_name)
     if not bone:
-        return Quaternion()
-    return bone.matrix_local.to_quaternion()
+        return world_lateral_axis, 1
+
+    # bone.matrix_local columns give where each bone-local axis ends up
+    # in armature space.  Find which column best aligns with world lateral.
+    best_axis = 0
+    best_dot = 0.0
+    for i in range(3):
+        # Column i of the 3x3 rotation = image of bone-local axis i
+        col = [bone.matrix_local[r][i] for r in range(3)]
+        dot = col[world_lateral_axis]  # project onto world lateral
+        if abs(dot) > abs(best_dot):
+            best_dot = dot
+            best_axis = i
+
+    sign = 1 if best_dot > 0 else -1
+    return best_axis, sign
 
 
 def _mirror_center_transform(armature_obj, bone_name, transform, axis):
-    """Mirror a center bone's transform in character/world space.
+    """Mirror a center bone by finding its bone-local lateral axis.
 
-    Converts the bone's local rotation and location to world space
-    (via rest-pose rotation), mirrors across the sagittal plane
-    (perpendicular to the lateral axis), then converts back to
-    bone-local space.  This correctly handles any bone roll.
+    Instead of converting to world space (which breaks with large
+    rest-pose rotations), we find which bone-local axis corresponds
+    to the world lateral axis and mirror directly in bone-local space.
 
-    Location: only the lateral component (in world space) is negated.
-    Rotation: yaw and roll are negated, pitch is preserved.
+    Location: negate the bone-local lateral component.
+    Rotation: negate quaternion components perpendicular to bone-local lateral.
     Scale: unchanged.
     """
-    rest_q = _get_bone_rest_quat(armature_obj, bone_name)
-    rest_q_inv = rest_q.inverted()
+    local_lat, sign = _find_bone_local_lateral(armature_obj, bone_name, axis)
 
-    # The two world axes perpendicular to the lateral axis
-    perp = [i for i in range(3) if i != axis]
-
-    # --- Mirror rotation ---
-    local_q = Quaternion(transform['rotation_quaternion'])
-    # Convert to world space
-    world_q = rest_q @ local_q
-    # Mirror in world space: negate the perpendicular quaternion components
-    wq = [world_q.w, world_q.x, world_q.y, world_q.z]
-    for p in perp:
-        wq[p + 1] = -wq[p + 1]
-    mirrored_world_q = Quaternion(wq)
-    # Convert back to bone-local
-    mirrored_local_q = rest_q_inv @ mirrored_world_q
+    # Perpendicular axes in bone-local space
+    perp = [i for i in range(3) if i != local_lat]
 
     # --- Mirror location ---
-    local_loc = list(transform['location'])
-    # Convert to world space via rest-pose rotation matrix
-    rest_mat = rest_q.to_matrix()
-    rest_mat_inv = rest_mat.inverted()
-    from mathutils import Vector
-    world_loc = rest_mat @ Vector(local_loc)
-    # Negate only the lateral component
-    world_loc[axis] = -world_loc[axis]
-    # Convert back to bone-local
-    mirrored_loc = rest_mat_inv @ world_loc
+    loc = list(transform['location'])
+    loc[local_lat] = -loc[local_lat]
 
-    # --- Mirror euler (convert via quaternion for correctness) ---
-    if transform['rotation_mode'] not in ('QUATERNION', 'AXIS_ANGLE'):
-        mirrored_euler = mirrored_local_q.to_euler(transform['rotation_mode'])
-    else:
-        mirrored_euler = transform['rotation_euler']
+    # --- Mirror rotation (quaternion) ---
+    quat = list(transform['rotation_quaternion'])
+    # Negate components perpendicular to the bone-local lateral axis
+    for p in perp:
+        quat[p + 1] = -quat[p + 1]
+
+    # --- Mirror euler ---
+    euler = list(transform['rotation_euler'])
+    for p in perp:
+        euler[p] = -euler[p]
 
     return {
-        'location': tuple(mirrored_loc),
+        'location': tuple(loc),
         'rotation_mode': transform['rotation_mode'],
-        'rotation_quaternion': tuple(mirrored_local_q),
-        'rotation_euler': tuple(mirrored_euler),
+        'rotation_quaternion': tuple(quat),
+        'rotation_euler': tuple(euler),
         'scale': transform['scale'],
     }
 
