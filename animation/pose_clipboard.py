@@ -247,7 +247,8 @@ class BT_OT_PastePose(bpy.types.Operator):
                 _apply_transform(pbone, transform)
                 applied += 1
 
-        context.view_layer.update()
+        if context.area:
+            context.area.tag_redraw()
         self.report({'INFO'}, f"Pasted {applied} bones")
         return {'FINISHED'}
 
@@ -316,7 +317,8 @@ class BT_OT_PasteFlipped(bpy.types.Operator):
                     applied += 1
                 processed.add(bone_name)
 
-        context.view_layer.update()
+        if context.area:
+            context.area.tag_redraw()
         self.report({'INFO'}, f"Pasted flipped {applied} bones")
         return {'FINISHED'}
 
