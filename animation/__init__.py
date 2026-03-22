@@ -1,6 +1,14 @@
 """Animation generators subsystem."""
 
-from . import onion_skin, operators, panels, root_motion, smart_keyframe, trajectory
+from . import (
+    onion_skin,
+    operators,
+    panels,
+    pose_clipboard,
+    root_motion,
+    smart_keyframe,
+    trajectory,
+)
 
 
 def register():
@@ -10,9 +18,11 @@ def register():
     trajectory.register()
     onion_skin.register()
     smart_keyframe.register()
+    pose_clipboard.register()
 
 
 def unregister():
+    pose_clipboard.unregister()
     smart_keyframe.unregister()
     onion_skin.unregister()
     trajectory.unregister()

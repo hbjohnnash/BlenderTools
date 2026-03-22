@@ -1393,3 +1393,62 @@ class TestBuildGhostCacheSelectedOnly:
 
         assert frames_before == [10, 15], "Capped to nearest 2 before"
         assert frames_after == [25, 30], "Capped to nearest 2 after"
+
+
+# ===========================================================================
+# Test: Onion skin — _get_selected_key_hash tracks selection changes
+# ===========================================================================
+
+class TestGetSelectedKeyHash:
+    """Tests for _get_selected_key_hash selection change detection."""
+
+    def test_hash_changes_when_selection_changes(self):
+        """Hash should differ when different keyframes are selected."""
+        from animation.onion_skin import _get_selected_key_hash
+
+        fcurves = [
+            _make_fcurve('pose.bones["Spine"].rotation_euler', [
+                _make_keyframe_point(1, selected=True),
+                _make_keyframe_point(10, selected=False),
+                _make_keyframe_point(20, selected=True),
+            ]),
+        ]
+        armature = _make_armature_with_action(_make_action_with_keyframes(fcurves))
+        hash_a = _get_selected_key_hash(armature)
+
+        # Change selection: deselect frame 1, select frame 10
+        fcurves[0].keyframe_points[0].select_control_point = False
+        fcurves[0].keyframe_points[1].select_control_point = True
+        hash_b = _get_selected_key_hash(armature)
+
+        assert hash_a != hash_b
+
+    def test_hash_stable_for_same_selection(self):
+        """Hash should be identical for the same selection state."""
+        from animation.onion_skin import _get_selected_key_hash
+
+        fcurves = [
+            _make_fcurve('pose.bones["Leg"].location', [
+                _make_keyframe_point(5, selected=True),
+                _make_keyframe_point(15, selected=False),
+            ]),
+        ]
+        armature = _make_armature_with_action(_make_action_with_keyframes(fcurves))
+
+        assert _get_selected_key_hash(armature) == _get_selected_key_hash(armature)
+
+    def test_hash_empty_selection(self):
+        """Hash should be consistent for empty selection."""
+        from animation.onion_skin import _get_selected_key_hash
+
+        fcurves = [
+            _make_fcurve('pose.bones["Arm"].rotation_euler', [
+                _make_keyframe_point(1, selected=False),
+                _make_keyframe_point(10, selected=False),
+            ]),
+        ]
+        armature = _make_armature_with_action(_make_action_with_keyframes(fcurves))
+        hash_empty = _get_selected_key_hash(armature)
+
+        # Same hash for same empty state
+        assert hash_empty == _get_selected_key_hash(armature)

@@ -22,6 +22,7 @@ _ghost_batches = {}   # {frame: [batch, ...]}
 _ghost_colors = {}    # {frame: (r, g, b, a)}
 _last_frame = -1
 _last_armature = ""
+_last_selected_hash = None  # hash of selected keyframe set (selected-only mode)
 
 # Proxy LOD state
 _proxy_objects = []
@@ -95,6 +96,12 @@ def _get_action_keyframes(armature_obj, selected_only=False):
                             continue
                         frames.add(int(kp.co.x))
     return sorted(frames)
+
+
+def _get_selected_key_hash(armature_obj):
+    """Return a hash of the currently selected keyframe frame numbers."""
+    frames = _get_action_keyframes(armature_obj, selected_only=True)
+    return hash(tuple(frames))
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +216,7 @@ def _destroy_proxy_meshes():
 
 def _build_ghost_cache(context, armature_obj):
     """Evaluate child meshes at ghost frames and create GPU batches."""
-    global _ghost_batches, _ghost_colors, _last_frame, _last_armature
+    global _ghost_batches, _ghost_colors, _last_frame, _last_armature, _last_selected_hash
 
     scene = context.scene
     current = scene.frame_current
@@ -313,13 +320,21 @@ def _build_ghost_cache(context, armature_obj):
 
     scene.frame_set(original_frame)
 
+    # Update selection hash so we don't rebuild until selection changes again
+    settings = _get_settings(context)
+    if settings['selected_keys'] and settings['use_keyframes']:
+        _last_selected_hash = _get_selected_key_hash(armature_obj)
+    else:
+        _last_selected_hash = None
+
 
 def _clear_cache():
-    global _ghost_batches, _ghost_colors, _last_frame, _last_armature
+    global _ghost_batches, _ghost_colors, _last_frame, _last_armature, _last_selected_hash
     _ghost_batches = {}
     _ghost_colors = {}
     _last_frame = -1
     _last_armature = ""
+    _last_selected_hash = None
 
 
 # ---------------------------------------------------------------------------
@@ -327,17 +342,30 @@ def _clear_cache():
 # ---------------------------------------------------------------------------
 
 def _draw_callback(context):
-    if not _active or not _ghost_batches:
+    if not _active:
         return
 
     obj = context.active_object
     if not obj or obj.type != 'ARMATURE' or context.mode != 'POSE':
         return
 
-    # Rebuild cache on frame change
-    if (context.scene.frame_current != _last_frame
-            or obj.name != _last_armature):
+    # Rebuild cache on frame change or armature switch
+    needs_rebuild = (context.scene.frame_current != _last_frame
+                     or obj.name != _last_armature)
+
+    # In selected-only mode, also rebuild when keyframe selection changes
+    if not needs_rebuild:
+        settings = _get_settings(context)
+        if settings['selected_keys'] and settings['use_keyframes']:
+            current_hash = _get_selected_key_hash(obj)
+            if current_hash != _last_selected_hash:
+                needs_rebuild = True
+
+    if needs_rebuild:
         _build_ghost_cache(context, obj)
+
+    if not _ghost_batches:
+        return
 
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
     gpu.state.blend_set('ALPHA')
