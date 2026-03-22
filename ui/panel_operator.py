@@ -11,7 +11,7 @@ from . import draw_primitives as dp
 from . import layout as lay
 from . import panel_state as state
 from . import theme as T
-from .widgets import ScrollView, Slider, TextField
+from .widgets import Dropdown, ScrollView, Slider, TextField
 
 # ---------------------------------------------------------------------------
 # Module-level handles
@@ -438,9 +438,9 @@ def _handle_action(action_id, context, widget=None):
         state.dirty = True
         return
 
-    # Slider / toggle / text field property writes
+    # Slider / toggle / text field / dropdown property writes
     if (action_id.startswith("slider_") or action_id.startswith("rm_extract_")
-            or action_id.startswith("tf_")):
+            or action_id.startswith("tf_") or action_id.startswith("dd_")):
         _write_widget_property(action_id, context, widget)
         state.dirty = True
         return
@@ -460,6 +460,8 @@ def _write_widget_property(action_id, context, widget):
         val = widget.value
     elif hasattr(widget, 'on'):
         val = widget.on
+    elif hasattr(widget, 'selected'):
+        val = widget.selected
     elif hasattr(widget, 'text'):
         val = widget.text
     else:
@@ -477,7 +479,7 @@ def _write_widget_property(action_id, context, widget):
         "slider_onion_after": (scene, 'bt_onion_after', int),
         "slider_onion_opacity": (scene, 'bt_onion_opacity', float),
         "slider_onion_detail": (scene, 'bt_onion_proxy_ratio', float),
-        "tf_flip_center_bone": (scene, 'bt_flip_center_bone', str),
+        "dd_flip_center_bone": (scene, 'bt_flip_center_bone', str),
     }
 
     # Root motion toggles (dynamic — need armature with bt_root_motion)
@@ -523,10 +525,13 @@ def _find_scroll_view(widget):
 
 
 def _find_scroll_at(mx, my, widget):
-    """Find the ScrollView (if any) under the given coordinates."""
+    """Find a scrollable widget (ScrollView or expanded Dropdown) under cursor."""
     if not widget.visible:
         return None
     if isinstance(widget, ScrollView):
+        if _is_in_rect(mx, my, widget.x, widget.y, widget.width, widget.height):
+            return widget
+    if isinstance(widget, Dropdown) and widget.expanded:
         if _is_in_rect(mx, my, widget.x, widget.y, widget.width, widget.height):
             return widget
     if hasattr(widget, 'children'):

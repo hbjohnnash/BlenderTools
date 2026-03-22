@@ -1,8 +1,18 @@
 """Animation area content builder."""
 
+from ...core.utils import mirror_name
 from .. import theme as T
 from ..widget_base import HStack, VStack
-from ..widgets import Button, Label, SubsectionTitle, TextField, Toggle
+from ..widgets import Button, Dropdown, Label, SubsectionTitle, Toggle
+
+
+def _get_center_bone_options(armature_obj):
+    """Return bone names that are center (non-L/R) candidates for flip pivot."""
+    options = []
+    for bone in armature_obj.data.bones:
+        if mirror_name(bone.name) == bone.name:
+            options.append(bone.name)
+    return options
 
 
 def build_animation(context):
@@ -18,6 +28,7 @@ def build_animation(context):
         sd = getattr(obj, 'bt_scan', None)
         if sd and sd.has_wrap_rig:
             center_bone = getattr(context.scene, 'bt_flip_center_bone', '')
+            bone_options = _get_center_bone_options(obj)
             children.append(SubsectionTitle("Pose Clipboard", "pose_clipboard", [
                 VStack([
                     Button("Copy Pose", action_id="copy_pose"),
@@ -28,8 +39,9 @@ def build_animation(context):
                     ], gap=4, padding=(0, 0, 0, 0)),
                     Label("Center Bone:",
                           size=T.FONT_SIZE_SMALL, color=T.TEXT_LABEL),
-                    TextField(text=center_bone, placeholder="e.g. root or hips",
-                              action_id="tf_flip_center_bone"),
+                    Dropdown(selected=center_bone, options=bone_options,
+                             placeholder="Select center bone...",
+                             action_id="dd_flip_center_bone"),
                 ], gap=T.ITEM_GAP, padding=(0, 0, 0, 0)),
             ]))
 
