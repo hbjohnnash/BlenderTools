@@ -10,7 +10,8 @@ PANEL_HEADER_BG = (0.20, 0.20, 0.20, 1.0)
 PANEL_TITLE_COLOR = (0.87, 0.87, 0.87, 1.0)
 PANEL_WIDTH = 300
 PANEL_CORNER_RADIUS = 6
-PANEL_MARGIN = 20  # distance from viewport edge
+PANEL_MARGIN = 20       # distance from viewport edge (bottom / sides)
+PANEL_MARGIN_TOP = 150  # distance from top edge (clears Blender toolbar)
 
 # ---------------------------------------------------------------------------
 # Buttons
@@ -120,3 +121,11 @@ SUBSECTION_INDENT = 10  # extra left-padding for content under subsection
 CLOSE_BTN_SIZE = 20
 CLOSE_BTN_COLOR = (0.60, 0.60, 0.60, 1.0)
 CLOSE_BTN_HOVER = (0.90, 0.40, 0.40, 1.0)
+
+# ---------------------------------------------------------------------------
+# Pin (dock/undock) button
+# ---------------------------------------------------------------------------
+PIN_BTN_SIZE = 20
+PIN_COLOR = (0.55, 0.55, 0.55, 1.0)
+PIN_HOVER = (0.80, 0.80, 0.80, 1.0)
+PIN_ACTIVE = (0.29, 0.44, 0.65, 1.0)  # when docked/pinned

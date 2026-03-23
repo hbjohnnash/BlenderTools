@@ -81,13 +81,18 @@ def _rebuild_if_needed(context):
     """Rebuild the widget tree when state is dirty."""
     global _widget_tree
     if state.dirty or _widget_tree is None:
+        # Preserve scroll offset across rebuilds
+        prev_scroll = _widget_tree.scroll_offset if _widget_tree is not None else 0.0
         _widget_tree = _build_content(context)
+        _widget_tree.scroll_offset = prev_scroll
         state.dirty = False
-        _relayout(context)
 
 
 def _relayout(context):
-    """Measure and position the widget tree."""
+    """Measure and position the widget tree.
+
+    Called every frame to keep the panel responsive to viewport resizing.
+    """
     if _widget_tree is None:
         return
     region = context.region
@@ -95,15 +100,15 @@ def _relayout(context):
     title_h = 28
 
     # Set ScrollView max_height to available viewport space
-    max_content_h = region.height - T.PANEL_MARGIN * 2 - title_h
+    max_content_h = region.height - T.PANEL_MARGIN_TOP - T.PANEL_MARGIN - title_h
     _widget_tree.max_height = max(100, max_content_h)
 
     # Measure (ScrollView clamps internally via max_height)
     _, content_h = lay.measure_tree(_widget_tree, panel_w)
     total_h = content_h + title_h
 
-    # Get panel position
-    px, top_y = state.get_panel_rect(region)
+    # Get panel position (centered when docked, clamped when floating)
+    px, top_y = state.get_panel_rect(region, total_h)
     panel_y = top_y - total_h
 
     # Position content below title bar
@@ -128,6 +133,7 @@ def _draw_callback(context):
         return
 
     _rebuild_if_needed(context)
+    _relayout(context)
 
     if _widget_tree is None:
         return
@@ -163,6 +169,9 @@ def _draw_callback(context):
     dp.draw_line(cx - s, cy - s, cx + s, cy + s, close_color, 2.0)
     dp.draw_line(cx - s, cy + s, cx + s, cy - s, close_color, 2.0)
 
+    # Pin (dock/undock) button — left of close button
+    _draw_pin_icon(tx, ty, tw, th)
+
     # Draw widget tree
     _widget_tree.draw()
 
@@ -176,6 +185,57 @@ def _draw_callback(context):
         _draw_tooltip(hw.tooltip, state._mouse_x, state._mouse_y)
 
     dp.restore_gpu_state()
+
+
+# ---------------------------------------------------------------------------
+# Pin icon
+# ---------------------------------------------------------------------------
+
+def _get_pin_rect(tx, ty, tw, th):
+    """Return (x, y, w, h) for the pin button clickable area."""
+    pin_x = tx + tw - T.CLOSE_BTN_SIZE - 4 - T.PIN_BTN_SIZE - 4
+    pin_y = ty + (th - T.PIN_BTN_SIZE) / 2
+    return pin_x, pin_y, T.PIN_BTN_SIZE, T.PIN_BTN_SIZE
+
+
+def _draw_pin_icon(tx, ty, tw, th):
+    """Draw a pin/unpin icon in the title bar, left of the close button."""
+    pin_x, pin_y, pin_w, pin_h = _get_pin_rect(tx, ty, tw, th)
+    pin_hovered = _is_in_rect(
+        state._mouse_x, state._mouse_y, pin_x, pin_y, pin_w, pin_h
+    ) if hasattr(state, '_mouse_x') else False
+
+    # Color: active (blue) when docked, grey otherwise, highlight on hover
+    if state.docked:
+        color = T.PIN_ACTIVE
+    elif pin_hovered:
+        color = T.PIN_HOVER
+    else:
+        color = T.PIN_COLOR
+
+    pcx = pin_x + pin_w / 2
+    pcy = pin_y + pin_h / 2
+
+    # Draw pushpin shape:
+    #   - circle head (filled when docked, outline when floating)
+    #   - short line below (the pin needle)
+    head_r = 4
+    if state.docked:
+        dp.draw_filled_circle(pcx, pcy + 2, head_r, color)
+    else:
+        # Draw circle outline using small line segments
+        import math
+        segs = 16
+        for i in range(segs):
+            a1 = 2 * math.pi * i / segs
+            a2 = 2 * math.pi * (i + 1) / segs
+            dp.draw_line(
+                pcx + head_r * math.cos(a1), pcy + 2 + head_r * math.sin(a1),
+                pcx + head_r * math.cos(a2), pcy + 2 + head_r * math.sin(a2),
+                color, 1.5,
+            )
+    # Needle
+    dp.draw_line(pcx, pcy + 2 - head_r, pcx, pcy - 5, color, 1.5)
 
 
 # ---------------------------------------------------------------------------
@@ -563,7 +623,8 @@ class BT_OT_ViewportPanel(bpy.types.Operator):
         state.visible = True
         state.dirty = True
         state.invoke_area = context.area
-        state.position = None  # reset to auto-anchor
+        state.docked = True  # always start docked to right-center
+        state.position = None
         state._mouse_x = event.mouse_region_x
         state._mouse_y = event.mouse_region_y
 
@@ -599,7 +660,6 @@ class BT_OT_ViewportPanel(bpy.types.Operator):
             if event.type == 'MOUSEMOVE':
                 dx, dy = state.drag_offset
                 state.position = (mx - dx, my - dy + state._title_rect[3])
-                state.dirty = True
                 context.area.tag_redraw()
                 return {'RUNNING_MODAL'}
             if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
@@ -617,6 +677,23 @@ class BT_OT_ViewportPanel(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
             if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
                 state.dragging_slider = None
+                return {'RUNNING_MODAL'}
+            return {'RUNNING_MODAL'}
+
+        # --- Scrollbar dragging ---
+        if state.dragging_scrollbar:
+            sv = state.dragging_scrollbar
+            if event.type == 'MOUSEMOVE':
+                # Map mouse y to scroll offset (inverted: top = 0, bottom = max)
+                max_scroll = max(0, sv.content_height - sv.height)
+                frac = 1.0 - (my - sv.y) / max(sv.height, 1)
+                frac = max(0.0, min(1.0, frac))
+                sv.scroll_offset = frac * max_scroll
+                sv.layout(sv.x, sv.y, sv.width, sv.height)
+                context.area.tag_redraw()
+                return {'RUNNING_MODAL'}
+            if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
+                state.dragging_scrollbar = None
                 return {'RUNNING_MODAL'}
             return {'RUNNING_MODAL'}
 
@@ -668,7 +745,21 @@ class BT_OT_ViewportPanel(bpy.types.Operator):
                            T.CLOSE_BTN_SIZE, T.CLOSE_BTN_SIZE):
                 self._cleanup(context)
                 return {'FINISHED'}
-            # Start dragging
+            # Check pin button
+            pin_rect = _get_pin_rect(tx, ty, tw, th)
+            if _is_in_rect(mx, my, *pin_rect):
+                state.docked = not state.docked
+                if state.docked:
+                    state.position = None  # will recalculate to center
+                else:
+                    # Store current position so panel stays put
+                    state.position = (px, py + ph)
+                context.area.tag_redraw()
+                return {'RUNNING_MODAL'}
+            # Start dragging — auto-undock
+            if state.docked:
+                state.docked = False
+                state.position = (px, py + ph)  # store current top-left
             state.dragging_panel = True
             state.drag_offset = (mx - tx, my - ty)
             return {'RUNNING_MODAL'}
@@ -716,6 +807,22 @@ class BT_OT_ViewportPanel(bpy.types.Operator):
 
         # --- LEFTMOUSE: click ---
         if event.type == 'LEFTMOUSE' and event.value == 'PRESS' and in_panel:
+            # Check scrollbar click first
+            if _widget_tree:
+                sv = _find_scroll_at(mx, my, _widget_tree)
+                if sv and sv.content_height > sv.height:
+                    sb_x = sv.x + sv.width - T.SCROLLBAR_WIDTH
+                    if mx >= sb_x:
+                        state.dragging_scrollbar = sv
+                        # Jump scroll to click position
+                        max_scroll = max(0, sv.content_height - sv.height)
+                        frac = 1.0 - (my - sv.y) / max(sv.height, 1)
+                        frac = max(0.0, min(1.0, frac))
+                        sv.scroll_offset = frac * max_scroll
+                        sv.layout(sv.x, sv.y, sv.width, sv.height)
+                        context.area.tag_redraw()
+                        return {'RUNNING_MODAL'}
+
             if _widget_tree:
                 hit = _widget_tree.hit_test(mx, my)
                 if hit:
@@ -766,6 +873,7 @@ class BT_OT_ViewportPanel(bpy.types.Operator):
         state.focus_widget = None
         state.dragging_panel = False
         state.dragging_slider = None
+        state.dragging_scrollbar = None
         if _draw_handle:
             bpy.types.SpaceView3D.draw_handler_remove(_draw_handle, 'WINDOW')
             _draw_handle = None
