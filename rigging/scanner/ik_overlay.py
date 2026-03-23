@@ -14,6 +14,25 @@ import gpu
 from gpu_extras.batch import batch_for_shader
 
 from ...core.constants import WRAP_CONSTRAINT_PREFIX, WRAP_MCH_PREFIX
+from .wrap_assembly import IK_SWITCH_PROP_PREFIX
+
+
+def _read_ik_influence_legacy(obj, chain):
+    """Fallback for old rigs: read IK state from constraint influences."""
+    sd = obj.bt_scan
+    chain_bones = [b for b in sd.bones
+                   if b.chain_id == chain.chain_id and not b.skip]
+    for bone_item in chain_bones:
+        mch_name = f"{WRAP_MCH_PREFIX}{chain.chain_id}_{bone_item.role}"
+        mch_pb = obj.pose.bones.get(mch_name)
+        if not mch_pb:
+            continue
+        for con in mch_pb.constraints:
+            if (con.type in ('IK', 'SPLINE_IK', 'DAMPED_TRACK')
+                    and con.name.startswith(WRAP_CONSTRAINT_PREFIX)):
+                return con.influence
+    return None
+
 
 # ---------------------------------------------------------------------------
 # State
@@ -114,6 +133,8 @@ def _draw_quad(shader, x1, y1, x2, y2, color):
 
 def _draw_ik_overlay_callback(context):
     """GPU draw callback for the IK switch bar."""
+    global _active, _draw_handle
+
     if not _active:
         return
 
@@ -121,7 +142,18 @@ def _draw_ik_overlay_callback(context):
     if not obj or obj.type != 'ARMATURE' or obj.mode != 'POSE':
         return
 
-    sd = obj.bt_scan
+    # Access bt_scan inside try/except — if the addon was uninstalled,
+    # the PropertyGroup registration is gone and this raises AttributeError.
+    # Clean up the orphaned draw handler so the overlay disappears.
+    try:
+        sd = obj.bt_scan
+    except AttributeError:
+        if _draw_handle:
+            bpy.types.SpaceView3D.draw_handler_remove(_draw_handle, 'WINDOW')
+            _draw_handle = None
+        _active = False
+        return
+
     if not sd.has_wrap_rig:
         return
 
@@ -276,7 +308,12 @@ class BT_OT_IKOverlay(bpy.types.Operator):
 
 @bpy.app.handlers.persistent
 def _sync_ik_state_on_frame(_scene, _depsgraph=None):
-    """Sync chain ik_active from keyframed constraint influences each frame."""
+    """Sync chain ik_active from the ik_switch custom property each frame.
+
+    Reads the custom property (set by toggle operator, keyed by smart_keyframe)
+    instead of scanning individual constraint influences. Drivers on the
+    constraints propagate the value automatically via depsgraph.
+    """
     for obj in bpy.data.objects:
         if obj.type != 'ARMATURE':
             continue
@@ -288,27 +325,15 @@ def _sync_ik_state_on_frame(_scene, _depsgraph=None):
             if not chain.ik_enabled:
                 continue
 
-            # Find the first MCH bone in this chain that has an IK constraint
-            ik_influence = None
-            chain_bones = [b for b in sd.bones
-                           if b.chain_id == chain.chain_id and not b.skip]
-            for bone_item in chain_bones:
-                mch_name = f"{WRAP_MCH_PREFIX}{chain.chain_id}_{bone_item.role}"
-                mch_pb = obj.pose.bones.get(mch_name)
-                if not mch_pb:
+            prop_name = f"{IK_SWITCH_PROP_PREFIX}{chain.chain_id}"
+            prop_value = obj.get(prop_name)
+            if prop_value is None:
+                # Old rig without custom property — read constraint influence
+                prop_value = _read_ik_influence_legacy(obj, chain)
+                if prop_value is None:
                     continue
-                for con in mch_pb.constraints:
-                    if (con.type in ('IK', 'SPLINE_IK', 'DAMPED_TRACK')
-                            and con.name.startswith(WRAP_CONSTRAINT_PREFIX)):
-                        ik_influence = con.influence
-                        break
-                if ik_influence is not None:
-                    break
 
-            if ik_influence is None:
-                continue
-
-            should_be_ik = ik_influence > 0.5
+            should_be_ik = prop_value > 0.5
             if chain.ik_active != should_be_ik:
                 chain.ik_active = should_be_ik
                 # Sync IK collection visibility

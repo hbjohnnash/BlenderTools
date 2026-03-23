@@ -166,6 +166,18 @@ def register():
 
 
 def unregister():
+    # Kill IK/FK overlay FIRST — before any class unregistration that could
+    # leave the draw handler orphaned if a later unregister() raises.
+    try:
+        from .rigging.scanner import ik_overlay
+        if ik_overlay._draw_handle:
+            bpy.types.SpaceView3D.draw_handler_remove(
+                ik_overlay._draw_handle, 'WINDOW')
+            ik_overlay._draw_handle = None
+        ik_overlay._active = False
+    except Exception:
+        pass
+
     from . import ui
     ui.unregister()
 

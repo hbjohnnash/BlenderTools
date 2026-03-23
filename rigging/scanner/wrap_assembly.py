@@ -175,8 +175,27 @@ def assemble_wrap_rig(armature_obj, scan_data):
             if chain_info.get("ik_limits"):
                 toggle_joint_limits(armature_obj, chain_id, True)
 
-        # Calibrate all IK pole angles using the depsgraph
+        # Calibrate all IK pole angles using the depsgraph.
+        # Must happen BEFORE driver setup — calibration temporarily toggles
+        # constraint influences directly, which drivers would override.
         _calibrate_pole_angles(armature_obj)
+
+        # Second pass: add ik_switch custom properties + drivers.
+        # Done after pole calibration so drivers don't interfere.
+        for chain_id in chain_order:
+            chain_info = chains[chain_id]
+            if chain_info["module_type"] == "skip":
+                continue
+            if not chain_info.get("ik_enabled"):
+                continue
+            chain_bones = chain_info["bones"]
+            chain_bones = [b for b in chain_bones
+                           if not bones_info.get(b, {}).get("skip", False)]
+            if not chain_bones:
+                continue
+            _add_ik_switch_property(armature_obj, chain_id)
+            _setup_ik_switch_drivers(armature_obj, chain_id,
+                                     chain_bones, bones_info)
     finally:
         bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -209,6 +228,9 @@ def disassemble_wrap_rig(armature_obj, scan_data=None):
     Identifies generated content by the BT_Wrap_ constraint prefix and
     CTRL-Wrap_ / MCH-Wrap_ bone name prefixes. Original bones are never touched.
     """
+    # Remove ik_switch drivers and custom properties before constraints
+    _remove_ik_switch_drivers(armature_obj)
+
     # Restore hidden collections before removing bones
     sd = armature_obj.bt_scan
     if sd.hidden_collections:
@@ -1390,7 +1412,8 @@ def snap_ik_to_fk(armature_obj, chain_id):
 
     # Calibrate pole_angle so IK bend plane matches FK bend plane.
     # Uses max-displacement joint for robust N-bone support.
-    # Disables sync constraints to prevent circular dependencies.
+    # Temporarily enables IK via the custom property so drivers propagate
+    # constraint influences correctly.
     if ik_chain_count >= 2 and ik_pole_pb and ik_con.pole_target:
         # Record FK bend direction (MCH bones currently driven by FK)
         fk_root = upper_pb.head.copy()
@@ -1404,34 +1427,12 @@ def snap_ik_to_fk(armature_obj, chain_id):
             if fk_bend.length > 0.0001:
                 fk_bend.normalize()
 
-                # Temporarily enable IK to measure solver result
-                saved_fk = []
-                walk_pb = ik_mch
-                for _ in range(ik_chain_count):
-                    for c in walk_pb.constraints:
-                        if c.type == 'COPY_TRANSFORMS' and c.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                            saved_fk.append((c, c.influence, c.mute))
-                            c.influence = 0.0
-                            c.mute = True
-                    if walk_pb.parent:
-                        walk_pb = walk_pb.parent
-
-                # Disable sync constraints on IK target/pole
-                _snap_saved_sync = []
-                for sync_bone_name in (ik_target_name, ik_pole_name):
-                    sync_pb = armature_obj.pose.bones.get(sync_bone_name)
-                    if sync_pb:
-                        for c in sync_pb.constraints:
-                            if c.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                                _snap_saved_sync.append((c, c.influence, c.mute))
-                                c.influence = 0.0
-                                c.mute = True
-
-                saved_ik_inf = ik_con.influence
-                saved_ik_mute = ik_con.mute
+                # Temporarily enable IK via custom property — drivers
+                # handle all FK/IK constraint toggling automatically.
+                prop_name = _ik_switch_prop_name(chain_id)
+                saved_prop = armature_obj.get(prop_name, 0.0)
                 saved_pole = ik_con.pole_angle
-                ik_con.influence = 1.0
-                ik_con.mute = False
+                armature_obj[prop_name] = 1.0
                 bpy.context.view_layer.update()
 
                 # Measure IK solver's bend direction at the same mid bone
@@ -1478,15 +1479,8 @@ def snap_ik_to_fk(armature_obj, chain_id):
                                 residual = -residual
                             ik_con.pole_angle += residual
 
-                # Restore constraints to pre-snap state
-                ik_con.influence = saved_ik_inf
-                ik_con.mute = saved_ik_mute
-                for c, inf, muted in saved_fk:
-                    c.influence = inf
-                    c.mute = muted
-                for c, inf, muted in _snap_saved_sync:
-                    c.influence = inf
-                    c.mute = muted
+                # Restore property to FK state (toggle operator sets IK later)
+                armature_obj[prop_name] = saved_prop
                 bpy.context.view_layer.update()
 
     # --- Newton correction: pre-compensate IK target for solver residual ---
@@ -1497,33 +1491,10 @@ def snap_ik_to_fk(armature_obj, chain_id):
     if ik_target_pb and ik_chain_count >= 2:
         desired_tip = ik_mch.tail.copy()  # FK-posed tip (still in FK mode)
 
-        # Temporarily enable IK, disable FK + sync constraints
-        _corr_saved_fk = []
-        _walk = ik_mch
-        for _ in range(ik_chain_count):
-            for c in _walk.constraints:
-                if (c.type == 'COPY_TRANSFORMS'
-                        and c.name.startswith(WRAP_CONSTRAINT_PREFIX)):
-                    _corr_saved_fk.append((c, c.influence, c.mute))
-                    c.influence = 0.0
-                    c.mute = True
-            if _walk.parent:
-                _walk = _walk.parent
-
-        _corr_saved_sync = []
-        for sync_bone_name in (ik_target_name, ik_pole_name):
-            sync_pb = armature_obj.pose.bones.get(sync_bone_name)
-            if sync_pb:
-                for c in sync_pb.constraints:
-                    if c.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                        _corr_saved_sync.append((c, c.influence, c.mute))
-                        c.influence = 0.0
-                        c.mute = True
-
-        _corr_saved_ik = ik_con.influence
-        _corr_saved_ik_mute = ik_con.mute
-        ik_con.influence = 1.0
-        ik_con.mute = False
+        # Temporarily enable IK via custom property
+        prop_name = _ik_switch_prop_name(chain_id)
+        saved_prop = armature_obj.get(prop_name, 0.0)
+        armature_obj[prop_name] = 1.0
         bpy.context.view_layer.update()
 
         _POS_TOL_SQ = 1e-16   # ~0.1 nanometre squared
@@ -1538,14 +1509,7 @@ def snap_ik_to_fk(armature_obj, chain_id):
             bpy.context.view_layer.update()
 
         # Restore to FK state (toggle operator switches to IK later)
-        ik_con.influence = _corr_saved_ik
-        ik_con.mute = _corr_saved_ik_mute
-        for c, inf, muted in _corr_saved_fk:
-            c.influence = inf
-            c.mute = muted
-        for c, inf, muted in _corr_saved_sync:
-            c.influence = inf
-            c.mute = muted
+        armature_obj[prop_name] = saved_prop
         bpy.context.view_layer.update()
 
 
@@ -2041,6 +2005,348 @@ def _add_sync_constraints(armature_obj, chain_id, chain_bones, bones_info):
         con.subtarget = mch_name
         # Start at 0 — FK mode is default; toggle operator activates in IK mode
         con.influence = 0.0
+
+
+# ---------------------------------------------------------------------------
+# IK/FK custom property + drivers
+# ---------------------------------------------------------------------------
+# One float property per chain (0.0=FK, 1.0=IK) on the armature object.
+# Drivers on all MCH constraint influences + FK_sync reference this property.
+# The toggle operator sets the property — animation only touches it when the
+# user explicitly keyframes via smart_keyframe.
+# ---------------------------------------------------------------------------
+
+IK_SWITCH_PROP_PREFIX = "ik_switch_"
+
+
+def _ik_switch_prop_name(chain_id):
+    """Return the custom property name for a chain's IK/FK switch."""
+    return f"{IK_SWITCH_PROP_PREFIX}{chain_id}"
+
+
+def _add_ik_switch_property(armature_obj, chain_id):
+    """Add a custom float property for IK/FK switching on this chain.
+
+    The property lives on the armature object (not bone) so drivers can
+    reference it via ``self["ik_switch_{chain_id}"]``.
+    """
+    prop_name = _ik_switch_prop_name(chain_id)
+    # Default 0.0 = FK mode
+    armature_obj[prop_name] = 0.0
+
+    # Register the property UI metadata so it shows in the properties panel
+    id_props = armature_obj.id_properties_ui(prop_name)
+    id_props.update(min=0.0, max=1.0, soft_min=0.0, soft_max=1.0,
+                    description=f"IK/FK blend for {chain_id} (0=FK, 1=IK)")
+
+
+def _add_influence_driver(armature_obj, data_path, prop_name, invert=False):
+    """Add a driver on a constraint influence that reads the custom property.
+
+    Args:
+        armature_obj: The armature object.
+        data_path: Full data path to the constraint influence.
+        prop_name: Name of the custom property to read (e.g. 'ik_switch_arm_L').
+        invert: If True, influence = 1 - property (for FK constraints that
+                are active when IK is off).
+    """
+    fc = armature_obj.driver_add(data_path)
+    driver = fc.driver
+    driver.type = 'SCRIPTED'
+
+    var = driver.variables.new()
+    var.name = "ik"
+    var.type = 'SINGLE_PROP'
+    target = var.targets[0]
+    target.id_type = 'OBJECT'
+    target.id = armature_obj
+    target.data_path = f'["{prop_name}"]'
+
+    if invert:
+        driver.expression = "1.0 - ik"
+    else:
+        driver.expression = "ik"
+
+    return fc
+
+
+def _setup_ik_switch_drivers(armature_obj, chain_id, chain_bones, bones_info):
+    """Wire drivers from ik_switch_{chain_id} to all constraint influences.
+
+    Replaces static influence values with drivers so the toggle operator
+    only needs to set one custom property — all constraints follow via deps.
+    """
+    prop_name = _ik_switch_prop_name(chain_id)
+
+    for bone_name in chain_bones:
+        role = bones_info.get(bone_name, {}).get("role", bone_name)
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{role}"
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        if not mch_pb:
+            continue
+
+        # Check if this bone has any IK-related constraint
+        has_ik_constraint = any(
+            c.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION', 'DAMPED_TRACK')
+            and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
+            for c in mch_pb.constraints
+        )
+
+        for con in mch_pb.constraints:
+            if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
+                continue
+
+            data_path = f'pose.bones["{mch_name}"].constraints["{con.name}"].influence'
+
+            if con.type == 'COPY_TRANSFORMS':
+                if has_ik_constraint:
+                    # FK constraint: active when property is 0 (FK mode)
+                    _add_influence_driver(armature_obj, data_path, prop_name,
+                                         invert=True)
+                # else: no IK alternative — FK stays at 1.0, no driver needed
+
+            elif con.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION',
+                              'DAMPED_TRACK'):
+                # IK constraint: active when property is 1 (IK mode)
+                _add_influence_driver(armature_obj, data_path, prop_name,
+                                     invert=False)
+
+        # FK_sync on CTRL-FK bones
+        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{role}"
+        ctrl_pb = armature_obj.pose.bones.get(ctrl_name)
+        if not ctrl_pb:
+            continue
+
+        for con in ctrl_pb.constraints:
+            if (con.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"
+                    and con.type == 'COPY_TRANSFORMS'):
+                data_path = (f'pose.bones["{ctrl_name}"]'
+                             f'.constraints["{con.name}"].influence')
+                # FK_sync: active in IK mode (property = 1)
+                _add_influence_driver(armature_obj, data_path, prop_name,
+                                     invert=False)
+
+
+def _remove_ik_switch_drivers(armature_obj):
+    """Remove all ik_switch drivers and custom properties.
+
+    Called during disassembly to clean up.
+    """
+    # Remove drivers on constraint influences that reference ik_switch
+    if armature_obj.animation_data:
+        drivers_to_remove = []
+        for fc in armature_obj.animation_data.drivers:
+            for var in fc.driver.variables:
+                for target in var.targets:
+                    if (target.data_path
+                            and target.data_path.startswith(
+                                f'["{IK_SWITCH_PROP_PREFIX}')):
+                        drivers_to_remove.append(fc.data_path)
+                        break
+        for dp in drivers_to_remove:
+            try:
+                armature_obj.driver_remove(dp)
+            except TypeError:
+                pass
+
+    # Remove custom properties
+    keys_to_remove = [k for k in armature_obj.keys()
+                      if k.startswith(IK_SWITCH_PROP_PREFIX)]
+    for k in keys_to_remove:
+        del armature_obj[k]
+
+
+def _try_assign_group(action, fc, group_name="IK/FK Switches"):
+    """Best-effort fcurve grouping. No-op if the API doesn't support it."""
+    try:
+        if hasattr(action, 'groups') and hasattr(fc, 'group'):
+            group = action.groups.get(group_name)
+            if not group:
+                group = action.groups.new(name=group_name)
+            fc.group = group
+    except (AttributeError, TypeError, RuntimeError):
+        pass  # Blender 5.0+ layered actions may not support legacy groups
+
+
+def _has_ik_switch(armature_obj, chain_id):
+    """Return True if the ik_switch custom property exists for this chain."""
+    return _ik_switch_prop_name(chain_id) in armature_obj
+
+
+def _remove_old_influence_fcurves(action, chain_id, chain_bones):
+    """Remove old constraint influence fcurves for a chain after migration.
+
+    Drivers now control these influences, so the old keyframes are dead weight.
+    Removes fcurves for both MCH constraints and FK_sync constraints.
+    Uses channelbag API for Blender 5.0+, falls back to legacy action.fcurves.
+    """
+    from ...animation.smart_keyframe import _iter_fcurves
+
+    # Collect data paths to remove
+    paths_to_remove = set()
+    for bone_item in chain_bones:
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{bone_item.role}"
+        for prefix in (f'pose.bones["{mch_name}"].constraints["{WRAP_CONSTRAINT_PREFIX}',
+                       f'pose.bones["{ctrl_name}"].constraints["{WRAP_CONSTRAINT_PREFIX}'):
+            for fc in _iter_fcurves(action):
+                if fc.data_path.startswith(prefix) and fc.data_path.endswith('.influence'):
+                    paths_to_remove.add(fc.data_path)
+
+    if not paths_to_remove:
+        return
+
+    # Blender 5.0+ channelbag API (layered actions)
+    for layer in getattr(action, 'layers', ()):
+        for strip in getattr(layer, 'strips', ()):
+            for channelbag in getattr(strip, 'channelbags', ()):
+                fcurves = getattr(channelbag, 'fcurves', None)
+                if fcurves and hasattr(fcurves, 'remove'):
+                    for fc in list(fcurves):
+                        if fc.data_path in paths_to_remove:
+                            fcurves.remove(fc)
+                    return  # Done via channelbag API
+
+    # Legacy fallback (Blender < 5.0)
+    if hasattr(action, 'fcurves') and hasattr(action.fcurves, 'remove'):
+        for fc in list(action.fcurves):
+            if fc.data_path in paths_to_remove:
+                action.fcurves.remove(fc)
+
+
+def _migrate_action_keyframes(armature_obj, chain_id, chain_bones, action):
+    """Migrate old constraint influence keyframes to ik_switch property in one action.
+
+    Finds a representative IK constraint influence fcurve, copies its keyframes
+    to the ik_switch property, sets CONSTANT interpolation, then removes the
+    old influence fcurves.  Safe to call multiple times — no-ops if the action
+    already has an ik_switch fcurve or no old influence fcurves.
+    """
+    from ...animation.smart_keyframe import _iter_fcurves
+
+    prop_name = _ik_switch_prop_name(chain_id)
+    data_path = f'["{prop_name}"]'
+
+    # Skip if this action already has an ik_switch fcurve for this chain
+    for fc in _iter_fcurves(action):
+        if fc.data_path == data_path:
+            # Already migrated — just clean up any leftover old fcurves
+            _remove_old_influence_fcurves(action, chain_id, chain_bones)
+            return
+
+    # Find a representative IK constraint influence fcurve (all keyed together)
+    source_fc = None
+    for bone_item in chain_bones:
+        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+        mch_pb = armature_obj.pose.bones.get(mch_name)
+        if not mch_pb:
+            continue
+        for con in mch_pb.constraints:
+            if (con.type in ('IK', 'SPLINE_IK', 'DAMPED_TRACK')
+                    and con.name.startswith(WRAP_CONSTRAINT_PREFIX)):
+                dp = (f'pose.bones["{mch_name}"]'
+                      f'.constraints["{con.name}"].influence')
+                for fc in _iter_fcurves(action):
+                    if fc.data_path == dp:
+                        source_fc = fc
+                        break
+            if source_fc:
+                break
+        if source_fc:
+            break
+
+    if source_fc:
+        # Copy keyframes from constraint influence to the ik_switch property
+        for kp in source_fc.keyframe_points:
+            armature_obj[prop_name] = kp.co[1]
+            armature_obj.keyframe_insert(data_path, frame=kp.co[0])
+
+        # Set CONSTANT interpolation on all copied keyframes
+        for fc in _iter_fcurves(action):
+            if fc.data_path == data_path:
+                for kp in fc.keyframe_points:
+                    kp.interpolation = 'CONSTANT'
+                _try_assign_group(action, fc)
+                break
+
+    # Remove old constraint influence fcurves — drivers replace them
+    _remove_old_influence_fcurves(action, chain_id, chain_bones)
+
+
+def upgrade_ik_switch(armature_obj, chain_id):
+    """Migrate an old-style rig (direct constraint keyframing) to the new
+    custom-property + driver system.
+
+    1. Creates the ik_switch custom property + drivers (one-time).
+    2. Migrates keyframes in the CURRENT action.
+
+    For additional actions, call migrate_action_ik_switch() when they become active.
+    Returns True if the property+driver setup was performed (first time).
+    """
+    prop_name = _ik_switch_prop_name(chain_id)
+    first_time = prop_name not in armature_obj
+
+    sd = armature_obj.bt_scan
+    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+    if not chain_bones:
+        return False
+
+    if first_time:
+        # --- Detect current IK state from constraint influences ---
+        current_ik = 0.0
+        for bone_item in chain_bones:
+            mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
+            mch_pb = armature_obj.pose.bones.get(mch_name)
+            if not mch_pb:
+                continue
+            for con in mch_pb.constraints:
+                if (con.type in ('IK', 'SPLINE_IK', 'DAMPED_TRACK')
+                        and con.name.startswith(WRAP_CONSTRAINT_PREFIX)):
+                    current_ik = con.influence
+                    break
+            if current_ik > 0.5:
+                break
+
+        # --- Create property + drivers ---
+        _add_ik_switch_property(armature_obj, chain_id)
+        armature_obj[prop_name] = current_ik
+
+        bones_info = {}
+        for bone_item in chain_bones:
+            bones_info[bone_item.bone_name] = {"role": bone_item.role}
+        _setup_ik_switch_drivers(armature_obj, chain_id,
+                                  [b.bone_name for b in chain_bones],
+                                  bones_info)
+
+    # --- Migrate keyframes in the current action ---
+    action = (armature_obj.animation_data
+              and armature_obj.animation_data.action)
+    if action:
+        _migrate_action_keyframes(armature_obj, chain_id, chain_bones, action)
+
+    return first_time
+
+
+def migrate_action_ik_switch(armature_obj, chain_id):
+    """Migrate old influence keyframes in the CURRENT action for one chain.
+
+    Call this when the user switches to a different action that may still
+    have old-style constraint influence keyframes.  Safe to call on actions
+    that are already migrated (no-ops).
+    """
+    prop_name = _ik_switch_prop_name(chain_id)
+    if prop_name not in armature_obj:
+        return  # Property+drivers not set up yet — need full upgrade first
+
+    sd = armature_obj.bt_scan
+    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+    if not chain_bones:
+        return
+
+    action = (armature_obj.animation_data
+              and armature_obj.animation_data.action)
+    if action:
+        _migrate_action_keyframes(armature_obj, chain_id, chain_bones, action)
 
 
 def ensure_fk_sync(armature_obj, chain_id):

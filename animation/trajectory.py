@@ -19,9 +19,7 @@ from gpu_extras.batch import batch_for_shader
 from mathutils import Matrix, Vector
 
 from ..core.constants import (
-    WRAP_CONSTRAINT_PREFIX,
     WRAP_CTRL_PREFIX,
-    WRAP_MCH_PREFIX,
 )
 
 # ---------------------------------------------------------------------------
@@ -259,55 +257,29 @@ def _find_chain_for_fk_bone(armature_obj, bone_name):
 
 
 def _temp_enable_ik(armature_obj, chain_id):
-    """Temporarily enable IK constraints on a chain. Returns saved state."""
-    sd = armature_obj.bt_scan
-    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
-
-    # Find which MCH bones are inside the IK range
-    ik_bone_set = set()
-    for bone_item in chain_bones:
-        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
-        mch_pb = armature_obj.pose.bones.get(mch_name)
-        if not mch_pb:
-            continue
-        for con in mch_pb.constraints:
-            if con.type in ('IK', 'SPLINE_IK') and con.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                walk = mch_pb
-                for _ in range(con.chain_count):
-                    if walk:
-                        ik_bone_set.add(walk.name)
-                        walk = walk.parent
-
-    saved = {}
-    for bone_item in chain_bones:
-        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
-        mch_pb = armature_obj.pose.bones.get(mch_name)
-        if not mch_pb:
-            continue
-
-        in_ik_range = mch_name in ik_bone_set
-        bone_saved = {}
-
-        for con in mch_pb.constraints:
-            if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                continue
-            bone_saved[con.name] = con.influence
-
-            if in_ik_range:
-                if con.type == 'COPY_TRANSFORMS':
-                    con.influence = 0.0   # disable FK
-                elif con.type in ('IK', 'SPLINE_IK'):
-                    con.influence = 1.0   # enable IK
-
-        if bone_saved:
-            saved[mch_name] = bone_saved
-
+    """Temporarily enable IK via the custom property. Returns saved state."""
+    from ..rigging.scanner.wrap_assembly import _ik_switch_prop_name
+    prop_name = _ik_switch_prop_name(chain_id)
+    saved = {
+        '_prop_name': prop_name,
+        '_prop_value': armature_obj.get(prop_name, 0.0),
+    }
+    armature_obj[prop_name] = 1.0
     return saved
 
 
 def _restore_constraints(armature_obj, saved):
-    """Restore constraint influences from saved state."""
+    """Restore the ik_switch property from saved state."""
+    prop_name = saved.get('_prop_name')
+    prop_value = saved.get('_prop_value', 0.0)
+    if prop_name:
+        armature_obj[prop_name] = prop_value
+        return
+
+    # Legacy fallback: restore individual constraint influences
     for mch_name, cons in saved.items():
+        if mch_name.startswith('_'):
+            continue
         mch_pb = armature_obj.pose.bones.get(mch_name)
         if not mch_pb:
             continue

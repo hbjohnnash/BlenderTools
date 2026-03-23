@@ -4,18 +4,25 @@ import math
 
 import bpy
 
-from ...core.constants import WRAP_CTRL_PREFIX, WRAP_MCH_PREFIX
+from ...core.constants import (
+    WRAP_CONSTRAINT_PREFIX,
+    WRAP_CTRL_PREFIX,
+    WRAP_MCH_PREFIX,
+)
 from .floor_contact import (
     remove_floor_contact,
     setup_floor_contact,
 )
 from .scan import scan_skeleton
 from .wrap_assembly import (
+    _has_ik_switch,
+    _ik_switch_prop_name,
     assemble_wrap_rig,
     bake_to_def,
     disassemble_wrap_rig,
     ensure_fk_sync,
     fk_was_modified,
+    migrate_action_ik_switch,
     restore_ik_state,
     restore_lookat_state,
     save_fk_snapshot,
@@ -26,6 +33,7 @@ from .wrap_assembly import (
     snap_lookat_to_fk,
     snap_spline_to_fk,
     toggle_ik_limits,
+    upgrade_ik_switch,
 )
 
 
@@ -203,6 +211,71 @@ class BT_OT_ApplyWrapRig(bpy.types.Operator):
         return {'FINISHED'}
 
 
+def _mute_bone_fcurves(armature, pbones):
+    """Temporarily mute all fcurves for the given pose bones.
+
+    Returns a list of fcurves that were muted so they can be unmuted later.
+    This prevents view_layer.update() from overwriting snapped bone
+    transforms with keyframed values while still allowing drivers and
+    constraints to evaluate correctly.
+    """
+    action = armature.animation_data and armature.animation_data.action
+    if not action:
+        return []
+    from ...animation.smart_keyframe import _iter_fcurves
+    bone_prefixes = [f'pose.bones["{pb.name}"]' for pb in pbones]
+    muted = []
+    for fc in _iter_fcurves(action):
+        if fc.mute:
+            continue
+        for prefix in bone_prefixes:
+            if fc.data_path.startswith(prefix):
+                fc.mute = True
+                muted.append(fc)
+                break
+    return muted
+
+
+def _unmute_fcurves(fcurves):
+    """Unmute previously muted fcurves."""
+    for fc in fcurves:
+        fc.mute = False
+
+
+# ---------------------------------------------------------------------------
+# Persistent mute: keep fcurves muted across viewport redraws until the user
+# changes frame, keyframes, or plays the animation.
+# ---------------------------------------------------------------------------
+
+_pending_muted_fcs = []
+
+
+def _on_frame_change_unmute(scene):
+    """Unmute pending fcurves on frame change (scrub, arrow, playback)."""
+    global _pending_muted_fcs
+    for fc in _pending_muted_fcs:
+        try:
+            fc.mute = False
+        except (ReferenceError, AttributeError):
+            pass  # fcurve was deleted or invalidated
+    _pending_muted_fcs.clear()
+
+
+def _ensure_unmute_handler():
+    """Register the frame_change_pre handler if not already registered."""
+    if _on_frame_change_unmute not in bpy.app.handlers.frame_change_pre:
+        bpy.app.handlers.frame_change_pre.append(_on_frame_change_unmute)
+
+
+def unmute_pending_toggle_fcurves():
+    """Public: unmute fcurves kept muted by IK/FK toggle.
+
+    Called by smart_keyframe after inserting keyframes, so the new keyframes
+    become the source of truth and animation evaluation produces correct values.
+    """
+    _on_frame_change_unmute(None)
+
+
 class BT_OT_ToggleFKIK(bpy.types.Operator):
     bl_idname = "bt.toggle_fk_ik"
     bl_label = "Toggle FK/IK"
@@ -226,7 +299,6 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
         return obj and obj.type == 'ARMATURE' and obj.bt_scan.has_wrap_rig
 
     def execute(self, context):
-        from ...core.constants import WRAP_CONSTRAINT_PREFIX, WRAP_MCH_PREFIX
         armature = context.active_object
         sd = armature.bt_scan
 
@@ -255,6 +327,20 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
         if chain_item.ik_enabled:
             ensure_fk_sync(armature, self.chain_id)
 
+        # Auto-upgrade: migrate old rigs to custom-property + driver system.
+        # Upgrade ALL chains at once so the user doesn't have to toggle each one.
+        if chain_item.ik_enabled and not _has_ik_switch(armature, self.chain_id):
+            for ch in sd.chains:
+                if ch.ik_enabled and not _has_ik_switch(armature, ch.chain_id):
+                    ensure_fk_sync(armature, ch.chain_id)
+                    upgrade_ik_switch(armature, ch.chain_id)
+        elif chain_item.ik_enabled:
+            # Property+drivers exist but current action may have old fcurves.
+            # Migrate all chains in the current action.
+            for ch in sd.chains:
+                if ch.ik_enabled:
+                    migrate_action_ik_switch(armature, ch.chain_id)
+
         # Temporarily disable IK limits during snap so the solver can
         # reproduce the FK pose without being blocked by joint limits.
         # Save per-bone states so user customizations are preserved.
@@ -272,18 +358,57 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
                     mch_pb.use_ik_limit_y = False
                     mch_pb.use_ik_limit_z = False
 
+        # --- Mute ALL relevant fcurves BEFORE snap ---
+        # Mute bone fcurves so snap functions' internal view_layer.update()
+        # calls don't overwrite snapped/edited transforms with keyframed
+        # values.  Also mute the ik_switch fcurve so the runtime property
+        # value persists through animation evaluation.
+        # NO automatic keyframing — the user keyframes when ready.
+        # If they change frame without keyframing, edits are lost (same as
+        # normal Blender bone editing).
+        from ...animation.smart_keyframe import (
+            _get_chain_fk_pbones,
+            _get_chain_ik_pbones,
+            _iter_fcurves,
+        )
+        fk_pbones = _get_chain_fk_pbones(armature, sd, self.chain_id)
+        ik_pbones = (_get_chain_ik_pbones(armature, self.chain_id)
+                     if chain_item.ik_snap else [])
+        # Always mute both FK and IK bones — FK edits must persist when
+        # switching to IK, and FK snap must persist when switching to FK.
+        muted_fcs = _mute_bone_fcurves(armature, fk_pbones + ik_pbones)
+
+        # Mute the ik_switch fcurve so the runtime property isn't overridden
+        prop_name = _ik_switch_prop_name(self.chain_id)
+        data_path = f'["{prop_name}"]'
+        action = armature.animation_data and armature.animation_data.action
+        if action:
+            for fc in _iter_fcurves(action):
+                if fc.data_path == data_path and not fc.mute:
+                    fc.mute = True
+                    muted_fcs.append(fc)
+                    break
+
+        # Save MCH target matrices before snap (for post-toggle FK correction).
+        fk_snap_targets = {}
+        if not use_ik and chain_item.ik_snap:
+            for bone_item in (b for b in sd.bones
+                              if b.chain_id == self.chain_id and not b.skip):
+                mch_name = f"{WRAP_MCH_PREFIX}{self.chain_id}_{bone_item.role}"
+                ctrl_name = f"{WRAP_CTRL_PREFIX}{self.chain_id}_FK_{bone_item.role}"
+                mch_pb = armature.pose.bones.get(mch_name)
+                ctrl_pb = armature.pose.bones.get(ctrl_name)
+                if mch_pb and ctrl_pb:
+                    fk_snap_targets[ctrl_name] = mch_pb.matrix.copy()
+
         # Snap controls BEFORE switching so the pose is preserved.
-        # Fast path: if FK wasn't modified since the last IK→FK snap,
-        # restore the cached IK state instead of recalculating (lossless).
         if chain_item.ik_type == 'LOOKAT':
             if use_ik:
-                # FK→LookAt: position target at current gaze direction
                 if not fk_was_modified(armature, self.chain_id):
                     restore_lookat_state(armature, self.chain_id)
                 else:
                     snap_lookat_to_fk(armature, self.chain_id)
             else:
-                # LookAt→FK: snap FK to match head MCH, cache target
                 save_lookat_state(armature, self.chain_id)
                 snap_fk_to_ik(armature, self.chain_id)
                 save_fk_snapshot(armature, self.chain_id)
@@ -294,77 +419,19 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
                 snap_fk_to_ik(armature, self.chain_id)
         elif chain_item.ik_snap:
             if use_ik:
-                # FK→IK: try cached restore first, fall back to full snap
                 if not fk_was_modified(armature, self.chain_id):
                     restore_ik_state(armature, self.chain_id)
                 else:
                     snap_ik_to_fk(armature, self.chain_id)
             else:
-                # IK→FK: snap then cache IK state for potential restore
                 save_ik_state(armature, self.chain_id)
                 snap_fk_to_ik(armature, self.chain_id)
                 save_fk_snapshot(armature, self.chain_id)
 
-        # Toggle constraints on MCH bones (not DEF bones)
-        chain_bones = [b for b in sd.bones if b.chain_id == self.chain_id and not b.skip]
-
-        # Find which MCH bones are inside the IK chain range.
-        # Bones outside (e.g. foot/toe below IK target) keep FK active.
-        ik_bone_set = set()
-        for bone_item in chain_bones:
-            mch_name = f"{WRAP_MCH_PREFIX}{self.chain_id}_{bone_item.role}"
-            mch_pbone = armature.pose.bones.get(mch_name)
-            if not mch_pbone:
-                continue
-            for con in mch_pbone.constraints:
-                if con.type in ('IK', 'SPLINE_IK') and con.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                    walk = mch_pbone
-                    for _ in range(con.chain_count):
-                        if walk:
-                            ik_bone_set.add(walk.name)
-                            walk = walk.parent
-
-        for bone_item in chain_bones:
-            mch_name = f"{WRAP_MCH_PREFIX}{self.chain_id}_{bone_item.role}"
-            mch_pbone = armature.pose.bones.get(mch_name)
-            if not mch_pbone:
-                continue
-            in_ik_range = mch_name in ik_bone_set
-            # End-effector bones (hand/foot) have COPY_ROTATION from IK target.
-            # Their FK COPY_TRANSFORMS must also be toggled even though they
-            # are outside the IK chain range.
-            has_ik_rot = any(
-                c.type == 'COPY_ROTATION' and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
-                for c in mch_pbone.constraints
-            )
-            # Head bones with DAMPED_TRACK (LookAt) also need FK toggled.
-            has_lookat = any(
-                c.type == 'DAMPED_TRACK' and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
-                for c in mch_pbone.constraints
-            )
-            for con in mch_pbone.constraints:
-                if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                    continue
-                if con.type == 'COPY_TRANSFORMS':
-                    if in_ik_range or has_ik_rot or has_lookat:
-                        con.influence = 0.0 if use_ik else 1.0
-                elif con.type in ('IK', 'SPLINE_IK'):
-                    con.influence = 1.0 if use_ik else 0.0
-                elif con.type == 'COPY_ROTATION':
-                    con.influence = 1.0 if use_ik else 0.0
-                elif con.type == 'DAMPED_TRACK':
-                    con.influence = 1.0 if use_ik else 0.0
-
-        # Toggle FK_sync on FK CTRL bones.
-        # FK_sync: active in IK mode (FK bones mirror MCH), off in FK mode.
-        for bone_item in chain_bones:
-            ctrl_name = f"{WRAP_CTRL_PREFIX}{self.chain_id}_FK_{bone_item.role}"
-            ctrl_pb = armature.pose.bones.get(ctrl_name)
-            if ctrl_pb:
-                for con in ctrl_pb.constraints:
-                    if (con.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"
-                            and con.type == 'COPY_TRANSFORMS'):
-                        con.influence = 1.0 if use_ik else 0.0
+        # --- Set the custom property (runtime only, no keyframe) ---
+        # Drivers read this value and set correct constraint influences.
+        # The muted ik_switch fcurve prevents animation from overriding it.
+        armature[prop_name] = 1.0 if use_ik else 0.0
 
         # Restore per-bone limit states (preserves user customizations)
         if saved_limit_states:
@@ -376,34 +443,18 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
                     mch_pb.use_ik_limit_y = ly
                     mch_pb.use_ik_limit_z = lz
 
-        # Update runtime state (build config fk_enabled/ik_enabled stays untouched)
-        chain_item.ik_active = use_ik
+        # Tag armature dirty so depsgraph re-evaluates bone transforms
+        # (Python property changes don't auto-tag like interactive edits do)
+        armature.update_tag()
+        # Depsgraph update — all fcurves muted, so:
+        # - Drivers read ik_switch runtime value → correct constraint influences
+        # - Bone transforms stay at snapped/edited values (muted)
+        # - Constraints evaluate with correct influences + snapped bones
+        bpy.context.view_layer.update()
 
-        # Show/hide per-chain IK collection based on mode
-        ik_coll = armature.data.collections.get(f"IK_{self.chain_id}")
-        if ik_coll:
-            ik_coll.is_visible = use_ik
-
-        # Keyframe constraint influences so the toggle persists across
-        # frame changes (keyframed values from smart_keyframe would
-        # otherwise override the toggle on the next frame evaluation).
-        from ...animation.smart_keyframe import _key_chain_influences
-        if not armature.animation_data:
-            armature.animation_data_create()
-        if not armature.animation_data.action:
-            armature.animation_data.action = bpy.data.actions.new(
-                name=f"{armature.name}_Action")
-        frame = context.scene.frame_current
-        _key_chain_influences(armature, sd, self.chain_id, use_ik, frame)
-
-        # --- Newton correction: eliminate IK solver residual ---
-        # After all constraints are in their final state (IK active, limits
-        # restored), verify the chain tip actually reaches the IK target.
-        # Pre-compensate the IK target position for any solver offset so
-        # the foot stays perfectly planted when the body moves.
+        # --- Newton correction for IK target (fcurves still muted) ---
+        chain_bones = [b for b in sd.bones if b.chain_id == self.chain_id and not b.skip]
         if use_ik and chain_item.ik_snap and chain_item.ik_type != 'LOOKAT':
-            bpy.context.view_layer.update()
-
             ik_mch = None
             for bone_item in chain_bones:
                 mch_name = f"{WRAP_MCH_PREFIX}{self.chain_id}_{bone_item.role}"
@@ -421,7 +472,7 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
             ik_target_pb = armature.pose.bones.get(ik_target_name)
 
             if ik_mch and ik_target_pb:
-                _IK_POS_TOL_SQ = 1e-16   # ~0.1 nanometre squared
+                _IK_POS_TOL_SQ = 1e-16
                 for _ in range(4):
                     desired = ik_target_pb.head.copy()
                     actual = ik_mch.tail.copy()
@@ -432,6 +483,48 @@ class BT_OT_ToggleFKIK(bpy.types.Operator):
                     mat.translation += err
                     ik_target_pb.matrix = mat
                     bpy.context.view_layer.update()
+
+        # --- Post-toggle FK precision correction (fcurves still muted) ---
+        # FK_sync is now off, so ctrl_pb.matrix reflects the true FK result.
+        # Compare against saved IK-posed MCH matrices and correct drift.
+        if fk_snap_targets:
+            _POS_TOL_SQ = 1e-16
+            _ROT_TOL = 1e-12
+            for _ in range(4):
+                any_corrected = False
+                for ctrl_name, target_matrix in fk_snap_targets.items():
+                    ctrl_pb = armature.pose.bones.get(ctrl_name)
+                    if not ctrl_pb:
+                        continue
+                    actual = ctrl_pb.matrix
+                    pos_err = target_matrix.translation - actual.translation
+                    tgt_q = target_matrix.to_quaternion()
+                    act_q = actual.to_quaternion()
+                    rot_dot = abs(tgt_q.dot(act_q))
+                    if (pos_err.length_squared < _POS_TOL_SQ
+                            and rot_dot > (1.0 - _ROT_TOL)):
+                        continue
+                    delta = target_matrix @ actual.inverted()
+                    ctrl_pb.matrix = delta @ target_matrix
+                    bpy.context.view_layer.update()
+                    any_corrected = True
+                if not any_corrected:
+                    break
+
+        # --- Keep fcurves muted until frame change or smart keyframe ---
+        # This lets the snap/edit persist across viewport redraws on the
+        # current frame.  The frame_change_pre handler or smart keyframe
+        # will unmute when the user moves on or commits the pose.
+        _pending_muted_fcs.extend(muted_fcs)
+        _ensure_unmute_handler()
+
+        # Update runtime state
+        chain_item.ik_active = use_ik
+
+        # Show/hide per-chain IK collection based on mode
+        ik_coll = armature.data.collections.get(f"IK_{self.chain_id}")
+        if ik_coll:
+            ik_coll.is_visible = use_ik
 
         if chain_item.ik_type == 'LOOKAT':
             mode_name = "LookAt" if use_ik else "FK"
@@ -1000,6 +1093,12 @@ def register():
 
 
 def unregister():
+    # Clean up persistent mute handler
+    if _on_frame_change_unmute in bpy.app.handlers.frame_change_pre:
+        bpy.app.handlers.frame_change_pre.remove(_on_frame_change_unmute)
+    # Unmute any lingering fcurves
+    _on_frame_change_unmute(None)
+
     bpy.types.VIEW3D_MT_pose_context_menu.remove(_draw_pose_context_menu)
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

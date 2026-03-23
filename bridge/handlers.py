@@ -446,7 +446,7 @@ def _rig_toggle_fk_ik(body):
     if mode not in ("FK", "IK", "TOGGLE"):
         return None, f"Invalid mode: {mode}. Use FK, IK, or TOGGLE"
 
-    from ..core.constants import WRAP_CONSTRAINT_PREFIX, WRAP_MCH_PREFIX
+    from ..core.constants import WRAP_MCH_PREFIX
     sd = arm.bt_scan
 
     chain_item = None
@@ -497,60 +497,18 @@ def _rig_toggle_fk_ik(body):
         else:
             snap_fk_to_ik(arm, chain_id)
 
-    # Toggle constraints on MCH bones (not DEF bones)
-    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+    # Auto-upgrade old rigs to custom-property + driver system
+    from ..rigging.scanner.wrap_assembly import (
+        _has_ik_switch,
+        _ik_switch_prop_name,
+        upgrade_ik_switch,
+    )
+    if not _has_ik_switch(arm, chain_id):
+        upgrade_ik_switch(arm, chain_id)
 
-    # Find which MCH bones are inside the IK chain range.
-    ik_bone_set = set()
-    for bone_item in chain_bones:
-        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
-        mch_pbone = arm.pose.bones.get(mch_name)
-        if not mch_pbone:
-            continue
-        for con in mch_pbone.constraints:
-            if con.type in ('IK', 'SPLINE_IK') and con.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                walk = mch_pbone
-                for _ in range(con.chain_count):
-                    if walk:
-                        ik_bone_set.add(walk.name)
-                        walk = walk.parent
-
-    from ..core.constants import WRAP_CTRL_PREFIX
-
-    for bone_item in chain_bones:
-        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
-        mch_pbone = arm.pose.bones.get(mch_name)
-        if not mch_pbone:
-            continue
-        in_ik_range = mch_name in ik_bone_set
-        # End-effector bones (hand/foot) have COPY_ROTATION from IK target.
-        # Their FK COPY_TRANSFORMS must also be toggled even though they
-        # are outside the IK chain range.
-        has_ik_rot = any(
-            c.type == 'COPY_ROTATION' and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
-            for c in mch_pbone.constraints
-        )
-        for con in mch_pbone.constraints:
-            if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                continue
-            if con.type == 'COPY_TRANSFORMS':
-                if in_ik_range or has_ik_rot:
-                    con.influence = 0.0 if use_ik else 1.0
-            elif con.type in ('IK', 'SPLINE_IK'):
-                con.influence = 1.0 if use_ik else 0.0
-            elif con.type == 'COPY_ROTATION':
-                con.influence = 1.0 if use_ik else 0.0
-
-    # Toggle FK_sync on FK CTRL bones.
-    # FK_sync: active in IK mode (FK bones mirror MCH), off in FK mode.
-    for bone_item in chain_bones:
-        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{bone_item.role}"
-        ctrl_pb = arm.pose.bones.get(ctrl_name)
-        if ctrl_pb:
-            for con in ctrl_pb.constraints:
-                if (con.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"
-                        and con.type == 'COPY_TRANSFORMS'):
-                    con.influence = 1.0 if use_ik else 0.0
+    # Set the custom property — drivers handle all constraint toggling
+    prop_name = _ik_switch_prop_name(chain_id)
+    arm[prop_name] = 1.0 if use_ik else 0.0
 
     # Restore per-bone limit states (preserves user customizations)
     if saved_limit_states:
@@ -564,6 +522,15 @@ def _rig_toggle_fk_ik(body):
                 mch_pb.use_ik_limit_z = lz
 
     chain_item.ik_active = use_ik
+
+    # Show/hide per-chain IK collection based on mode
+    ik_coll = arm.data.collections.get(f"IK_{chain_id}")
+    if ik_coll:
+        ik_coll.is_visible = use_ik
+
+    # Force depsgraph update so drivers propagate
+    import bpy
+    bpy.context.view_layer.update()
 
     mode_name = "IK" if use_ik else "FK"
     return {"success": True, "chain_id": chain_id, "mode": mode_name}, None

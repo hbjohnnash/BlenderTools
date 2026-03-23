@@ -2,9 +2,9 @@
 
 Intercepts the "I" key in pose mode.  Keys the ACTIVE system's controls
 (IK targets when in IK mode, FK bones when in FK mode) plus any
-independently-controlled bones (e.g. toe FK in IK mode).  Constraint
-influences are keyed with CONSTANT interpolation so IK/FK switches are
-instantaneous during playback — no blending drift.
+independently-controlled bones (e.g. toe FK in IK mode).  The chain's
+ik_switch custom property is keyed with CONSTANT interpolation so IK/FK
+switches are instantaneous during playback — no blending drift.
 
 Snapping between IK and FK is NOT done here — it belongs in the toggle
 operator, which runs when the user explicitly switches modes.
@@ -21,6 +21,18 @@ from ..core.constants import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _assign_ik_switch_group(action, fc):
+    """Best-effort fcurve grouping. No-op if the API doesn't support it."""
+    try:
+        if hasattr(action, 'groups') and hasattr(fc, 'group'):
+            group = action.groups.get("IK/FK Switches")
+            if not group:
+                group = action.groups.new(name="IK/FK Switches")
+            fc.group = group
+    except (AttributeError, TypeError, RuntimeError):
+        pass  # Blender 5.0+ layered actions may not support legacy groups
+
 
 def _find_chain_for_ctrl(sd, ctrl_name):
     """Return the chain_id a CTRL bone belongs to, or None."""
@@ -124,73 +136,72 @@ def _key_ik_controls(ik_pbones, frame):
         _key_rotation(pb, frame)
 
 
-def _key_chain_influences(armature_obj, sd, chain_id, use_ik, frame):
-    """Keyframe constraint influences on MCH bones and set CONSTANT interp.
+def _key_ik_switch(armature_obj, chain_id, use_ik, frame):
+    """Key the ik_switch custom property with CONSTANT interpolation.
 
-    This makes the IK/FK switch an instant step function during playback —
-    no blending between modes, no interpolation drift.
+    This is the single keyframe that controls all constraint influences
+    via drivers — replacing the old per-constraint keyframing approach.
     """
-    chain_bones = [b for b in sd.bones if b.chain_id == chain_id and not b.skip]
+    from ..rigging.scanner.wrap_assembly import _ik_switch_prop_name
+    prop_name = _ik_switch_prop_name(chain_id)
 
-    keyed_fcurves = set()
+    # Ensure the property exists (safety for old rigs)
+    if prop_name not in armature_obj:
+        return
 
-    for bone_item in chain_bones:
-        mch_name = f"{WRAP_MCH_PREFIX}{chain_id}_{bone_item.role}"
-        mch_pb = armature_obj.pose.bones.get(mch_name)
-        if not mch_pb:
-            continue
+    value = 1.0 if use_ik else 0.0
+    armature_obj[prop_name] = value
+    data_path = f'["{prop_name}"]'
+    armature_obj.keyframe_insert(data_path, frame=frame)
 
-        # Check if this bone has any IK-related constraint.  If not
-        # (e.g. toe), its FK COPY_TRANSFORMS stays active in IK mode
-        # so the user can still control it.
-        has_ik_constraint = any(
-            c.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION', 'DAMPED_TRACK')
-            and c.name.startswith(WRAP_CONSTRAINT_PREFIX)
-            for c in mch_pb.constraints
-        )
-
-        for i, con in enumerate(mch_pb.constraints):
-            if not con.name.startswith(WRAP_CONSTRAINT_PREFIX):
-                continue
-
-            if con.type == 'COPY_TRANSFORMS':
-                if has_ik_constraint:
-                    con.influence = 0.0 if use_ik else 1.0
-                else:
-                    # No IK alternative — FK stays active in both modes
-                    con.influence = 1.0
-            elif con.type in ('IK', 'SPLINE_IK', 'COPY_ROTATION', 'DAMPED_TRACK'):
-                con.influence = 1.0 if use_ik else 0.0
-            else:
-                continue
-
-            # Build the data path using constraint name (Blender 5.0
-            # stores fcurves with the name, not the integer index).
-            data_path = f'pose.bones["{mch_name}"].constraints["{con.name}"].influence'
-            armature_obj.keyframe_insert(data_path, frame=frame)
-            keyed_fcurves.add(data_path)
-
-    # Key FK sync constraints (COPY_TRANSFORMS from MCH on FK CTRL bones)
-    for bone_item in chain_bones:
-        ctrl_name = f"{WRAP_CTRL_PREFIX}{chain_id}_FK_{bone_item.role}"
-        ctrl_pb = armature_obj.pose.bones.get(ctrl_name)
-        if not ctrl_pb:
-            continue
-        for con in ctrl_pb.constraints:
-            if (con.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"
-                    and con.type == 'COPY_TRANSFORMS'):
-                con.influence = 1.0 if use_ik else 0.0
-                dp = f'pose.bones["{ctrl_name}"].constraints["{con.name}"].influence'
-                armature_obj.keyframe_insert(dp, frame=frame)
-                keyed_fcurves.add(dp)
-
-    # Set all influence keyframes to CONSTANT interpolation
+    # Set CONSTANT interpolation and group the fcurve
     action = armature_obj.animation_data and armature_obj.animation_data.action
     if action:
         for fc in _iter_fcurves(action):
-            if fc.data_path in keyed_fcurves:
+            if fc.data_path == data_path:
                 for kp in fc.keyframe_points:
                     kp.interpolation = 'CONSTANT'
+                _assign_ik_switch_group(action, fc)
+                break
+
+
+def _update_existing_keyframe(armature_obj, prop_name, frame, value):
+    """Ensure the toggle persists through animation evaluation.
+
+    If an animation curve exists for this property, the animation system
+    will override the runtime value on the next depsgraph update.  In that
+    case we MUST insert/update a keyframe so the toggle sticks.
+
+    If there is no animation curve at all, the runtime value is sufficient
+    and no keyframe is created — the user keyframes when they choose.
+    """
+    action = (armature_obj.animation_data
+              and armature_obj.animation_data.action)
+    if not action:
+        return
+
+    data_path = f'["{prop_name}"]'
+    for fc in _iter_fcurves(action):
+        if fc.data_path == data_path:
+            # An animation curve exists — we must keyframe to override it.
+            # Check if there's already a keyframe at this frame.
+            for kp in fc.keyframe_points:
+                if abs(kp.co[0] - frame) < 0.5:
+                    kp.co[1] = value
+                    kp.interpolation = 'CONSTANT'
+                    fc.update()
+                    return
+            # No keyframe at this frame — insert one so the toggle
+            # isn't immediately undone by animation evaluation.
+            armature_obj[prop_name] = value
+            armature_obj.keyframe_insert(data_path, frame=frame)
+            # Set CONSTANT interpolation on ALL keyframes for this curve
+            # (new keyframe may have inherited a different default).
+            for kp in fc.keyframe_points:
+                kp.interpolation = 'CONSTANT'
+            fc.update()
+            return
+    # No animation curve — runtime value is sufficient, no keyframe needed.
 
 
 # ---------------------------------------------------------------------------
@@ -202,8 +213,8 @@ class BT_OT_SmartKeyframe(bpy.types.Operator):
 
     IK mode: keys IK targets/poles + independently-controlled FK (e.g. toe).
     FK mode: keys all FK controls.
-    Constraint influences are keyed with CONSTANT interpolation so mode
-    switches are instant during playback."""
+    The ik_switch custom property is keyed with CONSTANT interpolation so
+    mode switches are instant during playback."""
     bl_idname = "bt.smart_keyframe"
     bl_label = "Smart Keyframe"
     bl_description = "Key active control system (IK or FK) with instant mode switching"
@@ -278,14 +289,20 @@ class BT_OT_SmartKeyframe(bpy.types.Operator):
                 fk_pbones = _get_chain_fk_pbones(armature, sd, chain_id)
                 _key_bones(fk_pbones, frame)
 
-            # Key constraint influences with CONSTANT interpolation
-            _key_chain_influences(armature, sd, chain_id, use_ik, frame)
+            # Key the ik_switch custom property with CONSTANT interpolation
+            _key_ik_switch(armature, chain_id, use_ik, frame)
 
         # Key non-wrap bones normally
         for pbone in plain_bones:
             _key_rotation(pbone, frame)
             if not all(pbone.lock_location):
                 pbone.keyframe_insert('location', frame=frame)
+
+        # Unmute any fcurves kept muted by the IK/FK toggle.
+        # Now that keyframes are inserted with the snapped/edited values,
+        # animation evaluation will produce the same values — safe to unmute.
+        from ..rigging.scanner.operators import unmute_pending_toggle_fcurves
+        unmute_pending_toggle_fcurves()
 
         # Report
         msg = f"Keyed {len(processed_chains)} chain(s)"

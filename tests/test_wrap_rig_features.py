@@ -524,133 +524,87 @@ class TestComputeJointLimits:
 
 
 # ===========================================================================
-# Test: _key_chain_influences
+# Test: _key_ik_switch (replaced _key_chain_influences)
 # ===========================================================================
 
-class TestKeyChainInfluences:
-    """Tests for _key_chain_influences (smart_keyframe.py)."""
+class TestKeyIkSwitch:
+    """Tests for _key_ik_switch — keys the ik_switch custom property.
 
-    def test_ik_mode_disables_fk_on_ik_bones(self):
-        """In IK mode, COPY_TRANSFORMS on MCH bones with IK should go to 0."""
-        from animation.smart_keyframe import _key_chain_influences
+    In the new system, a single custom property per chain controls all
+    constraint influences via drivers.  _key_ik_switch sets the property
+    and inserts a keyframe with CONSTANT interpolation.
+    """
 
-        armature, bones, _ = _make_armature(
+    def _make_armature_with_prop(self, chain_id, roles, ik_roles=None,
+                                  initial_value=0.0):
+        """Build a mock armature with an ik_switch custom property."""
+        armature, bones, items = _make_armature(chain_id, roles, ik_roles)
+        armature.animation_data = None
+        # Use a real dict for custom property access (__getitem__/__contains__)
+        props = {f"ik_switch_{chain_id}": initial_value}
+        armature.__getitem__ = lambda self, key: props[key]
+        armature.__setitem__ = lambda self, key, val: props.__setitem__(key, val)
+        armature.__contains__ = lambda self, key: key in props
+        armature._props = props  # expose for assertions
+        return armature, bones, items
+
+    def test_ik_mode_sets_property_to_1(self):
+        """In IK mode, ik_switch property should be 1.0."""
+        from animation.smart_keyframe import _key_ik_switch
+
+        armature, _, _ = self._make_armature_with_prop(
             "leg_L",
             ["upper_leg", "lower_leg", "foot", "toe"],
             ik_roles={"upper_leg", "lower_leg", "foot"},
+            initial_value=0.0,
         )
-        armature.animation_data = None
 
-        _key_chain_influences(
-            armature, armature.bt_scan, "leg_L", use_ik=True, frame=1)
+        _key_ik_switch(armature, "leg_L", use_ik=True, frame=1)
 
-        # MCH bones with IK: COPY_TRANSFORMS should be 0
-        for role in ["upper_leg", "lower_leg", "foot"]:
-            mch = bones[f"{WRAP_MCH_PREFIX}leg_L_{role}"]
-            fk_con = mch.constraints[0]  # First constraint is FK
-            assert fk_con.type == 'COPY_TRANSFORMS'
-            assert fk_con.influence == 0.0
+        assert armature._props["ik_switch_leg_L"] == 1.0
 
-    def test_ik_mode_keeps_fk_on_toe(self):
-        """In IK mode, toe (no IK) should keep FK at 1.0."""
-        from animation.smart_keyframe import _key_chain_influences
+    def test_fk_mode_sets_property_to_0(self):
+        """In FK mode, ik_switch property should be 0.0."""
+        from animation.smart_keyframe import _key_ik_switch
 
-        armature, bones, _ = _make_armature(
+        armature, _, _ = self._make_armature_with_prop(
             "leg_L",
             ["upper_leg", "lower_leg", "foot", "toe"],
             ik_roles={"upper_leg", "lower_leg", "foot"},
+            initial_value=1.0,
         )
-        armature.animation_data = None
 
-        _key_chain_influences(
-            armature, armature.bt_scan, "leg_L", use_ik=True, frame=1)
+        _key_ik_switch(armature, "leg_L", use_ik=False, frame=1)
 
-        toe_mch = bones[f"{WRAP_MCH_PREFIX}leg_L_toe"]
-        fk_con = toe_mch.constraints[0]
-        assert fk_con.type == 'COPY_TRANSFORMS'
-        assert fk_con.influence == 1.0
-
-    def test_fk_mode_enables_fk(self):
-        """In FK mode, COPY_TRANSFORMS on all MCH bones should be 1.0."""
-        from animation.smart_keyframe import _key_chain_influences
-
-        armature, bones, _ = _make_armature(
-            "leg_L",
-            ["upper_leg", "lower_leg", "foot", "toe"],
-            ik_roles={"upper_leg", "lower_leg", "foot"},
-        )
-        armature.animation_data = None
-
-        _key_chain_influences(
-            armature, armature.bt_scan, "leg_L", use_ik=False, frame=1)
-
-        for role in ["upper_leg", "lower_leg", "foot", "toe"]:
-            mch = bones[f"{WRAP_MCH_PREFIX}leg_L_{role}"]
-            fk_con = mch.constraints[0]
-            assert fk_con.influence == 1.0
-
-    def test_ik_mode_enables_ik_constraints(self):
-        """In IK mode, IK constraints should be set to 1.0."""
-        from animation.smart_keyframe import _key_chain_influences
-
-        armature, bones, _ = _make_armature(
-            "leg_L",
-            ["upper_leg", "lower_leg", "foot"],
-            ik_roles={"upper_leg", "lower_leg", "foot"},
-        )
-        armature.animation_data = None
-
-        _key_chain_influences(
-            armature, armature.bt_scan, "leg_L", use_ik=True, frame=1)
-
-        for role in ["upper_leg", "lower_leg", "foot"]:
-            mch = bones[f"{WRAP_MCH_PREFIX}leg_L_{role}"]
-            ik_con = mch.constraints[1]  # Second constraint is IK
-            assert ik_con.type == 'IK'
-            assert ik_con.influence == 1.0
+        assert armature._props["ik_switch_leg_L"] == 0.0
 
     def test_keyframe_insert_called(self):
-        """Constraint influences should be keyframed."""
-        from animation.smart_keyframe import _key_chain_influences
+        """The ik_switch property should be keyframed."""
+        from animation.smart_keyframe import _key_ik_switch
 
-        armature, bones, _ = _make_armature(
+        armature, _, _ = self._make_armature_with_prop(
             "leg_L", ["upper_leg", "lower_leg"],
-            ik_roles={"upper_leg", "lower_leg"})
-        armature.animation_data = None
+            ik_roles={"upper_leg", "lower_leg"},
+        )
 
-        _key_chain_influences(
-            armature, armature.bt_scan, "leg_L", use_ik=True, frame=5)
+        _key_ik_switch(armature, "leg_L", use_ik=True, frame=5)
 
-        # Check that keyframe_insert was called
         assert armature.keyframe_insert.called
 
-    def test_fk_sync_influence_keyed_in_ik_mode(self):
-        """FK_sync constraints on CTRL bones should be keyed in IK mode."""
-        from animation.smart_keyframe import _key_chain_influences
+    def test_missing_property_is_noop(self):
+        """If ik_switch property doesn't exist, _key_ik_switch does nothing."""
+        from animation.smart_keyframe import _key_ik_switch
 
-        armature, bones, _ = _make_armature(
+        armature, _, _ = _make_armature(
             "leg_L", ["upper_leg", "lower_leg"],
             ik_roles={"upper_leg", "lower_leg"})
         armature.animation_data = None
+        # Mock __contains__ to return False for all keys
+        armature.__contains__ = lambda self, key: False
 
-        # Add FK_sync constraint to FK CTRL bones
-        for role in ["upper_leg", "lower_leg"]:
-            ctrl = bones[f"{WRAP_CTRL_PREFIX}leg_L_FK_{role}"]
-            sync_con = _make_constraint(
-                'COPY_TRANSFORMS',
-                f"{WRAP_CONSTRAINT_PREFIX}FK_sync", 0.0)
-            ctrl.constraints.append(sync_con)
+        _key_ik_switch(armature, "leg_L", use_ik=True, frame=1)
 
-        _key_chain_influences(
-            armature, armature.bt_scan, "leg_L", use_ik=True, frame=1)
-
-        # FK_sync should be set to 1.0 in IK mode
-        for role in ["upper_leg", "lower_leg"]:
-            ctrl = bones[f"{WRAP_CTRL_PREFIX}leg_L_FK_{role}"]
-            for c in ctrl.constraints:
-                if (hasattr(c, 'name')
-                        and c.name == f"{WRAP_CONSTRAINT_PREFIX}FK_sync"):
-                    assert c.influence == 1.0
+        assert not armature.keyframe_insert.called
 
 
 # ===========================================================================
@@ -821,86 +775,45 @@ class TestLookAtSyncConstraints:
 
 
 # ===========================================================================
-# Test: LookAt — _key_chain_influences with DAMPED_TRACK
+# Test: LookAt — _key_ik_switch with LOOKAT chain
 # ===========================================================================
 
-class TestLookAtKeyChainInfluences:
-    """Tests for _key_chain_influences with DAMPED_TRACK constraint."""
+class TestLookAtKeyIkSwitch:
+    """Tests for _key_ik_switch with LookAt (DAMPED_TRACK) chains.
 
-    def test_lookat_mode_disables_fk_on_head(self):
-        """In LookAt mode, head MCH FK COPY_TRANSFORMS should go to 0."""
-        from animation.smart_keyframe import _key_chain_influences
+    In the new system, the ik_switch property controls all constraint
+    influences via drivers — same mechanism for LookAt as for IK.
+    """
 
-        armature, bones, _ = _make_neck_head_armature()
+    def _make_lookat_with_prop(self, initial_value=0.0):
+        armature, bones, items = _make_neck_head_armature()
         armature.animation_data = None
+        props = {"ik_switch_neck_head_C": initial_value}
+        armature.__getitem__ = lambda self, key: props[key]
+        armature.__setitem__ = lambda self, key, val: props.__setitem__(key, val)
+        armature.__contains__ = lambda self, key: key in props
+        armature._props = props
+        return armature, bones, items
 
-        _key_chain_influences(
-            armature, armature.bt_scan, "neck_head_C", use_ik=True, frame=1)
+    def test_lookat_mode_sets_property_to_1(self):
+        """In LookAt mode, ik_switch should be 1.0."""
+        from animation.smart_keyframe import _key_ik_switch
 
-        head_mch = bones[f"{WRAP_MCH_PREFIX}neck_head_C_head"]
-        fk_con = head_mch.constraints[0]
-        assert fk_con.type == 'COPY_TRANSFORMS'
-        assert fk_con.influence == 0.0
+        armature, _, _ = self._make_lookat_with_prop(initial_value=0.0)
 
-    def test_lookat_mode_enables_damped_track(self):
-        """In LookAt mode, DAMPED_TRACK should be set to 1.0."""
-        from animation.smart_keyframe import _key_chain_influences
+        _key_ik_switch(armature, "neck_head_C", use_ik=True, frame=1)
 
-        armature, bones, _ = _make_neck_head_armature()
-        armature.animation_data = None
+        assert armature._props["ik_switch_neck_head_C"] == 1.0
 
-        _key_chain_influences(
-            armature, armature.bt_scan, "neck_head_C", use_ik=True, frame=1)
+    def test_fk_mode_sets_property_to_0(self):
+        """In FK mode, ik_switch should be 0.0."""
+        from animation.smart_keyframe import _key_ik_switch
 
-        head_mch = bones[f"{WRAP_MCH_PREFIX}neck_head_C_head"]
-        dt_con = head_mch.constraints[1]
-        assert dt_con.type == 'DAMPED_TRACK'
-        assert dt_con.influence == 1.0
+        armature, _, _ = self._make_lookat_with_prop(initial_value=1.0)
 
-    def test_fk_mode_disables_damped_track(self):
-        """In FK mode, DAMPED_TRACK should be set to 0.0."""
-        from animation.smart_keyframe import _key_chain_influences
+        _key_ik_switch(armature, "neck_head_C", use_ik=False, frame=1)
 
-        armature, bones, _ = _make_neck_head_armature()
-        armature.animation_data = None
-
-        _key_chain_influences(
-            armature, armature.bt_scan, "neck_head_C", use_ik=False, frame=1)
-
-        head_mch = bones[f"{WRAP_MCH_PREFIX}neck_head_C_head"]
-        dt_con = head_mch.constraints[1]
-        assert dt_con.type == 'DAMPED_TRACK'
-        assert dt_con.influence == 0.0
-
-    def test_fk_mode_keeps_fk_on_neck(self):
-        """In FK mode, neck FK (no DAMPED_TRACK) stays at 1.0."""
-        from animation.smart_keyframe import _key_chain_influences
-
-        armature, bones, _ = _make_neck_head_armature()
-        armature.animation_data = None
-
-        _key_chain_influences(
-            armature, armature.bt_scan, "neck_head_C", use_ik=False, frame=1)
-
-        neck_mch = bones[f"{WRAP_MCH_PREFIX}neck_head_C_neck"]
-        fk_con = neck_mch.constraints[0]
-        assert fk_con.type == 'COPY_TRANSFORMS'
-        assert fk_con.influence == 1.0
-
-    def test_lookat_mode_keeps_fk_on_neck(self):
-        """In LookAt mode, neck (no DAMPED_TRACK) keeps FK at 1.0."""
-        from animation.smart_keyframe import _key_chain_influences
-
-        armature, bones, _ = _make_neck_head_armature()
-        armature.animation_data = None
-
-        _key_chain_influences(
-            armature, armature.bt_scan, "neck_head_C", use_ik=True, frame=1)
-
-        neck_mch = bones[f"{WRAP_MCH_PREFIX}neck_head_C_neck"]
-        fk_con = neck_mch.constraints[0]
-        assert fk_con.type == 'COPY_TRANSFORMS'
-        assert fk_con.influence == 1.0
+        assert armature._props["ik_switch_neck_head_C"] == 0.0
 
 
 # ===========================================================================
