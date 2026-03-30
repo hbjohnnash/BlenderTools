@@ -6,7 +6,7 @@
       "id": "blender_tools",
       "schema_version": "1.0.0",
       "name": "BlenderTools",
-      "version": "1.0.55",
+      "version": "1.0.56",
       "tagline": "Comprehensive seam, rigging, skinning, animation & LLM bridge toolkit",
       "maintainer": "hbjohnnash",
       "type": "add-on",
@@ -22,8 +22,8 @@
         "network",
         "files"
       ],
-      "archive_size": 248834,
-      "archive_hash": "sha256:289f2ddbe8a808cab9eda717e820dcaa2e391585ab370379e252da9a762bc680",
+      "archive_size": 249549,
+      "archive_hash": "sha256:7c721badd31b6ebddc62d3bc5477eed6b29039e7ddfcf719748f7118c03dce57",
       "archive_url": "https://github.com/hbjohnnash/BlenderTools/releases/download/latest/blender_tools.zip"
     }
   ]
