@@ -34,9 +34,13 @@ def export_to_ue(armature_obj, mesh_objects, output_dir,
     # Duplicate hierarchy
     dup_arm, dup_meshes = _duplicate_hierarchy(armature_obj, mesh_objects)
 
+    # Isolate actions — copy all matching actions so scale_rig
+    # doesn't corrupt the original armature's shared action datablocks
+    copied_actions = _isolate_actions(dup_arm)
+
     try:
-        # Scale duplicates 100x
-        scale_stats = scale_rig(dup_arm, 100.0)
+        # Scale duplicates 100x (only affects the isolated copies)
+        scale_stats = scale_rig(dup_arm, 100.0, actions=copied_actions)
         result["stats"]["scale"] = scale_stats
 
         if export_mesh:
@@ -49,7 +53,8 @@ def export_to_ue(armature_obj, mesh_objects, output_dir,
         if export_anim:
             if separate_anim:
                 anim_files = _export_separate_anims(
-                    dup_arm, dup_meshes, output_dir, base_name, ue_naming
+                    dup_arm, dup_meshes, output_dir, base_name, ue_naming,
+                    actions=copied_actions
                 )
                 result["files"].extend(anim_files)
             else:
@@ -61,8 +66,48 @@ def export_to_ue(armature_obj, mesh_objects, output_dir,
 
     finally:
         _delete_objects(dup_arm, dup_meshes)
+        _cleanup_temp_actions(copied_actions)
 
     return result
+
+
+def _isolate_actions(armature_obj):
+    """Copy all actions targeting this armature so originals aren't modified.
+
+    bpy.ops.object.duplicate() shares action datablocks between original
+    and duplicate. Without isolation, scale_rig would corrupt the originals.
+
+    Returns:
+        Set of copied action datablocks (pass to scale_rig and cleanup).
+    """
+    from .scale_rig import _find_armature_actions
+
+    original_actions = _find_armature_actions(armature_obj)
+    action_map = {}  # original -> copy
+
+    for action in original_actions:
+        copy = action.copy()
+        copy.name = action.name + "__export_tmp"
+        action_map[action] = copy
+
+    # Re-link the armature's animation data to the copies
+    anim_data = armature_obj.animation_data
+    if anim_data:
+        if anim_data.action in action_map:
+            anim_data.action = action_map[anim_data.action]
+        for track in anim_data.nla_tracks:
+            for strip in track.strips:
+                if strip.action in action_map:
+                    strip.action = action_map[strip.action]
+
+    return set(action_map.values())
+
+
+def _cleanup_temp_actions(actions):
+    """Remove temporary action copies created by _isolate_actions."""
+    for action in actions:
+        if action and action.name in {a.name for a in bpy.data.actions}:
+            bpy.data.actions.remove(action)
 
 
 def _duplicate_hierarchy(armature_obj, mesh_objects):
@@ -132,7 +177,8 @@ def _export_fbx(armature, meshes, filepath, bake_anim=True):
     )
 
 
-def _export_separate_anims(armature, meshes, output_dir, base_name, ue_naming):
+def _export_separate_anims(armature, meshes, output_dir, base_name, ue_naming,
+                           actions=None):
     """Export each action targeting the armature as a separate FBX."""
     files = []
     original_action = None
@@ -140,8 +186,11 @@ def _export_separate_anims(armature, meshes, output_dir, base_name, ue_naming):
     if armature.animation_data:
         original_action = armature.animation_data.action
 
-    from .scale_rig import _find_armature_actions
-    armature_actions = _find_armature_actions(armature)
+    if actions is not None:
+        armature_actions = actions
+    else:
+        from .scale_rig import _find_armature_actions
+        armature_actions = _find_armature_actions(armature)
 
     for action in armature_actions:
 
@@ -150,7 +199,7 @@ def _export_separate_anims(armature, meshes, output_dir, base_name, ue_naming):
             armature.animation_data_create()
         armature.animation_data.action = action
 
-        action_clean = action.name.replace(" ", "_")
+        action_clean = action.name.removesuffix("__export_tmp").replace(" ", "_")
         if ue_naming:
             fname = f"A_{base_name}_{action_clean}.fbx"
         else:

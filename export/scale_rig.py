@@ -5,12 +5,16 @@ import json
 import bpy
 
 
-def scale_rig(armature_obj, factor):
+def scale_rig(armature_obj, factor, actions=None):
     """Scale an armature and all associated data by a factor.
 
     Args:
         armature_obj: The armature object to scale.
         factor: Scale multiplier (e.g. 100.0 for Blender→UE prep).
+        actions: Optional explicit set of actions to scale. If provided,
+                 only these actions are modified (skips auto-discovery).
+                 Use this when scaling a duplicate to avoid corrupting
+                 shared action datablocks on the original armature.
 
     Returns:
         Dict with stats: bones_scaled, actions_scaled, constraints_scaled,
@@ -40,9 +44,9 @@ def scale_rig(armature_obj, factor):
     # 2. Scale child mesh objects (before armature apply propagates weirdly)
     stats["meshes_scaled"] = _scale_child_meshes(armature_obj, factor)
 
-    # 3. Scale location keyframes in all actions targeting this armature
+    # 3. Scale location keyframes in actions targeting this armature
     stats["actions_scaled"], stats["fcurves_scaled"] = _scale_actions(
-        armature_obj, factor
+        armature_obj, factor, actions
     )
 
     # 4. Scale constraint distance values
@@ -78,15 +82,21 @@ def _get_channelbag(action, slot):
         return None
 
 
-def _scale_actions(armature_obj, factor):
-    """Scale location keyframe values in all actions for this armature.
+def _scale_actions(armature_obj, factor, actions=None):
+    """Scale location keyframe values in actions for this armature.
 
     Uses Blender 5.0 API: action.layers[0].strips[0].channelbag(slot).fcurves.
+
+    Args:
+        armature_obj: The armature whose actions to scale.
+        factor: Scale multiplier for location keyframe values.
+        actions: Optional explicit set of actions to scale. If None,
+                 auto-discovers via _find_armature_actions (global scan).
     """
     actions_count = 0
     fcurves_count = 0
 
-    armature_actions = _find_armature_actions(armature_obj)
+    armature_actions = actions if actions is not None else _find_armature_actions(armature_obj)
 
     for action in armature_actions:
         action_scaled = False
