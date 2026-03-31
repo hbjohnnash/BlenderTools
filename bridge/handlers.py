@@ -337,7 +337,8 @@ def _export_to_ue(body):
                 return None, merr
             meshes.append(m)
     else:
-        meshes = [c for c in arm.children if c.type == 'MESH']
+        from ..export.ue_export import filter_exportable_meshes
+        meshes = filter_exportable_meshes(arm)
 
     output_dir = body.get("output", "//export/")
     import bpy as _bpy

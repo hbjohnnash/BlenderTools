@@ -6,6 +6,31 @@ import bpy
 
 from .scale_rig import scale_rig
 
+_BT_INTERNAL_COLLECTIONS = {"BT_Shapes", "BT_OnionSkin_Proxy"}
+_BT_INTERNAL_PREFIXES = ("BT_Proxy_", "BT_Shape_")
+
+
+def _is_bt_internal(mesh_obj):
+    """Return True if mesh_obj is a BlenderTools internal mesh (not for export).
+
+    Catches: custom bone shapes (BT_Shapes collection), onion skin proxies
+    (BT_Proxy_ prefix / BT_OnionSkin_Proxy collection), and any future
+    BT-managed utility meshes.
+    """
+    if mesh_obj.name.startswith(_BT_INTERNAL_PREFIXES):
+        return True
+    for col_name in _BT_INTERNAL_COLLECTIONS:
+        col = bpy.data.collections.get(col_name)
+        if col and mesh_obj.name in col.objects:
+            return True
+    return False
+
+
+def filter_exportable_meshes(armature_obj):
+    """Return mesh children of armature, excluding BT internal meshes."""
+    return [c for c in armature_obj.children
+            if c.type == 'MESH' and not _is_bt_internal(c)]
+
 
 def export_to_ue(armature_obj, mesh_objects, output_dir,
                  export_mesh=True, export_anim=True,
@@ -30,6 +55,10 @@ def export_to_ue(armature_obj, mesh_objects, output_dir,
     os.makedirs(output_dir, exist_ok=True)
     base_name = armature_obj.name
     result = {"success": True, "files": [], "stats": {}}
+
+    # Filter out any BT internal meshes and non-armature-parented meshes
+    mesh_objects = [m for m in mesh_objects
+                    if m.parent == armature_obj and not _is_bt_internal(m)]
 
     # Duplicate hierarchy
     dup_arm, dup_meshes = _duplicate_hierarchy(armature_obj, mesh_objects)
@@ -121,14 +150,25 @@ def _duplicate_hierarchy(armature_obj, mesh_objects):
     bpy.context.view_layer.objects.active = armature_obj
     bpy.ops.object.duplicate()
 
-    # Find duplicates (they're now selected)
+    # Find duplicates (they're now selected), excluding bone shape meshes
     dup_arm = None
     dup_meshes = []
+    dup_shapes = []
     for obj in bpy.context.selected_objects:
         if obj.type == 'ARMATURE':
             dup_arm = obj
         elif obj.type == 'MESH':
-            dup_meshes.append(obj)
+            if _is_bt_internal(obj):
+                dup_shapes.append(obj)
+            else:
+                dup_meshes.append(obj)
+
+    # Clean up any duplicated bone shape meshes immediately
+    if dup_shapes:
+        bpy.ops.object.select_all(action='DESELECT')
+        for s in dup_shapes:
+            s.select_set(True)
+        bpy.ops.object.delete()
 
     return dup_arm, dup_meshes
 

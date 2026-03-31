@@ -89,7 +89,8 @@ class BT_OT_ExportToUE(bpy.types.Operator):
         from .ue_export import export_to_ue
 
         armature = context.active_object
-        meshes = [c for c in armature.children if c.type == 'MESH']
+        from .ue_export import filter_exportable_meshes
+        meshes = filter_exportable_meshes(armature)
 
         output_dir = bpy.path.abspath(self.output_dir)
 
