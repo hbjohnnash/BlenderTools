@@ -521,13 +521,17 @@ def _create_root_bone(armature_obj, root_name, source_name):
 
 
 def _cleanup_empties(armature_obj):
-    """Remove reference empties."""
+    """Remove reference empties and their baked actions."""
     rm = armature_obj.bt_root_motion
     if rm.reference_empties:
         for name in rm.reference_empties.split(","):
             name = name.strip()
             obj = bpy.data.objects.get(name)
             if obj:
+                # Remove the action created by nla.bake on this empty
+                if obj.animation_data and obj.animation_data.action:
+                    bpy.data.actions.remove(obj.animation_data.action,
+                                            do_unlink=True)
                 bpy.data.objects.remove(obj, do_unlink=True)
         rm.reference_empties = ""
 
