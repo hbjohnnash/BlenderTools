@@ -552,6 +552,7 @@ def _write_widget_property(action_id, context, widget):
         if rm is not None:
             targets["rm_extract_xy"] = (rm, 'extract_xy', bool)
             targets["rm_extract_z_rot"] = (rm, 'extract_z_rot', bool)
+            targets["rm_extract_z"] = (rm, 'extract_z', bool)
 
     entry = targets.get(action_id)
     if entry:

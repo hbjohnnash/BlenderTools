@@ -20,15 +20,17 @@
 
 ## Root Motion Extraction
 
-Pin controllers (IK targets, spine FK) to baked reference empties, freeing the root bone for motion extraction. Source bone's XY translation + Z rotation extracted to root.
+Pin controllers (IK targets, spine FK) to baked reference empties, freeing the root bone for motion extraction. Non-destructive: original action is preserved; root motion is baked into a `_root_motion` copy.
 
 - **Source bone** — COG/hips/torso. Auto-detected from lowest spine FK or name heuristic
-- **Root bone** — Receives locomotion data. For wrap rigs, uses CTRL wrap bone. Created at origin if missing
-- **Pinned bones** — All controllers holding world-space position. Each gets reference empty + COPY_TRANSFORMS back
+- **Root bone** — Receives locomotion data. For wrap rigs, uses CTRL wrap bone. Created at origin if missing (`use_deform=True` for UE FBX export)
+- **Pinned bones** — Controllers holding world-space position. Filtered to only bones with keyframes in the action
 
-Workflow: Auto-detect > Setup > (polish root curves) > Finalize (bakes + cleanup) or Cancel.
+Workflow: Auto-detect > Setup > (polish root curves) > Finalize (bakes + cleanup) or Cancel (restores original action).
 
-Options: `extract_xy` (default true), `extract_z_rot` (default true).
+**Auto-detection** analyzes the animation to classify motion type (locomotion/strafe/turning/in-place/jump) and auto-configures extraction options. Uses the action's frame range, not the scene range.
+
+Options: `extract_xy` (default true), `extract_z_rot` (default true), `extract_z` (default false, for jumps/climbs).
 
 ## Bone Trajectory
 
@@ -55,9 +57,11 @@ Operators: `bt.onion_skin` (toggle), `bt.onion_skin_refresh` (rebuild proxies/ca
 
 ## Smart Keyframe (I key override)
 
-IK bones never keyed directly. Per-bone behavior:
-- **IK bone + IK mode**: snap FK from IK, key FK rotations for chain
-- **FK bone**: key rotation
+IK bones never keyed directly. In addition to bone channels, Smart Keyframe keys the chain's `ik_switch_{chain_id}` custom property with **CONSTANT interpolation**, locking the FK/IK state to the frame. After keying, any pending muted fcurves (from toggle or paste) are unmuted.
+
+Per-bone behavior:
+- **IK bone + IK mode**: snap FK from IK, key FK rotations for chain, key `ik_switch` = 1.0 (CONSTANT)
+- **FK bone**: key rotation, key `ik_switch` = 0.0 (CONSTANT)
 - **COG/root**: key location + rotation
 - **Non-wrap bones**: key rotation + location if unlocked
 - **IK bone + FK mode**: skipped
@@ -74,7 +78,7 @@ Channel groups: `assign_channel_groups(armature_obj)` after `nla.bake` (auto-cal
 
 ```bash
 mechanical --object X --type piston_cycle|gear_rotation|conveyor
-root-motion-setup --armature X
+root-motion-setup --armature X [--extract-z]
 root-motion-finalize --armature X
 root-motion-cancel --armature X
 ```

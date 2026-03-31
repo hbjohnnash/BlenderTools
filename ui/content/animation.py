@@ -142,7 +142,17 @@ def _build_root_motion(obj, rm):
             Toggle("Z Rot",
                    on=getattr(rm, 'extract_z_rot', True),
                    action_id="rm_extract_z_rot"),
+            Toggle("Z",
+                   on=getattr(rm, 'extract_z', False),
+                   action_id="rm_extract_z"),
         ], gap=8, padding=(0, 0, 0, 0)))
+
+        # Analysis summary (shown after Auto Detect)
+        analysis = getattr(rm, 'anim_analysis', '')
+        if analysis:
+            children.append(Label(analysis,
+                                  size=T.FONT_SIZE_SMALL,
+                                  color=T.TEXT_LABEL))
 
         children.append(Button("Setup Root Motion", action_id="rm_setup",
                                style=Button.STYLE_PRIMARY))

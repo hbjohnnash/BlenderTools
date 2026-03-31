@@ -6,7 +6,10 @@ Workflow:
 3. Finalize: Bake controllers with visual keying, clean up empties
 
 The animation stays visually identical — only the root bone gains locomotion data.
+Non-destructive: original action is preserved; root motion is baked into a copy.
 """
+
+import math
 
 import bpy
 from bpy.props import (
@@ -19,10 +22,15 @@ from bpy.props import (
 from mathutils import Vector
 
 from ..core.constants import PANEL_CATEGORY, WRAP_CTRL_PREFIX
-from ..core.utils import assign_channel_groups
+from ..core.utils import assign_channel_groups, _BONE_PATH_RE
 
 RM_CONSTRAINT_PREFIX = "BT_RM_"
 RM_EMPTY_PREFIX = "RM_ref_"
+
+# Expert-system thresholds (calibrated for humanoid characters at Blender scale)
+_XY_THRESHOLD = 0.05        # meters of net XY displacement for locomotion
+_Z_ROT_THRESHOLD = 0.26     # radians (~15 deg) of accumulated yaw
+_Z_HEIGHT_THRESHOLD = 0.3   # meters of Z range to suggest jump/climb extraction
 
 
 # ─── PropertyGroups ────────────────────────────────────────────────────────
@@ -46,8 +54,146 @@ class BT_RMSettings(bpy.types.PropertyGroup):
         description="Transfer facing direction to root",
         default=True,
     )
+    extract_z: BoolProperty(
+        name="Z Height",
+        description="Transfer vertical movement to root (for jumps/climbs)",
+        default=False,
+    )
     reference_empties: StringProperty(default="")
     created_root: BoolProperty(default=False)
+    original_action: StringProperty(default="")
+    anim_type: StringProperty(default="")
+    anim_analysis: StringProperty(default="")
+
+
+# ─── Helpers ──────────────────────────────────────────────────────────────
+
+def _get_action_frame_range(armature_obj):
+    """Return (frame_start, frame_end) from the active action, or scene range."""
+    anim = armature_obj.animation_data
+    if anim and anim.action:
+        r = anim.action.frame_range
+        return int(r[0]), int(r[1])
+    scene = bpy.context.scene
+    return scene.frame_start, scene.frame_end
+
+
+def _analyze_motion(armature_obj, source_bone_name, frame_start, frame_end):
+    """Analyze source bone motion to auto-configure extraction settings.
+
+    Stride-samples world-space position/rotation across the frame range
+    (max ~120 samples) and classifies the animation type.
+    """
+    scene = bpy.context.scene
+    original_frame = scene.frame_current
+    pbone = armature_obj.pose.bones.get(source_bone_name)
+    if not pbone or frame_end <= frame_start:
+        return {
+            'net_xy': 0.0, 'total_z_rot': 0.0, 'z_range': 0.0,
+            'extract_xy': True, 'extract_z_rot': True, 'extract_z': False,
+            'anim_type': 'unknown', 'summary': '',
+        }
+
+    total_frames = frame_end - frame_start
+    stride = max(1, total_frames // 120)
+    positions = []
+    yaw_values = []
+
+    for frame in range(frame_start, frame_end + 1, stride):
+        scene.frame_set(frame)
+        world_pos = armature_obj.matrix_world @ pbone.head
+        positions.append(world_pos.copy())
+        world_rot = (armature_obj.matrix_world @ pbone.matrix).to_euler('XYZ')
+        yaw_values.append(world_rot.z)
+
+    scene.frame_set(original_frame)
+
+    if len(positions) < 2:
+        return {
+            'net_xy': 0.0, 'total_z_rot': 0.0, 'z_range': 0.0,
+            'extract_xy': True, 'extract_z_rot': True, 'extract_z': False,
+            'anim_type': 'unknown', 'summary': '',
+        }
+
+    # Net XY displacement (first→last)
+    first_xy = Vector((positions[0].x, positions[0].y))
+    last_xy = Vector((positions[-1].x, positions[-1].y))
+    net_xy = (last_xy - first_xy).length
+
+    # Accumulated absolute yaw delta (handles ±180° wrapping)
+    total_z_rot = 0.0
+    for i in range(1, len(yaw_values)):
+        delta = yaw_values[i] - yaw_values[i - 1]
+        delta = math.atan2(math.sin(delta), math.cos(delta))
+        total_z_rot += abs(delta)
+
+    # Z height range
+    z_values = [p.z for p in positions]
+    z_range = max(z_values) - min(z_values)
+
+    # Classification
+    has_xy = net_xy > _XY_THRESHOLD
+    has_rot = total_z_rot > _Z_ROT_THRESHOLD
+    has_z = z_range > _Z_HEIGHT_THRESHOLD
+
+    if has_z:
+        anim_type = 'jump'
+    elif has_xy and has_rot:
+        anim_type = 'locomotion'
+    elif has_xy:
+        anim_type = 'strafe'
+    elif has_rot:
+        anim_type = 'turning'
+    else:
+        anim_type = 'in_place'
+
+    summary = (f"XY: {net_xy:.2f}m, "
+               f"Yaw: {math.degrees(total_z_rot):.0f}\u00b0, "
+               f"Z: {z_range:.2f}m")
+
+    return {
+        'net_xy': net_xy,
+        'total_z_rot': total_z_rot,
+        'z_range': z_range,
+        'extract_xy': has_xy,
+        'extract_z_rot': has_rot,
+        'extract_z': has_z,
+        'anim_type': anim_type,
+        'summary': summary,
+    }
+
+
+def _filter_keyed_bones(armature_obj, bone_names, source_bone,
+                        frame_start, frame_end):
+    """Return only bones from *bone_names* that have keyframes in the action.
+
+    *source_bone* is always kept even if it has no direct keyframes
+    (it may be constraint-driven but must still be pinned).
+    """
+    anim = armature_obj.animation_data
+    if not anim or not anim.action:
+        return list(bone_names)
+
+    action = anim.action
+    keyed = set()
+    name_set = set(bone_names)
+
+    for layer in action.layers:
+        for strip in layer.strips:
+            for cb in strip.channelbags:
+                for fc in cb.fcurves:
+                    m = _BONE_PATH_RE.search(fc.data_path)
+                    if not m:
+                        continue
+                    bone = m.group(1)
+                    if bone in name_set:
+                        keyed.add(bone)
+
+    # Always keep source bone
+    if source_bone:
+        keyed.add(source_bone)
+
+    return [b for b in bone_names if b in keyed]
 
 
 # ─── Auto Detection ────────────────────────────────────────────────────────
@@ -113,13 +259,32 @@ def auto_detect(armature_obj):
             if 'ik' in nl and any(k in nl for k in ('foot', 'hand', 'target')):
                 pinned.append(bone.name)
 
-    return {'root_bone': root_bone, 'source_bone': source_bone, 'pinned_bones': pinned}
+    # ── Motion analysis (expert system) ──
+    analysis = None
+    frame_start, frame_end = _get_action_frame_range(armature_obj)
+    if source_bone:
+        analysis = _analyze_motion(armature_obj, source_bone,
+                                   frame_start, frame_end)
+    if pinned:
+        pinned = _filter_keyed_bones(armature_obj, pinned, source_bone,
+                                     frame_start, frame_end)
+
+    return {
+        'root_bone': root_bone,
+        'source_bone': source_bone,
+        'pinned_bones': pinned,
+        'analysis': analysis,
+    }
 
 
 # ─── Core Logic ────────────────────────────────────────────────────────────
 
 def setup_root_motion(armature_obj):
-    """Phase 1: Create empties, bake, flip constraints, extract root motion."""
+    """Phase 1: Create empties, bake, flip constraints, extract root motion.
+
+    Non-destructive: copies the active action before baking so the
+    original animation data is preserved.
+    """
     rm = armature_obj.bt_root_motion
     scene = bpy.context.scene
 
@@ -130,6 +295,17 @@ def setup_root_motion(armature_obj):
     # Ensure source is in pinned list
     if source and source not in pinned:
         pinned.append(source)
+
+    # ── 0. Non-destructive action copy ──
+    anim = armature_obj.animation_data
+    original_action = anim.action if anim else None
+    if original_action:
+        rm.original_action = original_action.name
+        copy = original_action.copy()
+        copy.name = f"{original_action.name}_root_motion"
+        anim.action = copy
+
+    frame_start, frame_end = _get_action_frame_range(armature_obj)
 
     # Find or create root bone
     if not armature_obj.data.bones.get(root):
@@ -160,8 +336,8 @@ def setup_root_motion(armature_obj):
     bpy.context.view_layer.objects.active = empties[0]
 
     bpy.ops.nla.bake(
-        frame_start=scene.frame_start,
-        frame_end=scene.frame_end,
+        frame_start=frame_start,
+        frame_end=frame_end,
         visual_keying=True,
         clear_constraints=True,
         bake_types={'OBJECT'},
@@ -202,6 +378,14 @@ def setup_root_motion(armature_obj):
             con.use_y = False
             con.use_z = True
 
+        if rm.extract_z:
+            con = root_pbone.constraints.new('COPY_LOCATION')
+            con.name = f"{RM_CONSTRAINT_PREFIX}loc_z"
+            con.target = source_empty
+            con.use_x = False
+            con.use_y = False
+            con.use_z = True
+
     # ── 5. Bake root bone ──
     if not root_pbone:
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -211,8 +395,8 @@ def setup_root_motion(armature_obj):
     armature_obj.data.bones.active = root_pbone.bone
 
     bpy.ops.nla.bake(
-        frame_start=scene.frame_start,
-        frame_end=scene.frame_end,
+        frame_start=frame_start,
+        frame_end=frame_end,
         only_selected=True,
         visual_keying=True,
         clear_constraints=True,
@@ -237,7 +421,7 @@ def finalize_root_motion(armature_obj):
     if source and source not in pinned:
         pinned.append(source)
 
-    scene = bpy.context.scene
+    frame_start, frame_end = _get_action_frame_range(armature_obj)
     bpy.context.view_layer.objects.active = armature_obj
     bpy.ops.object.mode_set(mode='POSE')
 
@@ -250,8 +434,8 @@ def finalize_root_motion(armature_obj):
 
     # Bake with visual keying, overwrite action
     bpy.ops.nla.bake(
-        frame_start=scene.frame_start,
-        frame_end=scene.frame_end,
+        frame_start=frame_start,
+        frame_end=frame_end,
         only_selected=True,
         visual_keying=True,
         clear_constraints=False,
@@ -277,7 +461,7 @@ def finalize_root_motion(armature_obj):
 
 
 def cancel_root_motion(armature_obj):
-    """Cancel: remove pin constraints and empties. Root keyframes are kept."""
+    """Cancel: remove pin constraints, empties, and restore original action."""
     rm = armature_obj.bt_root_motion
     pinned = [item.bone_name for item in rm.pinned_bones]
     source = rm.source_bone
@@ -298,7 +482,22 @@ def cancel_root_motion(armature_obj):
 
     bpy.ops.object.mode_set(mode='OBJECT')
     _cleanup_empties(armature_obj)
+
+    # Restore original action, remove the root motion copy
+    anim = armature_obj.animation_data
+    if rm.original_action and anim:
+        original = bpy.data.actions.get(rm.original_action)
+        rm_copy = anim.action
+        if original:
+            anim.action = original
+        if (rm_copy and rm_copy != original
+                and rm_copy.name.endswith("_root_motion")):
+            bpy.data.actions.remove(rm_copy, do_unlink=True)
+
     rm.is_setup = False
+    rm.original_action = ""
+    rm.anim_type = ""
+    rm.anim_analysis = ""
 
 
 def _create_root_bone(armature_obj, root_name, source_name):
@@ -358,16 +557,26 @@ class BT_OT_RMAutoDetect(bpy.types.Operator):
             item = rm.pinned_bones.add()
             item.bone_name = name
 
+        # Apply motion analysis
+        analysis = result.get('analysis')
+        if analysis:
+            rm.extract_xy = analysis['extract_xy']
+            rm.extract_z_rot = analysis['extract_z_rot']
+            rm.extract_z = analysis['extract_z']
+            rm.anim_type = analysis['anim_type']
+            rm.anim_analysis = analysis['summary']
+
         found = len(result['pinned_bones'])
+        anim_tag = f" [{rm.anim_type}]" if rm.anim_type else ""
         if not result['root_bone']:
             self.report({'INFO'},
                         f"No root bone found — one will be created. "
-                        f"Detected {found} controllers.")
+                        f"Detected {found} controllers.{anim_tag}")
         else:
             self.report({'INFO'},
                         f"Detected root='{result['root_bone']}', "
                         f"source='{result['source_bone']}', "
-                        f"{found} pinned controllers.")
+                        f"{found} pinned controllers.{anim_tag}")
         return {'FINISHED'}
 
 
@@ -430,6 +639,15 @@ class BT_OT_RMSetup(bpy.types.Operator):
     def execute(self, context):
         armature = context.active_object
         rm = armature.bt_root_motion
+
+        if not rm.extract_xy and not rm.extract_z_rot and not rm.extract_z:
+            self.report({'WARNING'}, "No extraction enabled — enable at "
+                        "least one of XY, Z Rot, or Z Height.")
+            return {'CANCELLED'}
+
+        if rm.anim_type == 'in_place':
+            self.report({'INFO'}, "Animation appears to be in-place "
+                        "(no significant travel detected).")
 
         if not rm.root_bone:
             rm.root_bone = "root"
@@ -561,6 +779,14 @@ class BT_PT_RootMotion(bpy.types.Panel):
         row = layout.row(align=True)
         row.prop(rm, "extract_xy", toggle=True)
         row.prop(rm, "extract_z_rot", toggle=True)
+        row.prop(rm, "extract_z", toggle=True)
+
+        # Analysis summary (shown after Auto Detect)
+        if rm.anim_analysis:
+            box = layout.box()
+            box.label(text=rm.anim_analysis, icon='INFO')
+            if rm.anim_type:
+                box.label(text=f"Type: {rm.anim_type}")
 
         layout.separator()
 

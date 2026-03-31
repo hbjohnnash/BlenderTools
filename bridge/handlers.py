@@ -617,9 +617,14 @@ def _root_motion_setup(body):
 
     rm.extract_xy = body.get("extract_xy", True)
     rm.extract_z_rot = body.get("extract_z_rot", True)
+    rm.extract_z = body.get("extract_z", False)
 
     stats = setup_root_motion(arm)
-    return {"success": True, **stats}, None
+    return {"success": True, **stats,
+            "anim_type": rm.anim_type,
+            "extract_xy": rm.extract_xy,
+            "extract_z_rot": rm.extract_z_rot,
+            "extract_z": rm.extract_z}, None
 
 
 def _root_motion_finalize(body):

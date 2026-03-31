@@ -243,6 +243,8 @@ def cmd_root_motion_setup(args):
         data["extract_xy"] = False
     if args.no_z_rot:
         data["extract_z_rot"] = False
+    if args.extract_z:
+        data["extract_z"] = True
     _print_result(_post_json("anim/root-motion-setup", data, port=args.port))
 
 
@@ -389,6 +391,8 @@ def main():
     p.add_argument("--source", help="Source bone for locomotion (default: auto-detect)")
     p.add_argument("--no-xy", action="store_true", help="Skip XY translation extraction")
     p.add_argument("--no-z-rot", action="store_true", help="Skip Z rotation extraction")
+    p.add_argument("--extract-z", action="store_true",
+                   help="Extract Z height to root (for jumps/climbs)")
 
     # root-motion-finalize
     p = sub.add_parser("root-motion-finalize", help="Finalize root motion (bake controllers)")
