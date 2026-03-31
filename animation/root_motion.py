@@ -22,7 +22,7 @@ from bpy.props import (
 from mathutils import Vector
 
 from ..core.constants import PANEL_CATEGORY, WRAP_CTRL_PREFIX
-from ..core.utils import assign_channel_groups, _BONE_PATH_RE
+from ..core.utils import _BONE_PATH_RE, assign_channel_groups
 
 RM_CONSTRAINT_PREFIX = "BT_RM_"
 RM_EMPTY_PREFIX = "RM_ref_"
