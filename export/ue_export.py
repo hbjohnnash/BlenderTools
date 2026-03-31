@@ -56,12 +56,21 @@ def export_to_ue(armature_obj, mesh_objects, output_dir,
     base_name = armature_obj.name
     result = {"success": True, "files": [], "stats": {}}
 
+    # Must be in object mode — bpy.ops.object.select_all() fails silently
+    # from pose mode, leaving stale selections that leak into the FBX
+    if bpy.context.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+
     # Filter out any BT internal meshes and non-armature-parented meshes
     mesh_objects = [m for m in mesh_objects
                     if m.parent == armature_obj and not _is_bt_internal(m)]
 
     # Duplicate hierarchy
     dup_arm, dup_meshes = _duplicate_hierarchy(armature_obj, mesh_objects)
+
+    # Clear custom bone shapes on the duplicate — secondary defense against
+    # shape meshes leaking into the FBX via bone.custom_shape references
+    _clear_custom_shapes(dup_arm)
 
     # Isolate actions — copy all matching actions so scale_rig
     # doesn't corrupt the original armature's shared action datablocks
@@ -130,6 +139,17 @@ def _isolate_actions(armature_obj):
                     strip.action = action_map[strip.action]
 
     return set(action_map.values())
+
+
+def _clear_custom_shapes(armature_obj):
+    """Remove custom_shape references from all pose bones.
+
+    The FBX exporter includes custom_shape mesh objects even when
+    use_selection=True. Clearing them on the duplicate prevents
+    BT_Shape_* meshes from leaking into the exported FBX.
+    """
+    for pbone in armature_obj.pose.bones:
+        pbone.custom_shape = None
 
 
 def _cleanup_temp_actions(actions):
