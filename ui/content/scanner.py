@@ -93,14 +93,18 @@ def build_scanner(context):
     # ── Floor contact ──
     if sd.has_wrap_rig and any(ch.module_type == "leg" for ch in sd.chains):
         floor_label = "Floor ON" if sd.floor_enabled else "Floor OFF"
-        floor_content = VStack([
+        floor_widgets = [
             HStack([
                 Button(floor_label, active=sd.floor_enabled,
                        icon_text="\u2b1f" if sd.floor_enabled else "\u2b21",
                        action_id="toggle_floor_contact", flex=1),
                 Button("\u21bb", action_id="update_floor_level"),
             ], gap=4, padding=(0, 0, 0, 0)),
-        ], gap=T.ITEM_GAP, padding=(0, 0, 0, 0))
+            Label(f"Level: {sd.floor_level:.3f}",
+                  size=T.FONT_SIZE_SMALL, color=T.TEXT_SECONDARY),
+        ]
+        floor_content = VStack(floor_widgets, gap=T.ITEM_GAP,
+                               padding=(0, 0, 0, 0))
         children.append(SubsectionTitle("Floor Contact", "floor",
                                         [floor_content]))
 
@@ -235,11 +239,12 @@ def _build_live_fkik(chain):
     controls.append(Button(ik_label, active=chain.ik_active,
                            action_id=f"fkik_IK_{cid}"))
 
-    # Limits toggle
+    # Limits toggle + per-bone edit
     if chain.ik_enabled:
         limits_icon = "\U0001f512" if chain.ik_limits else "\U0001f513"
         controls.append(Button(limits_icon, active=chain.ik_limits,
                                action_id=f"iklimits_{cid}"))
+        controls.append(Button("\u2699", action_id="edit_bone_ik_limits"))
 
     return Section("", [HStack(controls, gap=4, padding=(0, 0, 0, 0))])
 

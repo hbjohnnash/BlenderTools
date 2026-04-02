@@ -5,6 +5,8 @@ Routes all input to the widget tree; passes through events outside
 the panel bounds so other Blender interactions remain unaffected.
 """
 
+import traceback
+
 import bpy
 
 from . import draw_primitives as dp
@@ -302,22 +304,18 @@ def _handle_action(action_id, context, widget=None):
         _set_all_panels(context, False)
         return
 
-    # Overlay toggles
-    overlay_ops = {
+    # Overlay toggles (modal operators — must use INVOKE_DEFAULT)
+    invoke_ops = {
         "toggle_module_overlay": "bt.module_overlay",
         "toggle_ik_overlay": "bt.ik_overlay",
         "toggle_com": "bt.toggle_com",
         "toggle_trajectory": "bt.trajectory",
         "toggle_onion": "bt.onion_skin",
+        "bone_naming": "bt.bone_naming_overlay",
+        "edit_bone_ik_limits": "bt.edit_bone_ik_limits",
     }
-    if action_id in overlay_ops:
-        try:
-            op_id = overlay_ops[action_id]
-            parts = op_id.split('.')
-            op = getattr(getattr(bpy.ops, parts[0]), parts[1])
-            op('INVOKE_DEFAULT')
-        except Exception:
-            pass
+    if action_id in invoke_ops:
+        _call_op(invoke_ops[action_id], invoke=True)
         state.dirty = True
         return
 
@@ -329,7 +327,6 @@ def _handle_action(action_id, context, widget=None):
         "refresh_wrap_rig": "bt.refresh_wrap_rig",
         "clear_scan_data": "bt.clear_scan_data",
         "bake_to_def": "bt.bake_to_def",
-        "bone_naming": "bt.bone_naming_overlay",
         "auto_name_chain": "bt.auto_name_chain",
         "toggle_floor_contact": "bt.toggle_floor_contact",
         "update_floor_level": "bt.update_floor_level",
@@ -337,13 +334,7 @@ def _handle_action(action_id, context, widget=None):
         "onion_refresh": "bt.onion_skin_refresh",
     }
     if action_id in scanner_ops:
-        try:
-            op_id = scanner_ops[action_id]
-            parts = op_id.split('.')
-            op = getattr(getattr(bpy.ops, parts[0]), parts[1])
-            op()
-        except Exception:
-            pass
+        _call_op(scanner_ops[action_id])
         state.dirty = True
         return
 
@@ -353,20 +344,14 @@ def _handle_action(action_id, context, widget=None):
         if len(parts) >= 3:
             mode = parts[1]
             chain_id = parts[2]
-            try:
-                bpy.ops.bt.toggle_fk_ik(chain_id=chain_id, mode=mode)
-            except Exception:
-                pass
+            _call_op("bt.toggle_fk_ik", chain_id=chain_id, mode=mode)
             state.dirty = True
         return
 
     # IK limits toggle
     if action_id.startswith("iklimits_"):
         chain_id = action_id[9:]
-        try:
-            bpy.ops.bt.toggle_ik_limits(chain_id=chain_id)
-        except Exception:
-            pass
+        _call_op("bt.toggle_ik_limits", chain_id=chain_id)
         state.dirty = True
         return
 
@@ -381,13 +366,7 @@ def _handle_action(action_id, context, widget=None):
         "clear_seams": "bt.clear_seams",
     }
     if action_id in seam_ops:
-        try:
-            op_id = seam_ops[action_id]
-            parts = op_id.split('.')
-            op = getattr(getattr(bpy.ops, parts[0]), parts[1])
-            op()
-        except Exception:
-            pass
+        _call_op(seam_ops[action_id])
         state.dirty = True
         return
 
@@ -405,13 +384,7 @@ def _handle_action(action_id, context, widget=None):
         "add_custom_shape": "bt.add_custom_shape",
     }
     if action_id in rig_ops:
-        try:
-            op_id = rig_ops[action_id]
-            parts = op_id.split('.')
-            op = getattr(getattr(bpy.ops, parts[0]), parts[1])
-            op()
-        except Exception:
-            pass
+        _call_op(rig_ops[action_id])
         state.dirty = True
         return
 
@@ -424,13 +397,7 @@ def _handle_action(action_id, context, widget=None):
         "mirror_vertex_groups": "bt.mirror_vertex_groups",
     }
     if action_id in skin_ops:
-        try:
-            op_id = skin_ops[action_id]
-            parts = op_id.split('.')
-            op = getattr(getattr(bpy.ops, parts[0]), parts[1])
-            op()
-        except Exception:
-            pass
+        _call_op(skin_ops[action_id])
         state.dirty = True
         return
 
@@ -440,13 +407,7 @@ def _handle_action(action_id, context, widget=None):
         "stop_bridge": "bt.stop_bridge",
     }
     if action_id in bridge_ops:
-        try:
-            op_id = bridge_ops[action_id]
-            parts = op_id.split('.')
-            op = getattr(getattr(bpy.ops, parts[0]), parts[1])
-            op()
-        except Exception:
-            pass
+        _call_op(bridge_ops[action_id])
         state.dirty = True
         return
 
@@ -456,13 +417,7 @@ def _handle_action(action_id, context, widget=None):
         "export_to_ue": "bt.export_to_ue",
     }
     if action_id in export_ops:
-        try:
-            op_id = export_ops[action_id]
-            parts = op_id.split('.')
-            op = getattr(getattr(bpy.ops, parts[0]), parts[1])
-            op()
-        except Exception:
-            pass
+        _call_op(export_ops[action_id])
         state.dirty = True
         return
 
@@ -472,10 +427,8 @@ def _handle_action(action_id, context, widget=None):
         "follow_path": "bt.follow_path",
         "orbit_camera": "bt.orbit_camera",
         "camera_shake": "bt.camera_shake",
-        "match_cycle": "bt.match_cycle",
+        "match_cycle": "bt.match_cycle_keyframes",
         "push_to_nla": "bt.push_to_nla",
-        "retarget_active": "bt.retarget_to_fk",
-        "retarget_all": "bt.retarget_all_to_fk",
         "rm_setup": "bt.rm_setup",
         "rm_finalize": "bt.rm_finalize",
         "rm_cancel": "bt.rm_cancel",
@@ -487,13 +440,67 @@ def _handle_action(action_id, context, widget=None):
         "paste_pose_flipped": "bt.paste_pose_flipped",
     }
     if action_id in anim_ops:
-        try:
-            op_id = anim_ops[action_id]
-            parts = op_id.split('.')
-            op = getattr(getattr(bpy.ops, parts[0]), parts[1])
-            op()
-        except Exception:
-            pass
+        _call_op(anim_ops[action_id])
+        state.dirty = True
+        return
+
+    # Retarget (needs parameter)
+    if action_id == "retarget_active":
+        _call_op("bt.retarget_action_to_fk", all_actions=False)
+        state.dirty = True
+        return
+    if action_id == "retarget_all":
+        _call_op("bt.retarget_action_to_fk", all_actions=True)
+        state.dirty = True
+        return
+
+    # Root motion: remove pinned bone by index
+    if action_id.startswith("rm_remove_pin_"):
+        idx_str = action_id[len("rm_remove_pin_"):]
+        _call_op("bt.rm_remove_bone", index=int(idx_str))
+        state.dirty = True
+        return
+
+    # ── Scanner config actions (chain props, bone skip, skip pattern) ──
+
+    # Chain FK toggle
+    if action_id.startswith("chain_fk_"):
+        chain_id = action_id[len("chain_fk_"):]
+        _toggle_chain_prop(context, chain_id, 'fk_enabled')
+        state.dirty = True
+        return
+
+    # Chain IK toggle
+    if action_id.startswith("chain_ik_"):
+        chain_id = action_id[len("chain_ik_"):]
+        _toggle_chain_prop(context, chain_id, 'ik_enabled')
+        state.dirty = True
+        return
+
+    # Per-bone skip toggle
+    if action_id.startswith("bone_skip_"):
+        bone_name = action_id[len("bone_skip_"):]
+        _toggle_bone_skip(context, bone_name)
+        state.dirty = True
+        return
+
+    # Skip pattern apply/unapply
+    if action_id == "skip_pattern_apply":
+        _call_op("bt.batch_skip_pattern", skip_value=True)
+        state.dirty = True
+        return
+    if action_id == "skip_pattern_unapply":
+        _call_op("bt.batch_skip_pattern", skip_value=False)
+        state.dirty = True
+        return
+
+    # Skip selected / unskip selected
+    if action_id == "skip_selected":
+        _call_op("bt.batch_skip_selected", skip_value=True)
+        state.dirty = True
+        return
+    if action_id == "unskip_selected":
+        _call_op("bt.batch_skip_selected", skip_value=False)
         state.dirty = True
         return
 
@@ -509,10 +516,58 @@ def _handle_action(action_id, context, widget=None):
         state.dirty = True
         return
 
-    # Skip pattern actions
-    if action_id.startswith("skip_"):
+    # Skip pattern field (text field → sd.skip_pattern)
+    if action_id == "skip_pattern_field":
+        if widget and hasattr(widget, 'text'):
+            obj = context.active_object
+            if obj and obj.type == 'ARMATURE':
+                sd = getattr(obj, 'bt_scan', None)
+                if sd:
+                    sd.skip_pattern = widget.text
         state.dirty = True
         return
+
+
+def _toggle_chain_prop(context, chain_id, prop_name):
+    """Toggle a boolean property on a scan chain by chain_id."""
+    obj = context.active_object
+    if not obj or obj.type != 'ARMATURE':
+        return
+    sd = getattr(obj, 'bt_scan', None)
+    if not sd:
+        return
+    for chain in sd.chains:
+        if chain.chain_id == chain_id:
+            setattr(chain, prop_name, not getattr(chain, prop_name))
+            return
+
+
+def _toggle_bone_skip(context, bone_name):
+    """Toggle the skip flag on a scan bone by name."""
+    obj = context.active_object
+    if not obj or obj.type != 'ARMATURE':
+        return
+    sd = getattr(obj, 'bt_scan', None)
+    if not sd:
+        return
+    for bone in sd.bones:
+        if bone.bone_name == bone_name:
+            bone.skip = not bone.skip
+            return
+
+
+def _call_op(op_id, invoke=False, **kwargs):
+    """Call a Blender operator by dotted id, logging errors instead of silencing them."""
+    try:
+        parts = op_id.split('.')
+        op = getattr(getattr(bpy.ops, parts[0]), parts[1])
+        if invoke:
+            op('INVOKE_DEFAULT', **kwargs)
+        else:
+            op(**kwargs)
+    except Exception:
+        print(f"[BlenderTools] operator {op_id} failed:")
+        traceback.print_exc()
 
 
 def _write_widget_property(action_id, context, widget):
@@ -546,13 +601,15 @@ def _write_widget_property(action_id, context, widget):
         "dd_flip_center_bone": (scene, 'bt_flip_center_bone', str),
     }
 
-    # Root motion toggles (dynamic — need armature with bt_root_motion)
+    # Root motion (dynamic — need armature with bt_root_motion)
     if obj and obj.type == 'ARMATURE':
         rm = getattr(obj, 'bt_root_motion', None)
         if rm is not None:
             targets["rm_extract_xy"] = (rm, 'extract_xy', bool)
             targets["rm_extract_z_rot"] = (rm, 'extract_z_rot', bool)
             targets["rm_extract_z"] = (rm, 'extract_z', bool)
+            targets["dd_rm_root_bone"] = (rm, 'root_bone', str)
+            targets["dd_rm_source_bone"] = (rm, 'source_bone', str)
 
     entry = targets.get(action_id)
     if entry:
