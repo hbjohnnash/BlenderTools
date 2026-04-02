@@ -83,6 +83,10 @@ def _rebuild_if_needed(context):
     """Rebuild the widget tree when state is dirty."""
     global _widget_tree
     if state.dirty or _widget_tree is None:
+        # Don't rebuild while a text field is being edited — the rebuild
+        # would destroy the focused widget and lose in-progress typing.
+        if state.focus_widget and isinstance(state.focus_widget, TextField):
+            return
         # Preserve scroll offset across rebuilds
         prev_scroll = _widget_tree.scroll_offset if _widget_tree is not None else 0.0
         _widget_tree = _build_content(context)
@@ -647,17 +651,21 @@ def _find_scroll_view(widget):
 
 
 def _find_scroll_at(mx, my, widget):
-    """Find the ScrollView (if any) under the given coordinates."""
+    """Find the innermost ScrollView under the given coordinates.
+
+    Searches children first so a nested ScrollView (e.g. Bones tab)
+    takes priority over the outer panel ScrollView.
+    """
     if not widget.visible:
         return None
-    if isinstance(widget, ScrollView):
-        if _is_in_rect(mx, my, widget.x, widget.y, widget.width, widget.height):
-            return widget
     if hasattr(widget, 'children'):
         for child in widget.children:
             result = _find_scroll_at(mx, my, child)
             if result:
                 return result
+    if isinstance(widget, ScrollView):
+        if _is_in_rect(mx, my, widget.x, widget.y, widget.width, widget.height):
+            return widget
     return None
 
 
@@ -897,9 +905,13 @@ class BT_OT_ViewportPanel(bpy.types.Operator):
                         context.area.tag_redraw()
                         return {'RUNNING_MODAL'}
 
-                    # Text field focus
+                    # Text field focus — don't dispatch action on click,
+                    # only on Enter (handled in the keyboard section above)
                     if isinstance(hit, TextField):
                         state.focus_widget = hit
+                        hit.on_click(mx, my)
+                        context.area.tag_redraw()
+                        return {'RUNNING_MODAL'}
 
                     action = hit.on_click(mx, my)
                     _handle_action(action, context, widget=hit)
