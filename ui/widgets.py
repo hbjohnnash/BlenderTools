@@ -616,12 +616,13 @@ class TabBar(Container):
     Children should be added via ``add_tab(label, content_widget)``.
     """
 
-    __slots__ = ('tabs', 'active_tab')
+    __slots__ = ('tabs', 'active_tab', 'tab_id')
 
-    def __init__(self, *, active_tab=0, **kw):
+    def __init__(self, *, active_tab=0, tab_id='', **kw):
         super().__init__(**kw)
         self.tabs = []   # [(label, content_widget)]
         self.active_tab = active_tab
+        self.tab_id = tab_id
 
     def add_tab(self, label, content):
         """Add a tab with *label* and *content* widget."""
@@ -714,6 +715,10 @@ class TabBar(Container):
             idx = int((mx - self.x) / tab_w)
             idx = max(0, min(len(self.tabs) - 1, idx))
             self.active_tab = idx
+            # Persist so next rebuild picks up the selected tab
+            if self.tab_id:
+                from . import panel_state as _ps
+                _ps.active_tabs[self.tab_id] = idx
             return f"tab_switch_{idx}"
         return None
 

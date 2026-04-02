@@ -64,7 +64,8 @@ def build_scanner(context):
 
     # ── Tabbed content (pre-rig config) ──
     if not sd.has_wrap_rig:
-        tabs = TabBar(active_tab=state.active_tabs.get("scanner", 0))
+        tabs = TabBar(active_tab=state.active_tabs.get("scanner", 0),
+                      tab_id="scanner")
 
         # Chains tab
         chains_content = _build_chains_tab(sd)
