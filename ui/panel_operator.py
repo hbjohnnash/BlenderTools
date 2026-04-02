@@ -87,6 +87,9 @@ def _rebuild_if_needed(context):
         # would destroy the focused widget and lose in-progress typing.
         if state.focus_widget and isinstance(state.focus_widget, TextField):
             return
+        # Clear stale widget references before rebuilding the tree
+        state.active_dropdown = None
+        state.hover_widget = None
         # Preserve scroll offset across rebuilds
         prev_scroll = _widget_tree.scroll_offset if _widget_tree is not None else 0.0
         _widget_tree = _build_content(context)
@@ -905,11 +908,13 @@ class BT_OT_ViewportPanel(bpy.types.Operator):
                         context.area.tag_redraw()
                         return {'RUNNING_MODAL'}
 
-                    # Text field focus — don't dispatch action on click,
-                    # only on Enter (handled in the keyboard section above)
+                    # Text field — focus only, action fires on Enter
                     if isinstance(hit, TextField):
+                        import time as _time
                         state.focus_widget = hit
-                        hit.on_click(mx, my)
+                        hit.focused = True
+                        hit._cursor_blink = _time.monotonic()
+                        hit._cursor_pos = len(hit.text)
                         context.area.tag_redraw()
                         return {'RUNNING_MODAL'}
 

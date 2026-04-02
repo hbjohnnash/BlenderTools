@@ -23,7 +23,7 @@ def build_scanner(context):
                   color=T.TEXT_SECONDARY),
         ])
 
-    sd = obj.bt_scan
+    sd = getattr(obj, 'bt_scan', None)
     children = []
 
     # ── Scan bar (always visible) ──
@@ -34,7 +34,7 @@ def build_scanner(context):
                style=Button.STYLE_PRIMARY, flex=1),
     ], gap=4, padding=(0, 0, 0, 0)))
 
-    if not sd.is_scanned:
+    if sd is None or not sd.is_scanned:
         return VStack(children, gap=T.ITEM_GAP, padding=(0, 0, 0, 0))
 
     # ── Results subsection ──
