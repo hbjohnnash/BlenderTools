@@ -320,6 +320,11 @@ def _handle_action(action_id, context, widget=None):
         "toggle_onion": "bt.onion_skin",
         "bone_naming": "bt.bone_naming_overlay",
         "edit_bone_ik_limits": "bt.edit_bone_ik_limits",
+        "assign_bone_shape": "bt.assign_bone_shape",
+        "resize_ctrl_bones": "bt.resize_ctrl_bones",
+        "add_rig_module": "bt.add_rig_module",
+        "load_rig_config": "bt.load_rig_config",
+        "save_rig_config": "bt.save_rig_config",
     }
     if action_id in invoke_ops:
         _call_op(invoke_ops[action_id], invoke=True)
@@ -377,16 +382,11 @@ def _handle_action(action_id, context, widget=None):
         state.dirty = True
         return
 
-    # Rigging operators
+    # Rigging operators (execute-only — dialog ops are in invoke_ops above)
     rig_ops = {
-        "add_rig_module": "bt.add_rig_module",
         "remove_rig_module": "bt.remove_rig_module",
         "generate_rig": "bt.generate_rig",
-        "load_rig_config": "bt.load_rig_config",
-        "save_rig_config": "bt.save_rig_config",
         "clear_rig": "bt.clear_rig",
-        "assign_bone_shape": "bt.assign_bone_shape",
-        "resize_ctrl_bones": "bt.resize_ctrl_bones",
         "clear_bone_shapes": "bt.clear_bone_shapes",
         "add_custom_shape": "bt.add_custom_shape",
     }
