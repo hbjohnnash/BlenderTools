@@ -311,20 +311,33 @@ def _handle_action(action_id, context, widget=None):
         _set_all_panels(context, False)
         return
 
-    # Overlay toggles (modal operators — must use INVOKE_DEFAULT)
+    # Modal operators + dialog operators — must use INVOKE_DEFAULT
     invoke_ops = {
+        # Modal overlays
         "toggle_module_overlay": "bt.module_overlay",
         "toggle_ik_overlay": "bt.ik_overlay",
         "toggle_com": "bt.toggle_com",
         "toggle_trajectory": "bt.trajectory",
         "toggle_onion": "bt.onion_skin",
         "bone_naming": "bt.bone_naming_overlay",
+        # Rigging dialogs
         "edit_bone_ik_limits": "bt.edit_bone_ik_limits",
         "assign_bone_shape": "bt.assign_bone_shape",
         "resize_ctrl_bones": "bt.resize_ctrl_bones",
         "add_rig_module": "bt.add_rig_module",
         "load_rig_config": "bt.load_rig_config",
         "save_rig_config": "bt.save_rig_config",
+        # Animation dialogs
+        "mechanical_anim": "bt.mechanical_anim",
+        "follow_path": "bt.follow_path",
+        "orbit_camera": "bt.orbit_camera",
+        "camera_shake": "bt.camera_shake",
+        "push_to_nla": "bt.push_to_nla",
+        # Skinning dialogs
+        "merge_vertex_groups": "bt.merge_vertex_groups",
+        # Export dialogs
+        "scale_rig": "bt.scale_rig",
+        "export_to_ue": "bt.export_to_ue",
     }
     if action_id in invoke_ops:
         _call_op(invoke_ops[action_id], invoke=True)
@@ -395,12 +408,11 @@ def _handle_action(action_id, context, widget=None):
         state.dirty = True
         return
 
-    # Skinning operators
+    # Skinning operators (dialog ops are in invoke_ops above)
     skin_ops = {
         "auto_weight": "bt.auto_weight",
         "rigid_bind": "bt.rigid_bind",
         "weight_cleanup": "bt.weight_cleanup",
-        "merge_vertex_groups": "bt.merge_vertex_groups",
         "mirror_vertex_groups": "bt.mirror_vertex_groups",
     }
     if action_id in skin_ops:
@@ -418,24 +430,9 @@ def _handle_action(action_id, context, widget=None):
         state.dirty = True
         return
 
-    # Export operators
-    export_ops = {
-        "scale_rig": "bt.scale_rig",
-        "export_to_ue": "bt.export_to_ue",
-    }
-    if action_id in export_ops:
-        _call_op(export_ops[action_id])
-        state.dirty = True
-        return
-
-    # Animation operators
+    # Animation operators (dialog ops are in invoke_ops above)
     anim_ops = {
-        "mechanical_anim": "bt.mechanical_anim",
-        "follow_path": "bt.follow_path",
-        "orbit_camera": "bt.orbit_camera",
-        "camera_shake": "bt.camera_shake",
         "match_cycle": "bt.match_cycle_keyframes",
-        "push_to_nla": "bt.push_to_nla",
         "rm_setup": "bt.rm_setup",
         "rm_finalize": "bt.rm_finalize",
         "rm_cancel": "bt.rm_cancel",
@@ -451,13 +448,13 @@ def _handle_action(action_id, context, widget=None):
         state.dirty = True
         return
 
-    # Retarget (needs parameter)
+    # Retarget (dialog + needs parameter)
     if action_id == "retarget_active":
-        _call_op("bt.retarget_action_to_fk", all_actions=False)
+        _call_op("bt.retarget_action_to_fk", invoke=True, all_actions=False)
         state.dirty = True
         return
     if action_id == "retarget_all":
-        _call_op("bt.retarget_action_to_fk", all_actions=True)
+        _call_op("bt.retarget_action_to_fk", invoke=True, all_actions=True)
         state.dirty = True
         return
 
